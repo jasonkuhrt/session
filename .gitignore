@@ -1,0 +1,5 @@
+# Local agent config (private permission gates)
+CLAUDE.local.md
+
+# git-hooks local state
+.local/
