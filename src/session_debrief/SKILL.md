@@ -1,9 +1,9 @@
 ---
-name: session:debrief
+name: session-debrief
 description: >-
   Write a reflective debrief for a session thread. Use when closing a thread,
-  after "/session:debrief", "/debrief", "write a debrief", "debrief this
-  thread", or when session:thread:land invokes it after the done verdict passes.
+  after "/session-debrief", "/debrief", "write a debrief", "debrief this
+  thread", or when session-thread-land invokes it after the done verdict passes.
 ---
 
 # Session Debrief
@@ -13,7 +13,7 @@ Write a `debrief.md` into the thread directory — your subjective experience of
 ## When to Use
 
 - Invoked by `/debrief` on any thread (active or done)
-- Called automatically by `session:thread:land` after done verdict passes, before `session thread done <slug>`
+- Called automatically by `session-thread-land` after done verdict passes, before `session thread done <slug>`
 - Can be re-run to overwrite an existing debrief
 
 ## Identify the Thread

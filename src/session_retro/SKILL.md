@@ -1,13 +1,13 @@
 ---
-name: session_retro
+name: session-retro
 description: >-
   Read all session debriefs, synthesize patterns, and produce a retrospective.
-  Use when the user says "/session:retro", "retrospective", "session retro",
+  Use when the user says "/session-retro", "retrospective", "session retro",
   "what patterns do we see", "synthesize debriefs", or "review all debriefs".
 argument-hint: "[focus area]"
 ---
 
-# /session:retro
+# /session-retro
 
 Read all debriefs in the current session and synthesize a retrospective.
 

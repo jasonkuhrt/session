@@ -1,14 +1,14 @@
 ---
-name: session:thread:handoff
+name: session-thread-handoff
 description: >-
   Structured context brief and claim transfer for thread handoff between agents.
-  Use when the user says "/session:thread:handoff", "/thread:handoff", "hand off
+  Use when the user says "/session-thread-handoff", "/thread-handoff", "hand off
   this thread", "transfer thread to", "pass this to another agent", "handoff",
   or "take over thread".
 argument-hint: "<thread-slug> [to <agent-name>]"
 ---
 
-# /session:thread:handoff
+# /session-thread-handoff
 
 Create a structured handoff brief for a thread and transfer the claim to another agent.
 

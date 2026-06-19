@@ -1,9 +1,9 @@
 ---
-name: session:thread:land
+name: session-thread-land
 description: >-
   Perform a real closeout audit for the thread-scoped task and, when requested,
   land it through commit, push, and CI. Use when the user says
-  "/session:thread:land", "are you done", "can we close this", "is anything
+  "/session-thread-land", "are you done", "can we close this", "is anything
   still open", "wrap this session up", or wants to end the thread without
   losing unfinished work, buried follow-ups, or useful loose ends.
 ---
@@ -78,7 +78,7 @@ Classification rule:
 
 After the done verdict passes and all work is landed, execute these steps in order:
 
-1. **Debrief** — invoke `/session:debrief` to write a reflective `debrief.md` into the thread directory. This is best-effort: if it fails, log a warning and continue. Do not block landing on a debrief failure.
+1. **Debrief** — invoke `/session-debrief` to write a reflective `debrief.md` into the thread directory. This is best-effort: if it fails, log a warning and continue. Do not block landing on a debrief failure.
 
 2. **Mark done** — use the CLI to close the thread:
    ```bash

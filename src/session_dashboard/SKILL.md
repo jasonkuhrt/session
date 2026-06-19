@@ -1,14 +1,14 @@
 ---
-name: session_dashboard
+name: session-dashboard
 description: >-
   Session dashboard showing thread timeline, agent roster, and commit counts.
-  Use when the user says "/session:dashboard", "show dashboard", "session
+  Use when the user says "/session-dashboard", "show dashboard", "session
   overview", "session summary", "what's happening in this session", or
   "agent activity".
 argument-hint: ""
 ---
 
-# /session:dashboard
+# /session-dashboard
 
 Generate a comprehensive dashboard of the current session.
 
