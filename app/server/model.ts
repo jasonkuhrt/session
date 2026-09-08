@@ -8,8 +8,8 @@ export class SessionError extends Data.TaggedError('SessionError')<{
   readonly cause?: unknown;
 }> {}
 
-const itemHeading = /^## ([A-Za-z0-9][A-Za-z0-9._-]*) — (\S(?:.*\S)?)$/;
-const groupHeading = /^# (\S(?:.*\S)?)$/;
+const itemHeading = /^## ([A-Za-z0-9][A-Za-z0-9._-]*) — (\S(?:.*\S)?)$/u;
+const groupHeading = /^# (\S(?:.*\S)?)$/u;
 
 const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
@@ -17,15 +17,15 @@ const fail = (message: string): never => {
 
 const summarize = (body: string, title: string): string => {
   const line = body
-    .split(/\r?\n/)
+    .split(/\r?\n/u)
     .map((candidate) => candidate.trim())
     .find((candidate) => candidate !== '' && !candidate.startsWith('#'));
   if (line === undefined) return title;
-  return line.replace(/^[-*>\d.\s]+/, '').slice(0, 180);
+  return line.replace(/^[-*>\d.\s]+/u, '').slice(0, 180);
 };
 
 export const validateItem = (stage: Stage, item: Item): void => {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(item.id)) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(item.id)) {
     fail(`${stage}: invalid item ID ${JSON.stringify(item.id)}.`);
   }
   if (item.title.trim() === '') fail(`${stage}/${item.id}: title is empty.`);
@@ -40,10 +40,12 @@ export const validateItem = (stage: Stage, item: Item): void => {
   }
 };
 
+// This is one state machine: item, group, and fence transitions must stay adjacent.
+// eslint-disable-next-line max-lines-per-function -- Splitting the parser would hide those transitions across helpers.
 export const parseStageMarkdown = (stage: Stage, markdown: string): Item[] => {
   if (markdown === '') return [];
 
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const lines = markdown.replaceAll('\r\n', '\n').split('\n');
   const items: Item[] = [];
   let group: string | null = null;
   let current:
@@ -69,7 +71,7 @@ export const parseStageMarkdown = (stage: Stage, markdown: string): Item[] => {
 
   for (const [index, line] of lines.entries()) {
     if (current !== undefined) {
-      const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+      const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1];
       if (marker !== undefined) {
         const kind = marker[0] as '`' | '~';
         current.body.push(line);

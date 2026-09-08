@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 import { NodeServices } from '@effect/platform-node';
+import { file, serve } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
@@ -31,6 +32,7 @@ const UpdateItem = Schema.Struct({
 const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
+  beforeId: Schema.optionalKey(Schema.NullOr(Schema.String)),
   body: Schema.optionalKey(Schema.String),
   revision: Schema.String,
 });
@@ -67,7 +69,7 @@ const decodeBody = <A, I>(request: Request, schema: Schema.Codec<A, I>) =>
     catch: (cause) =>
       new RepositoryError({ kind: 'validation', message: 'Request body must be JSON.', cause }),
   }).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(schema)),
+    Effect.flatMap((input) => Schema.decodeUnknownEffect(schema)(input)),
     Effect.mapError((cause) =>
       cause instanceof RepositoryError
         ? cause
@@ -86,6 +88,9 @@ const writeIsSameOrigin = (request: Request): boolean => {
   return (origin === null || origin === url.origin) && fetchSite !== 'cross-site';
 };
 
+const runRepository = <A>(effect: Effect.Effect<A, RepositoryError>) => Effect.runPromise(effect);
+
+/* eslint-disable max-lines-per-function -- The HTTP boundary is a small linear route table; splitting each route would add indirection without isolating behavior. */
 export const createRequestHandler = async (options: {
   readonly directory: string;
   readonly distDirectory?: string | undefined;
@@ -96,7 +101,6 @@ export const createRequestHandler = async (options: {
     makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
   );
   const distDirectory = resolve(options.distDirectory ?? join(import.meta.dir, '../dist'));
-  const run = <A>(effect: Effect.Effect<A, RepositoryError>) => Effect.runPromise(effect);
   const attachWorktree = async (session: Session): Promise<Session> => {
     if (options.worktree === undefined) return session;
     const worktree = options.refreshWorktree === true
@@ -116,7 +120,7 @@ export const createRequestHandler = async (options: {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/session') {
-        return json(await attachWorktree(await run(repository.load)));
+        return json(await attachWorktree(await runRepository(repository.load)));
       }
 
       if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
@@ -126,35 +130,35 @@ export const createRequestHandler = async (options: {
         } catch {
           return json({ error: 'Not found.' }, { status: 404 });
         }
-        const markdown = await run(repository.readMarkdownFile(relativePath));
+        const markdown = await runRepository(repository.readMarkdownFile(relativePath));
         return new Response(markdown, {
           headers: { 'cache-control': 'no-store', 'content-type': 'text/markdown; charset=utf-8' },
         });
       }
 
       if (request.method === 'PUT' && url.pathname === '/api/file') {
-        const input = await run(decodeBody(request, PutFile));
-        return json(await attachWorktree(await run(repository.putFile(input))));
+        const input = await runRepository(decodeBody(request, PutFile));
+        return json(await attachWorktree(await runRepository(repository.putFile(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/item') {
-        const input = await run(decodeBody(request, AddItem));
-        return json(await attachWorktree(await run(repository.addItem(input))));
+        const input = await runRepository(decodeBody(request, AddItem));
+        return json(await attachWorktree(await runRepository(repository.addItem(input))));
       }
       if (request.method === 'PUT' && url.pathname === '/api/item') {
-        const input = await run(decodeBody(request, UpdateItem));
-        return json(await attachWorktree(await run(repository.updateItem(input))));
+        const input = await runRepository(decodeBody(request, UpdateItem));
+        return json(await attachWorktree(await runRepository(repository.updateItem(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/move') {
-        const input = await run(decodeBody(request, MoveItem));
-        return json(await attachWorktree(await run(repository.moveItem(input))));
+        const input = await runRepository(decodeBody(request, MoveItem));
+        return json(await attachWorktree(await runRepository(repository.moveItem(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/batch') {
-        const input = await run(decodeBody(request, StartBatch));
-        return json(await attachWorktree(await run(repository.startBatch(input))));
+        const input = await runRepository(decodeBody(request, StartBatch));
+        return json(await attachWorktree(await runRepository(repository.startBatch(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/complete') {
-        const input = await run(decodeBody(request, CompleteItem));
-        return json(await attachWorktree(await run(repository.completeItem(input))));
+        const input = await runRepository(decodeBody(request, CompleteItem));
+        return json(await attachWorktree(await runRepository(repository.completeItem(input))));
       }
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -166,17 +170,18 @@ export const createRequestHandler = async (options: {
       if (staticPath !== distDirectory && !staticPath.startsWith(`${distDirectory}/`)) {
         return json({ error: 'Not found.' }, { status: 404 });
       }
-      let file = Bun.file(staticPath);
-      if (!(await file.exists()) && !requestedPath.includes('.')) {
-        file = Bun.file(join(distDirectory, 'index.html'));
+      let staticFile = file(staticPath);
+      if (!(await staticFile.exists()) && !requestedPath.includes('.')) {
+        staticFile = file(join(distDirectory, 'index.html'));
       }
-      if (!(await file.exists())) return json({ error: 'Not found.' }, { status: 404 });
-      return request.method === 'HEAD' ? new Response(null) : new Response(file);
+      if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
+      return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);
     } catch (error) {
       return errorResponse(error);
     }
   };
 };
+/* eslint-enable max-lines-per-function */
 
 export const startServer = async (options: {
   readonly directory: string;
@@ -189,7 +194,7 @@ export const startServer = async (options: {
   );
   await Effect.runPromise(repository.initialize);
   const fetch = await createRequestHandler({ ...options, refreshWorktree: true });
-  return Bun.serve({
+  return serve({
     hostname: '127.0.0.1',
     port: options.port ?? 3210,
     fetch,

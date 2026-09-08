@@ -11,12 +11,14 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
       - run: bun install --frozen-lockfile
-      - run: bun test
-      - run: bun run build
+      - run: bun run check
+      # The Effect-aware compiler is intentionally CI-only because it is the
+      # heavy validation step; local `check` remains a fast feedback path.
+      - run: bun run check:types

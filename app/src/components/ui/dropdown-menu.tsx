@@ -1,39 +1,70 @@
-import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
-import * as React from 'react'
+"use client"
 
-import { cn } from '../../lib/utils'
+import * as MenuPrimitive from "@base-ui/react/menu"
 
-const DropdownMenu = DropdownMenuPrimitive.Root
-const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
+
+import { cn } from "cn"
+
+
+function DropdownMenu({ ...props }: MenuPrimitive.Menu.Root.Props) {
+  return <MenuPrimitive.Menu.Root data-slot="dropdown-menu" {...props} />
+}
+
+function DropdownMenuTrigger({ ...props }: MenuPrimitive.Menu.Trigger.Props) {
+  return <MenuPrimitive.Menu.Trigger data-slot="dropdown-menu-trigger" {...props} />
+}
 
 function DropdownMenuContent({
+  align = "start",
+  alignOffset = 0,
+  side = "bottom",
+  sideOffset = 4,
   className,
-  sideOffset = 7,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: MenuPrimitive.Menu.Popup.Props &
+  Pick<
+    MenuPrimitive.Menu.Positioner.Props,
+    "align" | "alignOffset" | "side" | "sideOffset"
+  >) {
   return (
-    <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.Content
+    <MenuPrimitive.Menu.Portal>
+      <MenuPrimitive.Menu.Positioner
+        className="isolate z-50 outline-none"
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
         sideOffset={sideOffset}
-        className={cn(
-          'z-[70] min-w-44 rounded-xl border border-white/10 bg-[#19191c]/98 p-1.5 text-zinc-200 shadow-[0_18px_55px_rgba(0,0,0,0.55)] backdrop-blur-xl',
-          className,
-        )}
-        {...props}
-      />
-    </DropdownMenuPrimitive.Portal>
+      >
+        <MenuPrimitive.Menu.Popup
+          data-slot="dropdown-menu-content"
+          className={cn(
+            "cn-menu-target cn-menu-translucent z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95",
+            className
+          )}
+          {...props}
+        />
+      </MenuPrimitive.Menu.Positioner>
+    </MenuPrimitive.Menu.Portal>
   )
 }
 
 function DropdownMenuItem({
   className,
+  inset,
+  variant = "default",
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Item>) {
+}: MenuPrimitive.Menu.Item.Props & {
+  inset?: boolean
+  variant?: "default" | "destructive"
+}) {
   return (
-    <DropdownMenuPrimitive.Item
+    <MenuPrimitive.Menu.Item
+      data-slot="dropdown-menu-item"
+      data-inset={inset}
+      data-variant={variant}
       className={cn(
-        'flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-white/[0.07] data-[highlighted]:text-white',
-        className,
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
+        className
       )}
       {...props}
     />

@@ -33,7 +33,7 @@ worktree name. A shared `.session` symlink does not change that identity.
 The app binds to localhost. It reads the four stage files, shows a Kanban board
 and Markdown reader, and supports editing, moves, batch selection, and completion.
 Disk edits refresh the view every five seconds while visible and when returning
-to the tab. Refresh pauses during editing. Mutations check the source revision so a stale tab
+to the tab. Refresh pauses during editing and dragging. Mutations check the source revision so a stale tab
 cannot overwrite a later file edit. A recoverable journal protects file moves.
 
 The [skill](src/session/SKILL.md) owns the workflow and
@@ -41,13 +41,40 @@ The [skill](src/session/SKILL.md) owns the workflow and
 under `context/`; completed records live under `ignore/` and are not loaded as
 active context.
 
+## Project contracts
+
+Markdown is the work record. The browser and server read and update the four
+stage files directly; they must not add a second task database or hidden
+lifecycle state. File order is card order. Moves preserve stable IDs and record
+content, while revision checks and the existing recovery journal protect writes.
+
+The app is desktop-only and uses stock shadcn components with Base UI and the
+Nova neutral preset. Keep the stock theme and component appearance. Card
+placement uses the native behavior of the established sortable library. Keep
+custom code limited to the board, Markdown workflow, and file boundary. Do not
+add separate mobile behavior, accessibility work, or concurrent-edit
+coordination unless Jason changes this contract.
+
+Production checks replace authored tests for this project. Do not add tests,
+test dependencies, test scaffolding, or test pipelines unless Jason explicitly
+changes that policy. Oxlint, React Doctor, and the Effect-enabled TypeScript
+checker use the strictest applicable rules; every enabled diagnostic is an error,
+and every exception is explicitly off with a comment explaining why. TypeScript
+checks run in CI because they are intentionally kept off the local development
+path. Future agents must preserve these contracts unless Jason explicitly
+changes them; generic best-practice advice is not authorization to override them.
+
 ## Development
 
 ```sh
-bun test
+bun run lint
+bun run doctor
 bun run build
+bun run check
+bun run check:types # CI
 ```
 
-The app uses React, shadcn/Radix primitives, and an Effect-backed file service.
-The browser has no separate task database. `app/contract.ts` is the shared wire
-contract; the server and skill CLI share the file engine.
+`bun run check` runs lint, React Doctor, and the production build. CI also runs
+`bun run check:types`. The app uses React, shadcn with Base UI, and an
+Effect-backed file service. `app/contract.ts` is the shared wire contract; the
+server and skill CLI share the file engine.

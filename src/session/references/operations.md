@@ -73,6 +73,6 @@ approval. Empty stage files must be zero bytes.
 
 ## App development
 
-In the installed skill's source repository, use `bun run build` for the frontend
-and `bun test` for the file/API invariants. Installation and build instructions
-live in the repository README. Do not rebuild the app for each new session.
+Development commands and binding design decisions live in the repository
+[Project contracts](../../../README.md#project-contracts) and Development
+section. Do not rebuild the app for each new session.

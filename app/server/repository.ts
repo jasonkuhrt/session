@@ -16,6 +16,8 @@ import {
   validateUniqueIds,
 } from './model.ts';
 
+/* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its journal protocol and closures would obscure the invariants they share. */
+
 const encoder = new TextEncoder();
 const archivePath = 'ignore/COMPLETED.md';
 const journalPath = '.runtime/transaction.json';
@@ -27,11 +29,11 @@ const JournalWrite = Schema.Struct({
   before: Schema.String,
   after: Schema.String,
 });
-const Journal = Schema.Struct({
+const JournalSchema = Schema.Struct({
   version: Schema.Literal(1),
   writes: Schema.Array(JournalWrite),
 });
-type Journal = typeof Journal.Type;
+type Journal = typeof JournalSchema.Type;
 
 export type FileInventory = Record<string, string>;
 
@@ -81,6 +83,23 @@ const insertItem = (stage: Stage, items: Item[], item: Item): Item[] => {
   return [...items, item];
 };
 
+const placeItem = (
+  stage: Stage,
+  items: Item[],
+  item: Item,
+  beforeId: string | null | undefined,
+): Item[] => {
+  if (beforeId === undefined || beforeId === null) return [...items, item];
+  const index = items.findIndex((candidate) => candidate.id === beforeId);
+  if (index === -1) {
+    throw new SessionError({
+      kind: 'validation',
+      message: `${stage}: cannot place ${item.id} before missing item ${beforeId}.`,
+    });
+  }
+  return [...items.slice(0, index), item, ...items.slice(index)];
+};
+
 const replaceStage = (
   stages: StageFile[],
   stage: Stage,
@@ -94,7 +113,7 @@ const replaceStage = (
   );
 
 const decodeJournal = (input: unknown) =>
-  Schema.decodeUnknownEffect(Journal)(input).pipe(
+  Schema.decodeUnknownEffect(JournalSchema)(input).pipe(
     Effect.mapError(
       (cause) =>
         new RepositoryError({
@@ -104,6 +123,20 @@ const decodeJournal = (input: unknown) =>
         }),
     ),
   );
+
+const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: string) => {
+  if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) {
+    throw new SessionError({
+      kind: 'validation',
+      message: `${relativePath} resolves outside the session directory.`,
+    });
+  }
+};
+
+const isExcludedRealPath = (realRoot: string, candidate: string): boolean =>
+  relative(realRoot, candidate)
+    .split(sep)
+    .some((segment) => segment === 'ignore' || segment === '.runtime');
 
 export const makeRepository = (directory: string) =>
   Effect.gen(function*() {
@@ -123,7 +156,7 @@ export const makeRepository = (directory: string) =>
             Effect.catch((cause) =>
               fs.exists(path).pipe(
                 Effect.flatMap((exists) =>
-                  exists ? Effect.succeed(undefined) : Effect.fail(cause),
+                  exists ? Effect.void : Effect.fail(cause),
                 ),
               ),
             ),
@@ -164,7 +197,7 @@ export const makeRepository = (directory: string) =>
 
     const digestBytes = (content: Uint8Array) =>
       crypto.digest('SHA-256', content).pipe(
-        Effect.map(toHex),
+        Effect.map((bytes) => toHex(bytes)),
         Effect.mapError(
           (cause) =>
             new RepositoryError({
@@ -205,23 +238,9 @@ export const makeRepository = (directory: string) =>
         return yield* fs.readFileString(path);
       }).pipe(Effect.mapError(asRepositoryError));
 
-    const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: string) => {
-      if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) {
-        throw new SessionError({
-          kind: 'validation',
-          message: `${relativePath} resolves outside the session directory.`,
-        });
-      }
-    };
-
-    const isExcludedRealPath = (realRoot: string, candidate: string): boolean =>
-      relative(realRoot, candidate)
-        .split(sep)
-        .some((segment) => segment === 'ignore' || segment === '.runtime');
-
     const readMarkdownFile = (relativePath: string) =>
       Effect.gen(function*() {
-        const segments = relativePath.split(/[\\/]/);
+        const segments = relativePath.split(/[\\/]/u);
         if (
           !relativePath.endsWith('.md') ||
           relativePath.startsWith('/') ||
@@ -355,7 +374,7 @@ export const makeRepository = (directory: string) =>
 
     const readStages = Effect.gen(function*() {
       const markdown = yield* Effect.all(
-        stageNames.map(readStage),
+        stageNames.map((stage) => readStage(stage)),
       );
       const stages = yield* attempt(() =>
         stageNames.map(
@@ -475,7 +494,7 @@ export const makeRepository = (directory: string) =>
             id,
             title: input.title.trim(),
             body: input.body.trim(),
-            summary: input.body.trim().split(/\r?\n/).find((line) => line.trim() !== '')?.trim() ?? input.title,
+            summary: input.body.trim().split(/\r?\n/u).find((line) => line.trim() !== '')?.trim() ?? input.title,
             group: input.group?.trim() || null,
           };
           yield* attempt(() => validateItem(input.stage, item));
@@ -528,37 +547,52 @@ export const makeRepository = (directory: string) =>
     const moveItem = (input: {
       readonly id: string;
       readonly to: Stage;
+      readonly beforeId?: string | null | undefined;
       readonly body?: string | undefined;
       readonly revision: string;
     }) =>
       mutate(input.revision, (session) =>
         Effect.gen(function*() {
-          if (input.to === 'EXECUTE') {
+          const found = yield* attempt(() => findRequiredItem(session.stages, input.id));
+          if (input.to === 'EXECUTE' && found.stage !== 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'Items enter EXECUTE only through a batch.',
             });
           }
-          const found = yield* attempt(() => findRequiredItem(session.stages, input.id));
-          if (found.stage === 'EXECUTE') {
+          if (found.stage === 'EXECUTE' && input.to !== 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'EXECUTE is frozen; complete its items instead of moving them.',
             });
           }
-          if (found.stage === input.to) return [];
 
           const source = session.stages.find((entry) => entry.stage === found.stage)!;
-          const target = session.stages.find((entry) => entry.stage === input.to)!;
           const sourceItems = source.items.filter((item) => item.id !== input.id);
           const targetItem = copyItem(
             input.body === undefined
               ? found.item
               : { ...found.item, body: input.body.trim() },
-            input.to === 'BATCH' ? found.item.group : null,
+            input.to === 'BATCH' || input.to === 'EXECUTE' ? found.item.group : null,
           );
           yield* attempt(() => validateItem(input.to, targetItem));
-          const targetItems = insertItem(input.to, target.items, targetItem);
+
+          if (found.stage === input.to) {
+            if (input.beforeId === input.id && input.body === undefined) return [];
+            const beforeId = input.beforeId === input.id
+              ? source.items[source.items.findIndex((item) => item.id === input.id) + 1]?.id ?? null
+              : input.beforeId;
+            const items = yield* attempt(() =>
+              placeItem(input.to, sourceItems, targetItem, beforeId),
+            );
+            const after = yield* attempt(() => renderStageMarkdown(input.to, items));
+            return [{ path: `${input.to}.md`, before: source.markdown, after }];
+          }
+
+          const target = session.stages.find((entry) => entry.stage === input.to)!;
+          const targetItems = yield* attempt(() =>
+            placeItem(input.to, target.items, targetItem, input.beforeId),
+          );
           const sourceMarkdown = yield* attempt(() =>
             renderStageMarkdown(found.stage, sourceItems),
           );
@@ -593,7 +627,8 @@ export const makeRepository = (directory: string) =>
               message: 'A batch requires at least one item.',
             });
           }
-          if (new Set(input.ids).size !== input.ids.length) {
+          const selectedIds = new Set(input.ids);
+          if (selectedIds.size !== input.ids.length) {
             return yield* new RepositoryError({
               kind: 'validation',
               message: 'A batch cannot contain duplicate item IDs.',
@@ -614,9 +649,10 @@ export const makeRepository = (directory: string) =>
               message: 'Complete the current EXECUTE batch first.',
             });
           }
+          const batchItems = new Map(batch.items.map((item) => [item.id, item]));
           const selected = yield* attempt(() =>
             input.ids.map((id) => {
-              const item = batch.items.find((candidate) => candidate.id === id);
+              const item = batchItems.get(id);
               if (item === undefined) {
                 throw new RepositoryError({
                   kind: 'validation',
@@ -629,7 +665,7 @@ export const makeRepository = (directory: string) =>
           const batchMarkdown = yield* attempt(() =>
             renderStageMarkdown(
               'BATCH',
-              batch.items.filter((item) => !input.ids.includes(item.id)),
+              batch.items.filter((item) => !selectedIds.has(item.id)),
             ),
           );
           const executeMarkdown = yield* attempt(() =>
@@ -691,7 +727,7 @@ export const makeRepository = (directory: string) =>
             if (visited.has(realDirectory)) return [];
             visited.add(realDirectory);
             const names = yield* fs.readDirectory(realDirectory).pipe(
-              Effect.map((entries) => entries.sort()),
+              Effect.map((entries) => entries.toSorted()),
               Effect.mapError(asRepositoryError),
             );
             const entries: Array<readonly [string, string]> = [];

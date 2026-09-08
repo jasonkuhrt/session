@@ -8,12 +8,12 @@ export const requiredSections: Record<Stage, ReadonlyArray<string>> = {
 };
 
 export const sectionHasContent = (body: string, section: string): boolean => {
-  const lines = body.split(/\r?\n/);
+  const lines = body.split(/\r?\n/u);
   const heading = `### ${section}`;
   let fence: { marker: '`' | '~'; length: number } | undefined;
   let index = -1;
   for (const [lineIndex, line] of lines.entries()) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1];
     if (marker !== undefined) {
       const kind = marker[0] as '`' | '~';
       if (fence === undefined) fence = { marker: kind, length: marker.length };
@@ -30,7 +30,7 @@ export const sectionHasContent = (body: string, section: string): boolean => {
   fence = undefined;
   for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
     const line = lines[cursor]!;
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
+    const marker = /^\s*(`{3,}|~{3,})/u.exec(line)?.[1];
     if (marker !== undefined) {
       const kind = marker[0] as '`' | '~';
       if (fence === undefined) fence = { marker: kind, length: marker.length };
@@ -38,7 +38,7 @@ export const sectionHasContent = (body: string, section: string): boolean => {
       continue;
     }
     if (fence !== undefined && line.trim() !== '') return true;
-    if (fence === undefined && /^#{1,3}\s/.test(line)) return false;
+    if (fence === undefined && /^#{1,3}\s/u.test(line)) return false;
     if (fence === undefined && line.trim() !== '') return true;
   }
   return false;

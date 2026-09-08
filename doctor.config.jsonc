@@ -1,0 +1,53 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "lint": true,
+  "scope": "full",
+  "blocking": "error",
+  "warnings": true,
+  "noScore": true,
+  "ignore": {
+    "overrides": [
+      {
+        // Stock shadcn toggle groups construct a tiny provider value so their
+        // compound children share size and variant styling.
+        "files": ["app/src/components/ui/toggle-group.tsx"],
+        "rules": ["react-doctor/jsx-no-constructed-context-values"]
+      }
+    ]
+  },
+  "categories": {
+    "Security": "error",
+    "Bugs": "error",
+    "Performance": "error",
+    "Accessibility": "error",
+    "Maintainability": "error"
+  },
+  "buckets": {
+    // Conditional React Compiler cleanup diagnostics are warnings by default.
+    // If that bucket becomes active, it follows the same error-only contract.
+    "compiler-cleanup": "error"
+  },
+  "rules": {
+    // Project-graph rules are opt-in in React Doctor, so keep each one
+    // explicit rather than relying on a future change to its default set.
+    "react-doctor/circular-dependency": "error",
+    "react-doctor/unused-dependency": "error",
+    "react-doctor/unused-dev-dependency": "error",
+    "react-doctor/unused-export": "error",
+    "react-doctor/unused-file": "error",
+    "react-doctor/unused-type": "error"
+  },
+  "surfaces": {
+    "ciFailure": {
+      // React Doctor normally keeps design findings advisory. This project
+      // intentionally makes every enabled rule part of the CI contract.
+      "includeCategories": [
+        "Security",
+        "Bugs",
+        "Performance",
+        "Accessibility",
+        "Maintainability"
+      ]
+    }
+  }
+}

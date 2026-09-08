@@ -10,7 +10,7 @@ await mkdir(output, { recursive: true })
 const bundle = await Bun.build({
   entrypoints: [join(root, 'src/main.tsx')],
   outdir: output,
-  naming: 'app.js',
+  naming: { entry: 'app.[ext]', asset: '[name]-[hash].[ext]' },
   target: 'browser',
   minify: true,
   sourcemap: 'linked',

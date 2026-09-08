@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { NodeServices } from '@effect/platform-node';
+import { NodeRuntime, NodeServices } from '@effect/platform-node';
 import * as Console from 'effect/Console';
+import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Schema from 'effect/Schema';
@@ -18,6 +19,10 @@ const usage = `Usage:
 const PreviousRefresh = Schema.Struct({
   inventory: Schema.Record(Schema.String, Schema.String),
 });
+
+class SessionCliError extends Data.TaggedError('SessionCliError')<{
+  readonly message: string;
+}> {}
 
 const parseOptions = (args: string[]) => {
   const command = args[0];
@@ -51,16 +56,8 @@ const changesFrom = (previous: FileInventory, current: FileInventory) => ({
   deleted: Object.keys(previous).filter((path) => current[path] === undefined),
 });
 
-const program = Effect.gen(function*() {
-  const options = yield* Effect.try({
-    try: () => parseOptions(process.argv.slice(2)),
-    catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
-  });
-  if (!['init', 'check', 'refresh', 'serve'].includes(options.command ?? '')) {
-    return yield* Effect.fail(new Error(usage));
-  }
-
-  if (options.command === 'serve') {
+const serve = (options: ReturnType<typeof parseOptions>) =>
+  Effect.gen(function*() {
     const resolved = yield* resolveWorktreeSession(options.directory);
     const server = yield* Effect.tryPromise(() =>
       startServer({
@@ -73,48 +70,64 @@ const program = Effect.gen(function*() {
     yield* Console.log(
       `Worktree: ${resolved.worktree.name} (${resolved.worktree.branch ?? 'detached/non-Git'})`,
     );
-    return;
+  });
+
+const runRepositoryCommand = (options: ReturnType<typeof parseOptions>) =>
+  Effect.gen(function*() {
+    const repository = yield* makeRepository(options.directory);
+    if (options.command === 'init') {
+      yield* repository.initialize;
+      yield* Console.log(`Initialized ${options.directory}`);
+      return;
+    }
+    if (options.command === 'check') {
+      const session = yield* repository.load;
+      const itemCount = session.stages.reduce((total, stage) => total + stage.items.length, 0);
+      yield* Console.log(`OK ${session.revision} (${itemCount} items)`);
+      return;
+    }
+
+    const inventory = yield* repository.inventory;
+    let previous: FileInventory = {};
+    if (options.previous !== undefined) {
+      const fs = yield* FileSystem.FileSystem;
+      const encoded = yield* fs.readFileString(options.previous);
+      const parsed = yield* Effect.try({
+        try: () => JSON.parse(encoded) as unknown,
+        catch: (cause) =>
+          new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
+      });
+      const decoded = yield* Schema.decodeUnknownEffect(PreviousRefresh)(parsed);
+      previous = decoded.inventory;
+    }
+    yield* Console.log(
+      JSON.stringify(
+        {
+          directory: options.directory,
+          inventory,
+          changes: changesFrom(previous, inventory),
+        },
+        null,
+        2,
+      ),
+    );
+  });
+
+const program = Effect.gen(function*() {
+  const options = yield* Effect.try({
+    try: () => parseOptions(process.argv.slice(2)),
+    catch: (cause) =>
+      new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
+  if (!['init', 'check', 'refresh', 'serve'].includes(options.command ?? '')) {
+    return yield* new SessionCliError({ message: usage });
   }
 
-  const repository = yield* makeRepository(options.directory);
-  if (options.command === 'init') {
-    yield* repository.initialize;
-    yield* Console.log(`Initialized ${options.directory}`);
-    return;
-  }
-  if (options.command === 'check') {
-    const session = yield* repository.load;
-    const itemCount = session.stages.reduce((total, stage) => total + stage.items.length, 0);
-    yield* Console.log(`OK ${session.revision} (${itemCount} items)`);
-    return;
+  if (options.command === 'serve') {
+    return yield* serve(options);
   }
 
-  const inventory = yield* repository.inventory;
-  let previous: FileInventory = {};
-  if (options.previous !== undefined) {
-    const fs = yield* FileSystem.FileSystem;
-    const encoded = yield* fs.readFileString(options.previous);
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(encoded) as unknown,
-      catch: (cause) => new Error(cause instanceof Error ? cause.message : String(cause)),
-    });
-    const decoded = yield* Schema.decodeUnknownEffect(PreviousRefresh)(parsed);
-    previous = decoded.inventory;
-  }
-  yield* Console.log(
-    JSON.stringify(
-      {
-        directory: options.directory,
-        inventory,
-        changes: changesFrom(previous, inventory),
-      },
-      null,
-      2,
-    ),
-  );
+  return yield* runRepositoryCommand(options);
 }).pipe(Effect.provide(NodeServices.layer));
 
-Effect.runPromise(program).catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+NodeRuntime.runMain(program);
