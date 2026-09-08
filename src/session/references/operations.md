@@ -1,13 +1,13 @@
 # Operations
 
-Run the installed entrypoint with Bun. Pass the active worktree's `.session`
-path; the file service resolves its symlink without changing the checkout.
+Run the installed entrypoint with Bun. File commands take the `.session` path;
+`serve` takes the worktree and finds `.session` at its root.
 
 ```sh
 bun ~/.codex/skills/session/scripts/session.ts init /absolute/path/to/.session
 bun ~/.codex/skills/session/scripts/session.ts check /absolute/path/to/.session
 bun ~/.codex/skills/session/scripts/session.ts refresh /absolute/path/to/.session
-bun ~/.codex/skills/session/scripts/session.ts serve /absolute/path/to/.session --port 53045
+bun ~/.codex/skills/session/scripts/session.ts serve /absolute/path/to/worktree --port 53045
 ```
 
 `init` creates only missing stage files and preserves existing content. `serve`
@@ -36,11 +36,22 @@ instead of retaining an older item as if it were still live.
 browser or Codex panel. If the port is already serving this board and directory,
 reuse it. Otherwise choose another port; do not stop an unknown process.
 
+The header shows the launching worktree's name and Git branch. Resolve the
+worktree before following its `.session` symlink: shared storage must not make
+a linked worktree appear to be the main checkout. Non-Git folders use their
+own `.session` and have no branch.
+
 The board reads and writes the four files directly. Cards open an embedded
-Markdown reader. Edit an item or a whole stage file, move accepted work to its
-appropriate stage, select ready items in Batch, and start the selected batch.
+Markdown reader. The stage control moves an item in one click; unavailable
+destinations explain what is needed first. Work with the agent to settle missing
+content. Source-file actions live in the lane menu.
+
+Select ready items in Batch and start the selected batch.
 Starting requires an empty Execute file. Completing an Execute item archives it
 under `ignore/COMPLETED.md`.
+
+Visible tabs reread disk every five seconds and on return to the tab. Refresh
+pauses during editing so drafts keep the revision they opened against.
 
 The server rejects an outdated revision instead of overwriting newer disk edits.
 Keep the draft visible, refresh the source, and reconcile it before retrying.

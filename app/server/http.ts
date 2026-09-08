@@ -3,8 +3,10 @@ import { NodeServices } from '@effect/platform-node';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
+import type { Session } from '../contract.ts';
 import { SessionError } from './model.ts';
 import { makeRepository, RepositoryError } from './repository.ts';
+import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
 
 const Stage = Schema.Literals(stageNames);
 const PutFile = Schema.Struct({
@@ -87,12 +89,23 @@ const writeIsSameOrigin = (request: Request): boolean => {
 export const createRequestHandler = async (options: {
   readonly directory: string;
   readonly distDirectory?: string | undefined;
+  readonly worktree?: WorktreeMetadata | undefined;
+  readonly refreshWorktree?: boolean | undefined;
 }) => {
   const repository = await Effect.runPromise(
     makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
   );
   const distDirectory = resolve(options.distDirectory ?? join(import.meta.dir, '../dist'));
   const run = <A>(effect: Effect.Effect<A, RepositoryError>) => Effect.runPromise(effect);
+  const attachWorktree = async (session: Session): Promise<Session> => {
+    if (options.worktree === undefined) return session;
+    const worktree = options.refreshWorktree === true
+      ? await Effect.runPromise(
+          refreshWorktreeMetadata(options.worktree).pipe(Effect.provide(NodeServices.layer)),
+        )
+      : options.worktree;
+    return { ...session, worktree };
+  };
 
   return async (request: Request): Promise<Response> => {
     try {
@@ -103,7 +116,7 @@ export const createRequestHandler = async (options: {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/session') {
-        return json(await run(repository.load));
+        return json(await attachWorktree(await run(repository.load)));
       }
 
       if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
@@ -121,27 +134,27 @@ export const createRequestHandler = async (options: {
 
       if (request.method === 'PUT' && url.pathname === '/api/file') {
         const input = await run(decodeBody(request, PutFile));
-        return json(await run(repository.putFile(input)));
+        return json(await attachWorktree(await run(repository.putFile(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/item') {
         const input = await run(decodeBody(request, AddItem));
-        return json(await run(repository.addItem(input)));
+        return json(await attachWorktree(await run(repository.addItem(input))));
       }
       if (request.method === 'PUT' && url.pathname === '/api/item') {
         const input = await run(decodeBody(request, UpdateItem));
-        return json(await run(repository.updateItem(input)));
+        return json(await attachWorktree(await run(repository.updateItem(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/move') {
         const input = await run(decodeBody(request, MoveItem));
-        return json(await run(repository.moveItem(input)));
+        return json(await attachWorktree(await run(repository.moveItem(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/batch') {
         const input = await run(decodeBody(request, StartBatch));
-        return json(await run(repository.startBatch(input)));
+        return json(await attachWorktree(await run(repository.startBatch(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/complete') {
         const input = await run(decodeBody(request, CompleteItem));
-        return json(await run(repository.completeItem(input)));
+        return json(await attachWorktree(await run(repository.completeItem(input))));
       }
 
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -169,12 +182,13 @@ export const startServer = async (options: {
   readonly directory: string;
   readonly port?: number | undefined;
   readonly distDirectory?: string | undefined;
+  readonly worktree?: WorktreeMetadata | undefined;
 }) => {
   const repository = await Effect.runPromise(
     makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
   );
   await Effect.runPromise(repository.initialize);
-  const fetch = await createRequestHandler(options);
+  const fetch = await createRequestHandler({ ...options, refreshWorktree: true });
   return Bun.serve({
     hostname: '127.0.0.1',
     port: options.port ?? 3210,

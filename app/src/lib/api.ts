@@ -35,22 +35,20 @@ const execute = (request: HttpClientRequest.HttpClientRequest) =>
     return yield* decodeSession(payload)
   })
 
-async function run(program: Effect.Effect<Session, unknown, HttpClient.HttpClient>) {
+async function run(program: Effect.Effect<Session, unknown, HttpClient.HttpClient>, signal?: AbortSignal) {
   const result = await Effect.runPromise(
     program.pipe(Effect.provide(FetchHttpClient.layer), Effect.result),
+    { signal },
   )
   if (Result.isFailure(result)) throw result.failure
   return result.success
 }
 
 export const SessionApi = {
-  read: () => run(execute(HttpClientRequest.get('/api/session'))),
+  read: (signal?: AbortSignal) => run(execute(HttpClientRequest.get('/api/session')), signal),
 
   mutate: (path: '/api/item' | '/api/move' | '/api/batch' | '/api/complete', body: Record<string, unknown>) =>
     run(execute(HttpClientRequest.post(path).pipe(HttpClientRequest.bodyJsonUnsafe(body)))),
-
-  updateItem: (body: { id: string; title: string; body: string; revision: string }) =>
-    run(execute(HttpClientRequest.put('/api/item').pipe(HttpClientRequest.bodyJsonUnsafe(body)))),
 
   saveFile: (body: { stage: Stage; markdown: string; revision: string }) =>
     run(execute(HttpClientRequest.put('/api/file').pipe(HttpClientRequest.bodyJsonUnsafe(body)))),

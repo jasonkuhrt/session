@@ -7,12 +7,13 @@ import * as FileSystem from 'effect/FileSystem';
 import * as Schema from 'effect/Schema';
 import { startServer } from '../../../app/server/http.ts';
 import { makeRepository, type FileInventory } from '../../../app/server/repository.ts';
+import { resolveWorktreeSession } from '../../../app/server/worktree.ts';
 
 const usage = `Usage:
   session.ts init <dir>
   session.ts check <dir>
   session.ts refresh <dir> [--previous <inventory.json>]
-  session.ts serve <dir> [--port <number>]`;
+  session.ts serve <worktree> [--port <number>]`;
 
 const PreviousRefresh = Schema.Struct({
   inventory: Schema.Record(Schema.String, Schema.String),
@@ -60,11 +61,18 @@ const program = Effect.gen(function*() {
   }
 
   if (options.command === 'serve') {
+    const resolved = yield* resolveWorktreeSession(options.directory);
     const server = yield* Effect.tryPromise(() =>
-      startServer({ directory: options.directory, port: options.port }),
+      startServer({
+        directory: resolved.directory,
+        worktree: resolved.worktree,
+        port: options.port,
+      }),
     );
     yield* Console.log(`Session app: http://${server.hostname}:${server.port}`);
-    yield* Console.log(`Files: ${options.directory}`);
+    yield* Console.log(
+      `Worktree: ${resolved.worktree.name} (${resolved.worktree.branch ?? 'detached/non-Git'})`,
+    );
     return;
   }
 

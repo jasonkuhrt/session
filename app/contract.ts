@@ -22,6 +22,11 @@ export type Session = {
   directory: string;
   revision: string;
   stages: StageFile[];
+  worktree?: {
+    name: string;
+    path: string;
+    branch: string | null;
+  };
 };
 
 export const ItemSchema = Schema.Struct({
@@ -35,6 +40,11 @@ export const ItemSchema = Schema.Struct({
 export const SessionSchema = Schema.Struct({
   directory: Schema.String,
   revision: Schema.String,
+  worktree: Schema.optionalKey(Schema.Struct({
+    name: Schema.String,
+    path: Schema.String,
+    branch: Schema.NullOr(Schema.String),
+  })),
   stages: Schema.Array(Schema.Struct({
     stage: Schema.Literals(stageNames),
     file: Schema.String,

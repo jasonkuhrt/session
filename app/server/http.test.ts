@@ -22,7 +22,10 @@ test('the HTTP boundary enforces origin, validation, and revisions', async () =>
   await writeFile(join(directory, 'context/research.md'), '# Research');
   await writeFile(join(directory, 'ignore/private.md'), '# Private');
   await symlink('../ignore/private.md', join(directory, 'context/private-link.md'));
-  const request = await createRequestHandler({ directory });
+  const request = await createRequestHandler({
+    directory,
+    worktree: { name: 'fixture', path: directory, branch: 'test' },
+  });
   const initial = await request(new Request('http://127.0.0.1/api/session'));
   const session = (await initial.json()) as Session;
   const supportingFile = await request(
@@ -70,6 +73,7 @@ test('the HTTP boundary enforces origin, validation, and revisions', async () =>
   );
 
   expect(initial.status).toBe(200);
+  expect(session.worktree).toEqual({ name: 'fixture', path: directory, branch: 'test' });
   expect([supportingFile.status, await supportingFile.text()]).toEqual([200, '# Research']);
   expect(excludedFile.status).toBe(404);
   expect(disguisedExcludedFile.status).toBe(404);

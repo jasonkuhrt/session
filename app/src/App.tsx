@@ -1,15 +1,12 @@
 import {
-  ArrowRight,
   Check,
   CheckCircle2,
-  ChevronDown,
   CircleDot,
   ExternalLink,
   FilePenLine,
   Layers3,
   MoreHorizontal,
   Plus,
-  RefreshCw,
   Sparkles,
 } from 'lucide-react'
 import * as React from 'react'
@@ -18,7 +15,8 @@ import remarkGfm from 'remark-gfm'
 
 import type { Item, Session, Stage, StageFile } from '../contract'
 import { stageNames } from '../contract'
-import { Button, buttonVariants } from './components/ui/button'
+import { requiredSections, sectionHasContent } from '../stage-rules'
+import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import {
   Dialog,
@@ -44,78 +42,65 @@ const stageMeta: Record<Stage, { label: string; hint: string; color: string }> =
   EXECUTE: { label: 'Execute', hint: 'Current batch', color: '#34d399' },
 }
 
-const requiredSections: Partial<Record<Stage, string[]>> = {
-  TRIAGE: ['Decision'],
-  DESIGN: ['Open questions'],
-  BATCH: ['Outcome', 'Acceptance'],
-  EXECUTE: ['Outcome', 'Acceptance'],
-}
-
-function missingSections(body: string, target: Stage) {
-  return (requiredSections[target] ?? []).filter(
-    (section) => !new RegExp(`^###\\s+${section}\\s*$`, 'im').test(body),
-  )
-}
-
-function sectionHasContent(body: string, section: string) {
-  const lines = body.split(/\r?\n/)
-  const start = lines.findIndex((line) => line.trimEnd() === `### ${section}`)
-  if (start === -1) return false
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index]!
-    if (/^#{1,3}\s/.test(line)) return false
-    if (line.trim() !== '') return true
-  }
-  return false
-}
-
-function prepareMoveBody(body: string, target: Stage) {
-  const additions = missingSections(body, target).map((section) => `### ${section}\n`)
-  return [body.trim(), ...additions].filter(Boolean).join('\n\n')
-}
-
 function App() {
   const [session, setSession] = React.useState<Session | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [pending, setPending] = React.useState(false)
   const [notice, setNotice] = React.useState<string | null>(null)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
   const [selectedItem, setSelectedItem] = React.useState<{ id: string; stage: Stage } | null>(null)
   const [editingStage, setEditingStage] = React.useState<{ stage: Stage; revision: string } | null>(null)
-  const [editingItem, setEditingItem] = React.useState<{ item: Item; stage: Stage; revision: string } | null>(null)
   const [adding, setAdding] = React.useState(false)
   const [batching, setBatching] = React.useState(false)
-  const [moving, setMoving] = React.useState<{ item: Item; from: Stage; to: Stage } | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [editorConflict, setEditorConflict] = React.useState<{ revision: string; markdown: string } | null>(null)
-  const [itemConflict, setItemConflict] = React.useState<{ revision: string; item: Item } | null>(null)
   const [selectedBatchIds, setSelectedBatchIds] = React.useState<Set<string>>(new Set())
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (signal?: AbortSignal) => {
     try {
-      const next = await SessionApi.read()
+      const next = await SessionApi.read(signal)
+      if (signal?.aborted) return
       setSession(next)
-      setNotice(null)
+      setLoadError(null)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Could not load the session')
+      if (!signal?.aborted) setLoadError(error instanceof Error ? error.message : 'Could not load the session')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [])
 
   React.useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
   }, [load])
 
   React.useEffect(() => {
-    if (editingStage || editingItem) return
-    const refresh = () => void load()
-    const interval = window.setInterval(refresh, 15_000)
+    if (editingStage || pending) return
+    const controller = new AbortController()
+    let refreshing = false
+    const refresh = async () => {
+      if (document.hidden || refreshing) return
+      refreshing = true
+      try {
+        await load(controller.signal)
+      } finally {
+        refreshing = false
+      }
+    }
+    // Disk changes arrive automatically. Pause while editing so the draft keeps
+    // its opening revision; a conflicting save still shows the current source.
+    // Cancel an in-flight read too, so it cannot replace a later mutation result.
+    const interval = window.setInterval(refresh, 5_000)
     window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
     return () => {
+      controller.abort()
       window.clearInterval(interval)
       window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
     }
-  }, [editingItem, editingStage, load])
+  }, [editingStage, pending, load])
 
   React.useEffect(() => {
     if (!session) return
@@ -179,36 +164,6 @@ function App() {
     [],
   )
 
-  const saveItem = React.useCallback(
-    async (id: string, title: string, body: string, revision: string) => {
-      setPending(true)
-      setNotice(null)
-      try {
-        const next = await SessionApi.updateItem({ id, title, body, revision })
-        setSession(next)
-        return true
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          try {
-            const latest = await SessionApi.read()
-            setSession(latest)
-            const latestItem = latest.stages.flatMap((stage) => stage.items).find((item) => item.id === id)
-            if (latestItem) setItemConflict({ revision: latest.revision, item: latestItem })
-            else setNotice('This item no longer exists in the latest source.')
-          } catch (refreshError) {
-            setNotice(refreshError instanceof Error ? refreshError.message : 'Could not refresh the changed source.')
-          }
-        } else {
-          setNotice(error instanceof Error ? error.message : 'The request failed')
-        }
-        return false
-      } finally {
-        setPending(false)
-      }
-    },
-    [],
-  )
-
   const currentItem = selectedItem
     ? session?.stages
         .find((stage) => stage.stage === selectedItem.stage)
@@ -222,25 +177,23 @@ function App() {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
-      <header className="relative z-10 mx-auto flex max-w-[1800px] items-start justify-between gap-5 px-5 pb-8 pt-7 sm:px-8 sm:pb-12 sm:pt-10 xl:px-12">
-        <div className="min-w-0">
-          <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-zinc-400">
-            <span className="inline-block size-1.5 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,.8)]" />
-            Four-stage workflow
-          </div>
+      <header className="relative z-10 mx-auto grid max-w-[1800px] grid-cols-[minmax(0,1fr)_auto] items-start gap-x-5 gap-y-4 px-5 pb-8 pt-7 sm:px-8 sm:pb-12 sm:pt-10 xl:px-12">
           <h1 className="text-3xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
             Session
           </h1>
-          <p className="mt-3 max-w-2xl truncate text-[13px] text-zinc-500 sm:text-sm">
-            {session?.directory ?? 'Loading the session files…'}
-          </p>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => void load()} disabled={pending} title="Refresh files">
-            <RefreshCw className={cn('size-4', pending && 'animate-spin')} />
-            <span className="sr-only">Refresh files</span>
-          </Button>
+          {session?.worktree ? (
+            <dl className="col-span-2 row-start-2 flex flex-wrap gap-x-6 gap-y-2 text-sm leading-6">
+              <div className="min-w-0 max-w-full">
+                <dt className="text-[13px] text-zinc-400">Branch</dt>
+                <dd className="break-words font-medium text-zinc-200">{session.worktree.branch ?? 'No branch'}</dd>
+              </div>
+              <div className="min-w-0 max-w-full" title={session.worktree.path}>
+                <dt className="text-[13px] text-zinc-400">Worktree</dt>
+                <dd className="break-words font-medium text-zinc-200">{session.worktree.name}</dd>
+              </div>
+            </dl>
+          ) : null}
+        <div className="col-start-2 row-start-1 flex items-center gap-2">
           <Button onClick={() => setAdding(true)} disabled={!session || pending}>
             <Plus className="size-4" />
             <span className="hidden sm:inline">Add candidate</span>
@@ -263,9 +216,9 @@ function App() {
         </div>
       </nav>
 
-      {notice ? (
-        <div className="relative z-10 mx-5 mb-5 rounded-xl border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3 text-sm text-amber-100 sm:mx-8 xl:mx-12">
-          {notice}
+      {notice || loadError ? (
+        <div role="alert" className="relative z-10 mx-5 mb-5 rounded-xl border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3 text-sm text-amber-100 sm:mx-8 xl:mx-12">
+          {notice ?? loadError}
         </div>
       ) : null}
 
@@ -288,7 +241,6 @@ function App() {
                     setEditorConflict(null)
                     setEditingStage({ stage: stageName, revision: session.revision })
                   }}
-                  onMove={(item, to) => setMoving({ item, from: stageName, to })}
                   onSelect={(id, selected) =>
                     setSelectedBatchIds((current) => {
                       const next = new Set(current)
@@ -310,22 +262,18 @@ function App() {
         )}
       </main>
 
-      <ItemSheet
+      <DetailDialog
         item={currentItem}
         stage={selectedItem?.stage ?? null}
         open={Boolean(currentItem)}
         pending={pending}
+        notice={notice}
         onOpenChange={(open) => !open && setSelectedItem(null)}
-        onEdit={() => {
-          if (!selectedItem || !currentItem) return
-          setSelectedItem(null)
-          setItemConflict(null)
-          setEditingItem({ item: currentItem, stage: selectedItem.stage, revision: session.revision })
-        }}
         onMove={(to) => {
           if (!currentItem || !selectedItem) return
-          setSelectedItem(null)
-          setMoving({ item: currentItem, from: selectedItem.stage, to })
+          void mutate('/api/move', { id: currentItem.id, to }).then((ok) => {
+            if (ok) setSelectedItem({ id: currentItem.id, stage: to })
+          })
         }}
         onComplete={() => currentItem && setCompleting(currentItem)}
       />
@@ -348,34 +296,6 @@ function App() {
             setEditorConflict(null)
           }}
           onSave={saveFile}
-        />
-      ) : null}
-
-      {editingItem ? (
-        <ItemEditor
-          key={editingItem.item.id}
-          edit={editingItem}
-          conflict={itemConflict}
-          pending={pending}
-          notice={notice}
-          onOpenChange={(open) => {
-            if (!open) {
-              setEditingItem(null)
-              setItemConflict(null)
-            }
-          }}
-          onUseLatest={(revision) => {
-            setEditingItem({ ...editingItem, revision })
-            setItemConflict(null)
-          }}
-          onSave={(title, body) =>
-            saveItem(editingItem.item.id, title, body, editingItem.revision).then((ok) => {
-              if (ok) {
-                setEditingItem(null)
-                setItemConflict(null)
-              }
-            })
-          }
         />
       ) : null}
 
@@ -407,21 +327,6 @@ function App() {
         }
       />
 
-      {moving ? (
-        <MoveDialog
-          key={`${moving.item.id}-${moving.to}`}
-          move={moving}
-          pending={pending}
-          notice={notice}
-          onOpenChange={(open) => !open && setMoving(null)}
-          onMove={(body) =>
-            mutate('/api/move', { id: moving.item.id, to: moving.to, body }).then((ok) => {
-              if (ok) setMoving(null)
-            })
-          }
-        />
-      ) : null}
-
       <CompleteDialog
         item={completing}
         pending={pending}
@@ -447,7 +352,6 @@ type StageColumnProps = {
   executeOccupied: boolean
   onOpen: (item: Item) => void
   onEdit: () => void
-  onMove: (item: Item, to: Stage) => void
   onSelect: (id: string, selected: boolean) => void
   onBatch: () => void
   onComplete: (item: Item) => void
@@ -460,7 +364,6 @@ function StageColumn({
   executeOccupied,
   onOpen,
   onEdit,
-  onMove,
   onSelect,
   onBatch,
   onComplete,
@@ -540,7 +443,6 @@ function StageColumn({
               pending={pending}
               selected={selectedBatchIds.has(item.id)}
               onOpen={() => onOpen(item)}
-              onMove={(to) => onMove(item, to)}
               onSelect={(selected) => onSelect(item.id, selected)}
               onComplete={() => onComplete(item)}
             />
@@ -557,7 +459,6 @@ type WorkflowCardProps = {
   pending: boolean
   selected: boolean
   onOpen: () => void
-  onMove: (to: Stage) => void
   onSelect: (selected: boolean) => void
   onComplete: () => void
 }
@@ -568,14 +469,9 @@ function WorkflowCard({
   pending,
   selected,
   onOpen,
-  onMove,
   onSelect,
   onComplete,
 }: WorkflowCardProps) {
-  const movableStages = stage === 'EXECUTE'
-    ? []
-    : stageNames.filter((candidate) => candidate !== stage && candidate !== 'EXECUTE')
-
   return (
     <Card
       className={cn(
@@ -630,11 +526,6 @@ function WorkflowCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onOpen}>Read detail</DropdownMenuItem>
-            {movableStages.map((candidate) => (
-              <DropdownMenuItem key={candidate} onSelect={() => onMove(candidate)}>
-                <ArrowRight className="size-3.5" /> Move to {candidate}
-              </DropdownMenuItem>
-            ))}
             {stage === 'EXECUTE' ? (
               <DropdownMenuItem onSelect={onComplete} className="text-emerald-300">
                 <Check className="size-3.5" /> Complete
@@ -647,13 +538,29 @@ function WorkflowCard({
   )
 }
 
-function ItemSheet({
+function moveAvailability(item: Item, current: Stage, target: Stage) {
+  if (target === current) return { enabled: false, reason: `Already in ${stageMeta[target].label}` }
+  if (current === 'EXECUTE') {
+    return { enabled: false, reason: 'Complete this execution item before changing its stage' }
+  }
+  if (target === 'EXECUTE') {
+    return { enabled: false, reason: 'Start an execution batch from Batch' }
+  }
+
+  const missing = (requiredSections[target] ?? []).filter((section) => !sectionHasContent(item.body, section))
+  if (missing.length === 0) return { enabled: true, reason: null }
+  if (target === 'BATCH') return { enabled: false, reason: 'Settle the outcome and acceptance with your agent first' }
+  if (target === 'DESIGN') return { enabled: false, reason: 'Write the open questions with your agent first' }
+  return { enabled: false, reason: 'Write the decision with your agent first' }
+}
+
+function DetailDialog({
   item,
   stage,
   open,
   pending,
+  notice,
   onOpenChange,
-  onEdit,
   onMove,
   onComplete,
 }: {
@@ -661,66 +568,85 @@ function ItemSheet({
   stage: Stage | null
   open: boolean
   pending: boolean
+  notice: string | null
   onOpenChange: (open: boolean) => void
-  onEdit: () => void
   onMove: (to: Stage) => void
   onComplete: () => void
 }) {
+  const tooltipBase = React.useId()
   if (!item || !stage) return null
   const meta = stageMeta[stage]
-  const movableStages = stage === 'EXECUTE'
-    ? []
-    : stageNames.filter((candidate) => candidate !== stage && candidate !== 'EXECUTE')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <SheetContent style={{ '--stage-color': meta.color } as React.CSSProperties}>
-        <div className="border-b border-white/[0.07] px-6 py-7 pr-20 sm:px-10 sm:py-9">
-          <div className="mb-4 flex items-center gap-2 text-[13px] font-semibold text-zinc-400">
-            <span className="stage-dot size-1.5 rounded-full" /> {meta.label}
-            {item.group ? <><span className="text-zinc-700">/</span>{item.group}</> : null}
+      <SheetContent aria-describedby={undefined} style={{ '--stage-color': meta.color } as React.CSSProperties}>
+        <div className="border-b border-white/[0.07] px-6 py-7 sm:px-10 sm:py-9">
+          {item.group ? <div className="mb-4 text-[13px] font-semibold text-zinc-400">{item.group}</div> : null}
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pr-10">
+            <span className="font-mono text-[12px] text-zinc-500">{item.id}</span>
+            <DialogTitle className="max-w-2xl text-3xl sm:text-4xl">{item.title}</DialogTitle>
           </div>
-          <DialogTitle className="max-w-2xl text-3xl sm:text-4xl">{item.title}</DialogTitle>
-          <div className="mt-6 flex flex-wrap gap-2">
-            {stage === 'EXECUTE' ? (
-              <Button onClick={onComplete} disabled={pending}>
-                <CheckCircle2 className="size-4" /> Complete work
-              </Button>
-            ) : null}
-            {movableStages.length ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" disabled={pending}>
-                    Move <ChevronDown className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  {movableStages.map((candidate) => (
-                    <DropdownMenuItem key={candidate} onSelect={() => onMove(candidate)}>
-                      <ArrowRight className="size-3.5" /> {candidate}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-            <Button variant="outline" onClick={onEdit} disabled={pending}>
-              <FilePenLine className="size-4" /> Edit
+
+          <div className="mt-6 grid grid-cols-4 gap-1 rounded-2xl border border-white/[0.08] bg-black/20 p-1" role="group" aria-label="Workflow stage">
+            {stageNames.map((candidate, index) => {
+              const availability = moveAvailability(item, stage, candidate)
+              const current = candidate === stage
+              const unavailable = pending || !availability.enabled
+              const reason = pending ? 'Another update is in progress' : availability.reason
+              const tooltipId = `${tooltipBase}-${candidate}`
+              return (
+                <div key={candidate} className="group/stage relative min-w-0">
+                  <button
+                    type="button"
+                    aria-pressed={current}
+                    aria-disabled={unavailable}
+                    aria-describedby={unavailable && !current ? tooltipId : undefined}
+                    className={cn(
+                      'w-full min-w-0 rounded-xl px-1 py-2.5 text-[12px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 sm:px-2 sm:text-[13px]',
+                      current && 'bg-white text-zinc-950',
+                      !current && !unavailable && 'cursor-pointer text-zinc-200 hover:bg-white/[0.08] hover:text-white',
+                      !current && unavailable && 'cursor-not-allowed text-zinc-500',
+                    )}
+                    onClick={(event) => {
+                      // Touch browsers do not consistently focus tapped buttons.
+                      // Focus exposes the same explanation as hover and keyboard.
+                      if (unavailable) event.currentTarget.focus()
+                      else onMove(candidate)
+                    }}
+                  >
+                    {stageMeta[candidate].label}
+                  </button>
+                  {unavailable && !current ? (
+                    <span
+                      id={tooltipId}
+                      role="tooltip"
+                      className={cn(
+                        'pointer-events-none absolute top-[calc(100%+.5rem)] z-30 hidden w-52 rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-left text-[12px] font-medium leading-5 text-zinc-200 shadow-2xl group-hover/stage:block group-focus-within/stage:block',
+                        index < 2 ? 'left-0' : 'right-0',
+                      )}
+                    >
+                      {reason}
+                    </span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+
+          {stage === 'EXECUTE' ? (
+            <Button className="mt-4" onClick={onComplete} disabled={pending}>
+              <CheckCircle2 className="size-4" /> Complete work
             </Button>
-            <a
-              className={buttonVariants({ variant: 'ghost' })}
-              href={`/files/${stage}.md`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink className="size-4" /> Open Markdown
-            </a>
-          </div>
+          ) : null}
+
+          {notice ? (
+            <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-[14px] leading-6 text-amber-100">
+              {notice}
+            </div>
+          ) : null}
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-10 sm:py-10">
           <Markdown collapseEvidence>{item.body || '_No detail has been written yet._'}</Markdown>
-        </div>
-        <div className="border-t border-white/[0.07] px-6 py-4 font-mono text-[13px] text-zinc-500 sm:px-10">
-          #{item.id}
         </div>
       </SheetContent>
     </Dialog>
@@ -812,118 +738,6 @@ function SourceEditor({
   )
 }
 
-function ItemEditor({
-  edit,
-  conflict,
-  pending,
-  notice,
-  onOpenChange,
-  onUseLatest,
-  onSave,
-}: {
-  edit: { item: Item; stage: Stage; revision: string }
-  conflict: { revision: string; item: Item } | null
-  pending: boolean
-  notice: string | null
-  onOpenChange: (open: boolean) => void
-  onUseLatest: (revision: string) => void
-  onSave: (title: string, body: string) => Promise<void>
-}) {
-  const [title, setTitle] = React.useState(edit.item.title)
-  const [body, setBody] = React.useState(edit.item.body)
-  const required = requiredSections[edit.stage] ?? []
-  const incomplete = required.filter((section) => !sectionHasContent(body, section))
-  const dirty = title.trim() !== edit.item.title || body.trim() !== edit.item.body
-
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogTitle>Edit item</DialogTitle>
-        <DialogDescription>
-          Update this {stageMeta[edit.stage].label} item without navigating the entire stage file.
-        </DialogDescription>
-
-        <div className="mt-6 space-y-5">
-          <Field label="Title">
-            <input
-              autoFocus
-              className="field text-[16px]"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              required
-            />
-          </Field>
-          <Field label="Item Markdown">
-            <textarea
-              className="field min-h-[38dvh] resize-y font-mono text-[14px] leading-6"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              spellCheck={false}
-            />
-          </Field>
-        </div>
-
-        {required.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {required.map((section) => {
-              const ready = sectionHasContent(body, section)
-              return (
-                <span
-                  key={section}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px]',
-                    ready
-                      ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-200'
-                      : 'border-amber-300/20 bg-amber-300/[0.07] text-amber-100',
-                  )}
-                >
-                  {ready ? <Check className="size-3.5" /> : <CircleDot className="size-3.5" />}
-                  ### {section}
-                </span>
-              )
-            })}
-          </div>
-        ) : null}
-
-        {conflict ? (
-          <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
-            <p className="text-[14px] font-semibold text-amber-100">Review latest source</p>
-            <p className="mt-1 text-[13px] leading-5 text-amber-100/75">
-              This item changed after the editor opened. Your draft is preserved above.
-            </p>
-            <div className="mt-3 rounded-xl border border-white/10 bg-[#0a0a0c] p-4">
-              <p className="text-[15px] font-semibold text-white">{conflict.item.title}</p>
-              <pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap font-mono text-[13px] leading-6 text-zinc-300">{conflict.item.body}</pre>
-            </div>
-            <Button className="mt-3" onClick={() => onUseLatest(conflict.revision)}>
-              Use latest revision
-            </Button>
-          </div>
-        ) : null}
-
-        {notice ? (
-          <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-[14px] leading-6 text-amber-100">
-            {notice}
-          </div>
-        ) : null}
-
-        <div className="mt-6 flex items-center justify-between gap-4">
-          <span className="font-mono text-[13px] text-zinc-500">{edit.item.id}</span>
-          <div className="flex gap-2">
-            <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-            <Button
-              disabled={!dirty || !title.trim() || incomplete.length > 0 || pending || conflict !== null}
-              onClick={() => void onSave(title.trim(), body.trim())}
-            >
-              {pending ? 'Saving…' : 'Save item'}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function AddCandidateDialog({
   open,
   pending,
@@ -974,95 +788,6 @@ function AddCandidateDialog({
             <Button type="submit" disabled={!title.trim() || pending}>{pending ? 'Adding…' : 'Add to TRIAGE'}</Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function MoveDialog({
-  move,
-  pending,
-  notice,
-  onOpenChange,
-  onMove,
-}: {
-  move: { item: Item; from: Stage; to: Stage }
-  pending: boolean
-  notice: string | null
-  onOpenChange: (open: boolean) => void
-  onMove: (body: string) => Promise<void>
-}) {
-  const [body, setBody] = React.useState(() => prepareMoveBody(move.item.body, move.to))
-  const required = requiredSections[move.to] ?? []
-  const incomplete = required.filter((section) => !sectionHasContent(body, section))
-  const target = stageMeta[move.to].label
-
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogTitle>Move to {target}</DialogTitle>
-        <DialogDescription>
-          Keep the useful context, then make the target stage's required sections explicit.
-        </DialogDescription>
-
-        {required.length > 0 ? (
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.035] p-4">
-            <p className="text-[13px] font-semibold text-zinc-300">{target} requires</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {required.map((section) => {
-                const ready = sectionHasContent(body, section)
-                return (
-                  <span
-                    key={section}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[13px]',
-                      ready
-                        ? 'border-emerald-400/20 bg-emerald-400/[0.08] text-emerald-200'
-                        : 'border-amber-300/20 bg-amber-300/[0.07] text-amber-100',
-                    )}
-                  >
-                    {ready ? <Check className="size-3.5" /> : <CircleDot className="size-3.5" />}
-                    ### {section} {ready ? 'ready' : section === 'Open questions' ? '— write the open question' : '— write required content'}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        <label className="mt-6 block">
-          <span className="mb-2 block text-[13px] font-semibold text-zinc-300">Item Markdown</span>
-          <textarea
-            autoFocus
-            className="field min-h-[42dvh] resize-y font-mono text-[14px] leading-6"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            spellCheck={false}
-          />
-        </label>
-
-        {notice ? (
-          <div className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/[0.07] px-4 py-3 text-[14px] leading-6 text-amber-100">
-            {notice}
-          </div>
-        ) : null}
-
-        <div className="mt-6 flex items-center justify-between gap-4">
-          <p className="text-[13px] text-zinc-500">
-            {incomplete.length > 0
-              ? `Answer ${incomplete.length === 1 ? 'the highlighted section' : 'the highlighted sections'} to continue.`
-              : `Ready to move from ${stageMeta[move.from].label} to ${target}.`}
-          </p>
-          <div className="flex shrink-0 gap-2">
-            <DialogClose asChild><Button variant="ghost">Cancel</Button></DialogClose>
-            <Button
-              disabled={pending || incomplete.length > 0}
-              onClick={() => void onMove(body.trim())}
-            >
-              {pending ? 'Moving…' : `Move to ${target}`}
-            </Button>
-          </div>
-        </div>
       </DialogContent>
     </Dialog>
   )

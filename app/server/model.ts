@@ -1,5 +1,6 @@
 import * as Data from 'effect/Data';
 import type { Item, Stage } from '../contract.ts';
+import { requiredSections, sectionHasContent } from '../stage-rules.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
   readonly kind: 'conflict' | 'io' | 'not-found' | 'validation';
@@ -10,52 +11,8 @@ export class SessionError extends Data.TaggedError('SessionError')<{
 const itemHeading = /^## ([A-Za-z0-9][A-Za-z0-9._-]*) — (\S(?:.*\S)?)$/;
 const groupHeading = /^# (\S(?:.*\S)?)$/;
 
-const requiredSections: Record<Stage, ReadonlyArray<string>> = {
-  TRIAGE: ['Decision'],
-  DESIGN: ['Open questions'],
-  BATCH: ['Outcome', 'Acceptance'],
-  EXECUTE: ['Outcome', 'Acceptance'],
-};
-
 const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
-};
-
-const sectionHasContent = (body: string, section: string): boolean => {
-  const lines = body.split(/\r?\n/);
-  const heading = `### ${section}`;
-  let fence: { marker: '`' | '~'; length: number } | undefined;
-  let index = -1;
-  for (const [lineIndex, line] of lines.entries()) {
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (marker !== undefined) {
-      const kind = marker[0] as '`' | '~';
-      if (fence === undefined) fence = { marker: kind, length: marker.length };
-      else if (kind === fence.marker && marker.length >= fence.length) fence = undefined;
-      continue;
-    }
-    if (fence === undefined && line.trimEnd() === heading) {
-      index = lineIndex;
-      break;
-    }
-  }
-  if (index === -1) return false;
-
-  fence = undefined;
-  for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-    const line = lines[cursor]!;
-    const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (marker !== undefined) {
-      const kind = marker[0] as '`' | '~';
-      if (fence === undefined) fence = { marker: kind, length: marker.length };
-      else if (kind === fence.marker && marker.length >= fence.length) fence = undefined;
-      continue;
-    }
-    if (fence !== undefined && line.trim() !== '') return true;
-    if (fence === undefined && /^#{1,3}\s/.test(line)) return false;
-    if (fence === undefined && line.trim() !== '') return true;
-  }
-  return false;
 };
 
 const summarize = (body: string, title: string): string => {

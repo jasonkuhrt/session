@@ -24,12 +24,16 @@ never overwritten. Re-running installation is safe.
 Ask for `$session`, or launch the board directly:
 
 ```sh
-bun run dev -- /absolute/path/to/.session --port 53045
+bun run dev -- /absolute/path/to/worktree --port 53045
 ```
+
+The app finds `.session` at the worktree root and shows its Git branch and
+worktree name. A shared `.session` symlink does not change that identity.
 
 The app binds to localhost. It reads the four stage files, shows a Kanban board
 and Markdown reader, and supports editing, moves, batch selection, and completion.
-Disk edits refresh the view. Mutations check the source revision so a stale tab
+Disk edits refresh the view every five seconds while visible and when returning
+to the tab. Refresh pauses during editing. Mutations check the source revision so a stale tab
 cannot overwrite a later file edit. A recoverable journal protects file moves.
 
 The [skill](src/session/SKILL.md) owns the workflow and
