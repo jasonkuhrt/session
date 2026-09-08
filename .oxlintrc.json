@@ -1,0 +1,96 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "nursery": "error",
+    "pedantic": "error",
+    "perf": "error",
+    // These categories contain mutually exclusive syntax and module policies
+    // (for example named-vs-default exports). Project conventions own them.
+    "restriction": "off",
+    "style": "off",
+    "suspicious": "error"
+  },
+  "plugins": [
+    "eslint",
+    "typescript",
+    "import",
+    "node",
+    "promise",
+    "unicorn",
+    "oxc",
+    "react",
+    "react-perf",
+    "jsx-a11y"
+  ],
+  "env": {
+    "browser": true,
+    "builtin": true,
+    "node": true
+  },
+  "globals": {
+    "Bun": "readonly"
+  },
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "rules": {
+    // TypeScript's automatic JSX runtime deliberately does not require the
+    // legacy React binding in every JSX module.
+    "react/react-in-jsx-scope": "off",
+    // Fresh values at ordinary React composition and event boundaries are not
+    // performance defects unless the child is itself a memoized boundary.
+    "react-perf/jsx-no-jsx-as-prop": "off",
+    "react-perf/jsx-no-new-array-as-prop": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off",
+    "react-perf/jsx-no-new-object-as-prop": "off"
+  },
+  "overrides": [
+    {
+      "files": ["install.ts"],
+      "rules": {
+        // The installer is one ordered preflight/install/retire transaction;
+        // splitting it would obscure the sequence that protects user files.
+        "eslint/max-lines-per-function": "off"
+      }
+    },
+    {
+      "files": ["app/src/**/*.tsx"],
+      "rules": {
+        // React view composition naturally concentrates imports and event
+        // wiring; hard line and import counts reward artificial splitting.
+        "eslint/max-lines-per-function": "off",
+        "import/max-dependencies": "off"
+      }
+    },
+    {
+      "files": ["app/src/App.tsx"],
+      "rules": {
+        // These effects synchronize the board with its disk-backed external
+        // store. Their editing/pending/dragging gates intentionally restart
+        // polling as each external lifecycle changes.
+        "react/exhaustive-effect-dependencies": "off",
+        "react/set-state-in-effect": "off"
+      }
+    },
+    {
+      "files": ["app/src/main.tsx"],
+      "rules": {
+        // The browser entrypoint loads the stylesheet for its side effect.
+        "import/no-unassigned-import": "off"
+      }
+    },
+    {
+      "files": ["app/src/components/ui/**/*.tsx"],
+      "rules": {
+        // Stock shadcn primitives intentionally construct their internal
+        // context values and forward association props through composition.
+        "jsx-a11y/label-has-associated-control": "off",
+        "react/jsx-no-constructed-context-values": "off",
+        "unicorn/explicit-length-check": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["app/dist/**"]
+}
