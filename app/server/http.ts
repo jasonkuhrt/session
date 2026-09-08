@@ -32,7 +32,7 @@ const UpdateItem = Schema.Struct({
 const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
-  beforeId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
   body: Schema.optionalKey(Schema.String),
   revision: Schema.String,
 });
@@ -88,7 +88,7 @@ const writeIsSameOrigin = (request: Request): boolean => {
   return (origin === null || origin === url.origin) && fetchSite !== 'cross-site';
 };
 
-const runRepository = <A>(effect: Effect.Effect<A, RepositoryError>) => Effect.runPromise(effect);
+const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 /* eslint-disable max-lines-per-function -- The HTTP boundary is a small linear route table; splitting each route would add indirection without isolating behavior. */
 export const createRequestHandler = async (options: {

@@ -68,7 +68,7 @@ checkout's configuration, and reports the cache import outcome.
 ```
 
 Batch may have several named groups using `# Group name`; ungrouped items are
-also valid. Groups are organization, not new workflow stages. Select any coherent
+also valid and precede the named groups. Groups are organization, not new workflow stages. Select any coherent
 set of ready items to form the next named execution batch.
 
 Execute contains one selected batch. Starting a new batch requires Execute to

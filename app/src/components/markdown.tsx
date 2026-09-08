@@ -1,6 +1,7 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Button } from './ui/button'
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
@@ -31,16 +32,17 @@ export function Markdown({ children, collapseEvidence = false }: { children: str
   )
 }
 
-export function MarkdownLink({ href, children }: { href?: string; children: React.ReactNode }) {
+export function MarkdownLink({ href, children }: { href: string | undefined; children: React.ReactNode }) {
   const [copied, setCopied] = React.useState(false)
   if (!href) return <span>{children}</span>
 
   if (href.startsWith('/') && !href.startsWith('/files/')) {
     return (
-      <span className="path-link">
-        <code>{href}</code>
-        <button
-          type="button"
+      <span className="inline-flex max-w-full items-baseline gap-2">
+        <code className="break-all">{href}</code>
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(href)
@@ -52,7 +54,7 @@ export function MarkdownLink({ href, children }: { href?: string; children: Reac
           }}
         >
           {copied ? 'Copied' : 'Copy path'}
-        </button>
+        </Button>
       </span>
     )
   }

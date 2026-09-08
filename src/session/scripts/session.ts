@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
-import { resolve } from 'node:path';
 import { NodeRuntime, NodeServices } from '@effect/platform-node';
 import * as Console from 'effect/Console';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import * as Path from 'effect/Path';
 import * as Schema from 'effect/Schema';
 import { startServer } from '../../../app/server/http.ts';
 import { makeRepository, type FileInventory } from '../../../app/server/repository.ts';
@@ -19,14 +19,15 @@ const usage = `Usage:
 const PreviousRefresh = Schema.Struct({
   inventory: Schema.Record(Schema.String, Schema.String),
 });
+const PreviousRefreshJson = Schema.fromJsonString(PreviousRefresh);
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
   readonly message: string;
 }> {}
 
-const parseOptions = (args: string[]) => {
+const parseOptions = (path: Path.Path, args: string[]) => {
   const command = args[0];
-  const directory = resolve(args[1] ?? '.');
+  const directory = path.resolve(args[1] ?? '.');
   let port = 3210;
   let previous: string | undefined;
   for (let index = 2; index < args.length; index += 1) {
@@ -39,7 +40,7 @@ const parseOptions = (args: string[]) => {
       }
       index += 1;
     } else if (option === '--previous' && value !== undefined) {
-      previous = resolve(value);
+      previous = path.resolve(value);
       index += 1;
     } else {
       throw new Error(`Unknown option ${option}.`);
@@ -92,12 +93,7 @@ const runRepositoryCommand = (options: ReturnType<typeof parseOptions>) =>
     if (options.previous !== undefined) {
       const fs = yield* FileSystem.FileSystem;
       const encoded = yield* fs.readFileString(options.previous);
-      const parsed = yield* Effect.try({
-        try: () => JSON.parse(encoded) as unknown,
-        catch: (cause) =>
-          new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
-      });
-      const decoded = yield* Schema.decodeUnknownEffect(PreviousRefresh)(parsed);
+      const decoded = yield* Schema.decodeUnknownEffect(PreviousRefreshJson)(encoded);
       previous = decoded.inventory;
     }
     yield* Console.log(
@@ -114,8 +110,9 @@ const runRepositoryCommand = (options: ReturnType<typeof parseOptions>) =>
   });
 
 const program = Effect.gen(function*() {
+  const path = yield* Path.Path;
   const options = yield* Effect.try({
-    try: () => parseOptions(process.argv.slice(2)),
+    try: () => parseOptions(path, process.argv.slice(2)),
     catch: (cause) =>
       new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
   });

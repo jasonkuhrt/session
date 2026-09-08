@@ -1,19 +1,14 @@
-import { Effect, Result, Schema } from 'effect'
+import { Data, Effect, Result, Schema } from 'effect'
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
 import { SessionSchema, type Session, type Stage } from '../../contract'
 
-export class ApiError extends Error {
+export class ApiError extends Data.TaggedError('ApiError')<{
   readonly status: number
-
-  constructor(status: number, message: string) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-  }
-}
+  readonly message: string
+}> {}
 
 function errorMessage(payload: unknown) {
   return typeof payload === 'object' && payload !== null && 'error' in payload && typeof payload.error === 'string'
@@ -29,13 +24,13 @@ const execute = (request: HttpClientRequest.HttpClientRequest) =>
     const payload = yield* response.json
 
     if (response.status < 200 || response.status >= 300) {
-      return yield* Effect.fail(new ApiError(response.status, errorMessage(payload)))
+      return yield* new ApiError({ status: response.status, message: errorMessage(payload) })
     }
 
     return yield* decodeSession(payload)
   })
 
-async function run(program: Effect.Effect<Session, unknown, HttpClient.HttpClient>, signal?: AbortSignal) {
+async function run<E>(program: Effect.Effect<Session, E, HttpClient.HttpClient>, signal?: AbortSignal) {
   const result = await Effect.runPromise(
     program.pipe(Effect.provide(FetchHttpClient.layer), Effect.result),
     { signal },
@@ -48,8 +43,8 @@ export const SessionApi = {
   read: (signal?: AbortSignal) => run(execute(HttpClientRequest.get('/api/session')), signal),
 
   mutate: (path: '/api/item' | '/api/move' | '/api/batch' | '/api/complete', body: Record<string, unknown>) =>
-    run(execute(HttpClientRequest.post(path).pipe(HttpClientRequest.bodyJsonUnsafe(body)))),
+    HttpClientRequest.post(path).pipe(HttpClientRequest.bodyJsonUnsafe(body), execute, run),
 
   saveFile: (body: { stage: Stage; markdown: string; revision: string }) =>
-    run(execute(HttpClientRequest.put('/api/file').pipe(HttpClientRequest.bodyJsonUnsafe(body)))),
+    HttpClientRequest.put('/api/file').pipe(HttpClientRequest.bodyJsonUnsafe(body), execute, run),
 }

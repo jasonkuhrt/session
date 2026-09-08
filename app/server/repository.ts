@@ -33,6 +33,7 @@ const JournalSchema = Schema.Struct({
   version: Schema.Literal(1),
   writes: Schema.Array(JournalWrite),
 });
+const JournalFromJsonString = Schema.fromJsonString(JournalSchema);
 type Journal = typeof JournalSchema.Type;
 
 export type FileInventory = Record<string, string>;
@@ -89,7 +90,7 @@ const placeItem = (
   item: Item,
   beforeId: string | null | undefined,
 ): Item[] => {
-  if (beforeId === undefined || beforeId === null) return [...items, item];
+  if (beforeId === undefined || beforeId === null) return insertItem(stage, items, item);
   const index = items.findIndex((candidate) => candidate.id === beforeId);
   if (index === -1) {
     throw new SessionError({
@@ -97,7 +98,14 @@ const placeItem = (
       message: `${stage}: cannot place ${item.id} before missing item ${beforeId}.`,
     });
   }
-  return [...items.slice(0, index), item, ...items.slice(index)];
+  const firstGrouped = items.findIndex((candidate) => candidate.group !== null);
+  const boundary = firstGrouped === -1 ? items.length : firstGrouped;
+  // Markdown has no header for returning to an ungrouped region. Keep both
+  // kinds on their side of that boundary when a drop crosses it.
+  const insertionIndex = stage === 'BATCH' || stage === 'EXECUTE'
+    ? item.group === null ? Math.min(index, boundary) : Math.max(index, boundary)
+    : index;
+  return [...items.slice(0, insertionIndex), item, ...items.slice(insertionIndex)];
 };
 
 const replaceStage = (
@@ -112,8 +120,8 @@ const replaceStage = (
       : entry,
   );
 
-const decodeJournal = (input: unknown) =>
-  Schema.decodeUnknownEffect(JournalSchema)(input).pipe(
+const decodeJournal = (input: string) =>
+  Schema.decodeUnknownEffect(JournalFromJsonString)(input).pipe(
     Effect.mapError(
       (cause) =>
         new RepositoryError({
@@ -334,8 +342,11 @@ export const makeRepository = (directory: string) =>
           }
         }
 
-        const current = yield* Effect.all(
-          journal.writes.map((write) => readOptional(write.path)),
+        // Oxlint mistakes Effect.forEach's iterable argument for a callback.
+        const current = yield* Effect.forEach(
+          // eslint-disable-next-line unicorn/no-array-callback-reference
+          journal.writes,
+          (write) => readOptional(write.path),
         );
         for (const [index, write] of journal.writes.entries()) {
           const value = current[index]!;
@@ -367,8 +378,7 @@ export const makeRepository = (directory: string) =>
             }),
         ),
       );
-      const parsed = yield* attempt(() => JSON.parse(encoded));
-      const journal = yield* decodeJournal(parsed);
+      const journal = yield* decodeJournal(encoded);
       yield* applyJournal(journal);
     });
 
@@ -409,7 +419,8 @@ export const makeRepository = (directory: string) =>
         if (writes.length === 0) return;
         yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
         const journal: Journal = { version: 1, writes };
-        yield* fs.writeFileString(absolute(journalNextPath), JSON.stringify(journal));
+        const encoded = yield* Schema.encodeEffect(JournalFromJsonString)(journal);
+        yield* fs.writeFileString(absolute(journalNextPath), encoded);
         yield* fs.rename(absolute(journalNextPath), absolute(journalPath));
         yield* applyJournal(journal);
       }).pipe(
@@ -771,4 +782,4 @@ export const makeRepository = (directory: string) =>
     } as const;
   });
 
-export type SessionRepository = Effect.Effect.Success<ReturnType<typeof makeRepository>>;
+export type SessionRepository = Effect.Success<ReturnType<typeof makeRepository>>;

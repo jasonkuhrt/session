@@ -61,14 +61,19 @@ export function DetailDialog({
 
                 return (
                   <Tooltip key={candidate}>
-                    <TooltipTrigger render={<span className="inline-flex w-full" />}>
-                      <ToggleGroupItem
-                        className="w-full"
-                        value={candidate}
-                        disabled={!current && unavailable}
-                      >
-                        {stageMeta[candidate].label}
-                      </ToggleGroupItem>
+                    <TooltipTrigger
+                      render={
+                        <ToggleGroupItem
+                          className="w-full aria-disabled:opacity-50"
+                          value={candidate}
+                          aria-disabled={!current && unavailable}
+                          onPressedChange={(_pressed, details) => {
+                            if (!current && unavailable) details.cancel()
+                          }}
+                        />
+                      }
+                    >
+                      {stageMeta[candidate].label}
                     </TooltipTrigger>
                     <TooltipContent>{current ? stageMeta[candidate].hint : explanation}</TooltipContent>
                   </Tooltip>
