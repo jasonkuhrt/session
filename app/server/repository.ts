@@ -121,7 +121,7 @@ const replaceStage = (
   );
 
 const decodeJournal = (input: string) =>
-  Schema.decodeUnknownEffect(JournalFromJsonString)(input).pipe(
+  Schema.decodeEffect(JournalFromJsonString)(input).pipe(
     Effect.mapError(
       (cause) =>
         new RepositoryError({

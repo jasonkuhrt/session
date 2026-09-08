@@ -93,7 +93,7 @@ const runRepositoryCommand = (options: ReturnType<typeof parseOptions>) =>
     if (options.previous !== undefined) {
       const fs = yield* FileSystem.FileSystem;
       const encoded = yield* fs.readFileString(options.previous);
-      const decoded = yield* Schema.decodeUnknownEffect(PreviousRefreshJson)(encoded);
+      const decoded = yield* Schema.decodeEffect(PreviousRefreshJson)(encoded);
       previous = decoded.inventory;
     }
     yield* Console.log(
