@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session"
+  short_description: "Triage, design, batch, and execute session work"
+  default_prompt: "Use $session to refresh and organize this task's work in .session."

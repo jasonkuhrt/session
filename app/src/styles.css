@@ -1,0 +1,357 @@
+@import "tailwindcss";
+@source "./**/*.{ts,tsx}";
+
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #09090b;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -30%, rgba(255, 255, 255, 0.055), transparent 42rem),
+    #09090b;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.ambient {
+  position: fixed;
+  z-index: 0;
+  width: 28rem;
+  height: 28rem;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0.07;
+  filter: blur(110px);
+}
+
+.ambient-one {
+  top: -14rem;
+  left: 8%;
+  background: #8b5cf6;
+}
+
+.ambient-two {
+  top: 20%;
+  right: -17rem;
+  background: #0ea5e9;
+}
+
+.stage-column {
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.018);
+}
+
+.stage-dot,
+.stage-edge {
+  background: var(--stage-color);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--stage-color), transparent 35%);
+}
+
+.batch-checkbox {
+  appearance: none;
+  display: grid;
+  place-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  transition: 140ms ease;
+}
+
+.batch-checkbox::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  content: "";
+  border-radius: 0.125rem;
+  background: #09090b;
+  transform: scale(0);
+  transition: 120ms ease;
+}
+
+.batch-checkbox:checked {
+  border-color: var(--stage-color);
+  background: var(--stage-color);
+}
+
+.batch-checkbox:checked::before {
+  transform: scale(1);
+}
+
+.batch-checkbox:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.85rem;
+  outline: none;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.75rem 0.9rem;
+  color: #f4f4f5;
+  transition: 160ms ease;
+}
+
+.field::placeholder {
+  color: #52525b;
+}
+
+.field:focus {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.025);
+}
+
+.markdown-reader {
+  max-width: 48rem;
+  color: #d4d4d8;
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.markdown-reader > :first-child,
+.markdown-reader details > div > :first-child {
+  margin-top: 0;
+}
+
+.markdown-reader > :last-child,
+.markdown-reader details > div > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-reader h1,
+.markdown-reader h2,
+.markdown-reader h3,
+.markdown-reader h4 {
+  color: #fafafa;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.markdown-reader h1 {
+  margin: 2.4rem 0 1rem;
+  font-size: 2rem;
+}
+
+.markdown-reader h2 {
+  margin: 2.25rem 0 0.85rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 1.4rem;
+}
+
+.markdown-reader h3 {
+  margin: 2rem 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.markdown-reader h4 {
+  margin: 1.5rem 0 0.6rem;
+  font-size: 1rem;
+}
+
+.markdown-reader p,
+.markdown-reader ul,
+.markdown-reader ol,
+.markdown-reader blockquote,
+.markdown-reader pre,
+.markdown-reader table {
+  margin: 0.9rem 0;
+}
+
+.markdown-reader ul,
+.markdown-reader ol {
+  padding-left: 1.4rem;
+}
+
+.markdown-reader li {
+  margin: 0.35rem 0;
+  padding-left: 0.2rem;
+}
+
+.markdown-reader li::marker {
+  color: #71717a;
+}
+
+.markdown-reader a {
+  color: #a5b4fc;
+  text-decoration: underline;
+  text-decoration-color: rgba(165, 180, 252, 0.35);
+  text-underline-offset: 0.2em;
+}
+
+.markdown-reader a:hover {
+  color: #c7d2fe;
+}
+
+.path-link {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.55rem;
+  vertical-align: middle;
+}
+
+.path-link code {
+  overflow-wrap: anywhere;
+}
+
+.path-link button {
+  flex: none;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.45rem;
+  color: #d4d4d8;
+  font-size: 13px;
+}
+
+.path-link button:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+
+.markdown-reader strong {
+  color: #f4f4f5;
+  font-weight: 650;
+}
+
+.markdown-reader blockquote {
+  border-left: 2px solid #71717a;
+  padding: 0.15rem 0 0.15rem 1.2rem;
+  color: #a1a1aa;
+}
+
+.markdown-reader code {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0.12rem 0.35rem;
+  color: #e4e4e7;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.83em;
+}
+
+.markdown-reader pre {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.9rem;
+  background: #0a0a0c;
+  padding: 1.1rem 1.2rem;
+}
+
+.markdown-reader pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.markdown-reader table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.markdown-reader th,
+.markdown-reader td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.65rem 0.8rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-reader th {
+  color: #f4f4f5;
+  font-weight: 650;
+}
+
+.markdown-reader hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.markdown-reader input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: #a78bfa;
+}
+
+.evidence-panel {
+  margin-top: 2.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 1rem;
+}
+
+.evidence-panel summary {
+  cursor: pointer;
+  color: #a1a1aa;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: color 140ms ease;
+}
+
+.evidence-panel summary:hover {
+  color: #f4f4f5;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes sheet-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes sheet-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@media (max-width: 639px) {
+  .ambient {
+    width: 18rem;
+    height: 18rem;
+  }
+
+  .markdown-reader { font-size: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

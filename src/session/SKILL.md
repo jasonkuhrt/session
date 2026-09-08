@@ -1,110 +1,65 @@
 ---
 name: session
-description: >-
-  Manage sessions, threads, and session wiring. Use when the user mentions
-  sessions, threads, plans, reviews, claims, debriefs, or session sync/doctor.
-  Also triggered by natural language like "create a thread", "what threads are
-  open", "close this thread", "show me the session", "sync the session",
-  "check session health", "claim the frontend thread", "lock the plan",
-  "add a task", or "what's the session status".
-argument-hint: "[instruction]"
+description: Manage .session as the working record for Triage, Design, Batch, and Execute. Use when organizing session work, deciding or batching items, refreshing context, maintaining the four Markdown files, or opening the session board.
 ---
 
-# /session
+# Session
 
-Interpret the user's instruction, resolve the operation, and execute via the session CLI.
+One item, one file, one meaning. The four files are work states, not a mandatory
+sequence; simple work can skip Design. The user owns priorities, acceptance,
+batch composition, and when execution begins.
 
-## CLI
+| File | Contains | Leaves when |
+| --- | --- | --- |
+| `TRIAGE.md` | Candidates not yet accepted for work. | The user accepts, rejects, or redirects the candidate. |
+| `DESIGN.md` | Accepted work with unresolved consequential design questions. | Its outcome and acceptance conditions are settled. |
+| `BATCH.md` | Settled work being grouped for execution. | The user selects a batch to execute. |
+| `EXECUTE.md` | The current selected batch. | Each item reaches its agreed completion, or the user changes the batch. |
 
-```
-~/.claude/skills/session/scripts/session.sh <command>
-```
+Finished designs leave `DESIGN.md` immediately. Readiness does not authorize
+execution. New ready items wait in `BATCH.md` while a batch is running. Do not
+append them to `EXECUTE.md` without the user's explicit change of scope.
 
-All session operations go through this CLI. Never mkdir, mv, or rm session dirs directly.
+## Work with the files
 
-## Operations
+Use the active worktree's `.session` directory, resolving its symlink. Never
+change checkouts just to refresh context. Keep records directly readable and
+editable as Markdown; the board reads and writes those same files.
 
-Resolve the user's natural language to one of these:
+Read [references/records.md](references/records.md) when creating, migrating, or
+moving items. It defines the small stage-specific format and supporting folders.
+Use stable IDs across stages. Do not infer authorization from an old filename,
+confidence label, or another agent's suggestion; reconcile the conversation.
 
-### Wiring
+Before acting, refresh changed context with the CLI described in
+[references/operations.md](references/operations.md). Load the four stage files
+and only relevant supporting context. Keep the path/hash inventory in the
+conversation; read changed files and avoid reloading unchanged material.
+`ignore/` and `.runtime/` are outside normal context: do not traverse, read,
+summarize, or follow links into them during a refresh. Read inactive history only
+when the user asks for it.
 
-| Intent | Command |
-|--------|---------|
-| show session state | `context` |
-| one-line summary | `context --brief` |
-| sync session wiring | `sync` |
-| sync all worktrees | `sync-all` |
-| check session health | `doctor` |
-| show session status | `status` |
+## Design and execute
 
-### Thread Lifecycle
+Use `design-together` for consequential choices and `show-me` for a focused
+explanation or prototype. Keep settled choices with the item as it moves; don't
+leave a finished copy in Design. Resolve incidental implementation choices using
+the accepted intent. If execution exposes a consequential change, discuss it
+and update the affected item's state rather than quietly changing the contract.
 
-| Intent | Command |
-|--------|---------|
-| create a thread | `thread create <slug> [--plan]` |
-| complete/close a thread | invoke `/session:thread:land` (audit first) |
-| force-close a thread | `thread done <slug> [--force] [--note "..."]` |
-| resume/reopen a thread | `thread resume <n>` |
-| list threads | `thread list` |
-| show thread details | `thread show <slug>` |
-| check if thread exists | `thread exists <slug>` |
-| set/get current thread | `thread which [<slug>]` |
+Execution continues through the agreed outcome, including verification and
+landing when requested. A task is not complete merely because only tests or CI
+remain. Remove completed items from the active file. Empty stages are literally
+zero-byte files; completion records go under `ignore/`, outside live context.
 
-### Thread Content
+## Board and validation
 
-| Intent | Command |
-|--------|---------|
-| add a task | `thread tasks add <slug> <item> [--section Active\|Todo]` |
-| check off a task | `thread tasks check <slug> <line>` |
-| lock/freeze the plan | `thread plan lock <slug>` |
-| create a review | `thread review create <slug> <name>` |
-| close a review | `thread review close <slug> <name>` |
+For the app, launch command, and file operations, read
+[references/operations.md](references/operations.md). Stage names in the UI and
+filenames are exactly **Triage, Design, Batch, Execute**. The UI owns no second
+copy of work state. Do not recreate a per-task viewer, content module, or queue.
 
-### Coordination
-
-| Intent | Command |
-|--------|---------|
-| claim a thread | `thread claim set <slug>` |
-| release a claim | `thread claim release <slug>` |
-| check who claimed | `thread claim check <slug>` |
-| show event log | `log-show [--tail <n>]` |
-
-### Debrief
-
-| Intent | Command |
-|--------|---------|
-| write a debrief | invoke `/session:debrief` |
-
-## Slug Resolution
-
-When the user names a thread informally ("the schema thread", "my thread", "frontend"), resolve to a slug:
-
-1. Check `thread which` for the current thread marker.
-2. Match against active thread slugs from `thread list`.
-3. If ambiguous, ask.
-
-When creating, slugify: lowercase, hyphens only, no dots. "Schema Transport Research" → `schema-transport-research`.
-
-## Announce, Don't Block
-
-After resolving the command, announce what you're about to do and execute immediately. Don't wait for confirmation — the announcement is for transparency, not gating.
-
-```
-Running: session thread create schema-transport --plan
-```
-
-## Reference
-
-For full conventions, worktree model, naming grammar, and protocol details: `~/.claude/skills/session/reference.md`. Single source of truth — read it if the inject block wasn't loaded or you need a refresh.
-
-## Context Injection
-
-`context --inject` outputs a compact block for hook injection. When wired as a session-start hook, agents get session state + routing conventions automatically.
-
-## Related Skills
-
-- `/session:thread:land` — closeout audit before completing a thread
-- `/session:retro` — synthesize all debriefs into a retrospective
-- `/session:dashboard` — thread timeline, agent roster, commit counts
-- `/session:thread:handoff` — structured handoff brief + claim transfer
-- `/session:debrief` — reflective debrief written at thread close
+Validate after editing or migrating records. The checker proves structural
+invariants, not that a design is sound or the user agreed. The agent still owns
+those judgments. Keep explanations short, titles concrete, and detailed evidence
+out of the first reading view.

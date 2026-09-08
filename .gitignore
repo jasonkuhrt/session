@@ -3,3 +3,9 @@ CLAUDE.local.md
 
 # git-hooks local state
 .local/
+
+node_modules/
+app/dist/
+migration/
+.sessions/
+.session
