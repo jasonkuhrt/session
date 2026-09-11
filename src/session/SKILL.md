@@ -1,6 +1,6 @@
 ---
 name: session
-description: Manage .session as the working record for Triage, Design, Batch, and Execute. Use when organizing session work, deciding or batching items, refreshing context, maintaining the four Markdown files, or opening the session board.
+description: Manage .session as the working record for Triage, Design, Batch, and Execute, under the session's standing rules. Use when organizing session work, deciding or batching items, refreshing context, maintaining the four Markdown files or RULES.md, or opening the session board.
 ---
 
 # Session
@@ -20,6 +20,19 @@ Finished designs leave `DESIGN.md` immediately. Readiness does not authorize
 execution. New ready items wait in `BATCH.md` while a batch is running. Do not
 append them to `EXECUTE.md` without the user's explicit change of scope.
 
+## Rules
+
+`RULES.md` at the session root holds the user's standing working procedure for
+this session: who stages and commits, what qualifies as work, what is closed
+for now, and the roles of the agents sharing the worktree. It is ad hoc and
+per session; it is not a record, a plan, or a checkpoint, and it holds no items.
+
+Read it first in every session and again whenever a refresh reports it changed.
+It governs over habits, memories, and defaults for as long as the session
+lasts. Write it only from the user's own words, naming who set each rule and
+when; never add, relax, or reinterpret a rule on the agent's initiative. A
+session without standing rules has no `RULES.md`; `init` does not scaffold one.
+
 ## Work with the files
 
 Use the active worktree's `.session` directory, resolving its symlink. Never
@@ -32,9 +45,10 @@ Use stable IDs across stages. Do not infer authorization from an old filename,
 confidence label, or another agent's suggestion; reconcile the conversation.
 
 Before acting, refresh changed context with the CLI described in
-[references/operations.md](references/operations.md). Load the four stage files
-and only relevant supporting context. Keep the path/hash inventory in the
-conversation; read changed files and avoid reloading unchanged material.
+[references/operations.md](references/operations.md). Load `RULES.md` when it
+exists, the four stage files, and only relevant supporting context. Keep the
+path/hash inventory in the conversation; read changed files and avoid reloading
+unchanged material.
 `ignore/` and `.runtime/` are outside normal context: do not traverse, read,
 summarize, or follow links into them during a refresh. Read inactive history only
 when the user asks for it.

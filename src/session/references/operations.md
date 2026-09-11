@@ -11,14 +11,16 @@ bun ~/.codex/skills/session/scripts/session.ts serve /absolute/path/to/worktree 
 ```
 
 `init` creates only missing stage files and preserves existing content. `serve`
-also initializes missing files; `check` reports an incomplete setup.
+also initializes missing files; `check` reports an incomplete setup. Neither
+creates `RULES.md`: standing rules are written from the user's words when the
+user states them, and the inventory reports the file like any other.
 
 ## Refresh context
 
 `refresh` returns a JSON path/hash inventory and added, changed, and deleted
-paths. It does not return file contents. On the first refresh, read the four stage
-files and relevant supporting context. On later turns, compare inventories and
-read only changed relevant files. Preserve the inventory in conversation context.
+paths. It does not return file contents. On the first refresh, read `RULES.md`
+when it exists, the four stage files, and relevant supporting context. On later
+turns, compare inventories and read only changed relevant files. Preserve the inventory in conversation context.
 For a deterministic comparison, pass a previous refresh output saved outside the
 session directory:
 

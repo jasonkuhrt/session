@@ -37,9 +37,10 @@ to the tab. Refresh pauses during editing and dragging. Mutations check the sour
 cannot overwrite a later file edit. A recoverable journal protects file moves.
 
 The [skill](src/session/SKILL.md) owns the workflow and
-[record format](src/session/references/records.md). Supporting evidence belongs
-under `context/`; completed records live under `ignore/` and are not loaded as
-active context.
+[record format](src/session/references/records.md). The user's standing rules
+for a session live in `RULES.md` at the session root and are read first;
+supporting evidence belongs under `context/`; completed records live under
+`ignore/` and are not loaded as active context.
 
 ## Project contracts
 

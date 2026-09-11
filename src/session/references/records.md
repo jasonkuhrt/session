@@ -1,10 +1,12 @@
 # Records
 
-The root has four stage files. Supporting context lives in `context/` when
-needed. `ignore/` contains inactive history; `.runtime/` is the app's recovery
-machinery. Neither is ordinary agent context. Existing supporting files should
-be migrated deliberately, preserving evidence and links rather than discarding
-them because their names differ from the new convention.
+The root has four stage files and, when the user has set standing rules for
+the session, `RULES.md` (see the skill's Rules section). Supporting context
+lives in `context/` when needed. `ignore/` contains inactive history;
+`.runtime/` is the app's recovery machinery. Neither is ordinary agent context.
+Existing supporting files should be migrated deliberately, preserving evidence
+and links rather than discarding them because their names differ from the new
+convention.
 
 Each item starts with `## ID — Short title`. IDs are unique across all four
 files and survive moves. The body is ordinary Markdown: a short lead paragraph,
