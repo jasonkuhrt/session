@@ -3,16 +3,10 @@ import { Schema } from 'effect';
 export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
 export type Stage = typeof stageNames[number];
 
-/** Stages whose items belong to a named batch, rendered as `# Batch name` headings. */
+/** Stages whose items belong to a named batch, held in a batch directory. */
 export type BatchedStage = 'QUEUE' | 'EXECUTE';
 export const isBatchedStage = (stage: Stage): stage is BatchedStage =>
   stage === 'QUEUE' || stage === 'EXECUTE';
-
-/** A stage is one Markdown file until it passes this many lines; then it is a directory of item files. */
-export const stageFileLineLimit = 500;
-
-export const stageLayouts = ['file', 'directory'] as const;
-export type StageLayout = typeof stageLayouts[number];
 
 export type Item = {
   id: string;
@@ -21,15 +15,15 @@ export type Item = {
   summary: string;
   /** The batch the item belongs to. Always set in QUEUE and EXECUTE, never elsewhere. */
   batch: string | null;
+  /** The item's file, relative to the session root: `TRIAGE/010-BE-1.md` or `QUEUE/010-Name/010-BE-1.md`. */
+  path: string;
 };
 
+/** A stage is a directory of item files; its listing order is card order. */
 export type StageFile = {
   stage: Stage;
-  layout: StageLayout;
-  /** Absolute path of `STAGE.md` or of the `STAGE/` directory. */
+  /** Absolute path of the `STAGE/` directory. */
   path: string;
-  /** The whole stage as Markdown; for a directory stage, the rendered concatenation of its item files. */
-  markdown: string;
   items: Item[];
 };
 
@@ -50,6 +44,7 @@ export const ItemSchema = Schema.Struct({
   body: Schema.String,
   summary: Schema.String,
   batch: Schema.NullOr(Schema.String),
+  path: Schema.String,
 });
 
 export const SessionSchema = Schema.Struct({
@@ -62,9 +57,7 @@ export const SessionSchema = Schema.Struct({
   })),
   stages: Schema.Array(Schema.Struct({
     stage: Schema.Literals(stageNames),
-    layout: Schema.Literals(stageLayouts),
     path: Schema.String,
-    markdown: Schema.String,
     items: Schema.Array(ItemSchema).pipe(Schema.mutable),
   })).pipe(Schema.mutable),
 });

@@ -1,12 +1,11 @@
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import * as Crypto from 'effect/Crypto';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
-import * as Schema from 'effect/Schema';
 import * as Semaphore from 'effect/Semaphore';
-import type { Item, Session, Stage, StageFile, StageLayout } from '../contract.ts';
-import { isBatchedStage, stageFileLineLimit, stageNames } from '../contract.ts';
+import type { Item, Session, Stage, StageFile } from '../contract.ts';
+import { isBatchedStage, stageNames } from '../contract.ts';
 import {
   parseStageDirectory,
   renderStageDirectory,
@@ -16,40 +15,23 @@ import {
 import {
   fail,
   findRequiredItem,
+  type ItemDraft,
   makeItem,
   parseStageMarkdown,
   quote,
   renderItem,
-  renderStageMarkdown,
   SessionError,
-  validateBatchName,
   validateItem,
+  validateItemSections,
   validateUniqueIds,
 } from './model.ts';
 
-/* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its journal protocol and closures would obscure the invariants they share. */
+/* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
 const encoder = new TextEncoder();
 const archivePath = 'ignore/COMPLETED.md';
 const gitignorePath = '.gitignore';
 const gitignoreContent = '*\n';
-const journalPath = '.runtime/transaction.json';
-const journalNextPath = '.runtime/transaction.next.json';
-const accessLockPath = '.runtime/access.lock';
-
-/** `null` is "the file is absent", which a rename or a split needs on both sides. */
-const JournalWrite = Schema.Struct({
-  path: Schema.String,
-  before: Schema.NullOr(Schema.String),
-  after: Schema.NullOr(Schema.String),
-});
-const JournalSchema = Schema.Struct({
-  version: Schema.Literal(2),
-  writes: Schema.Array(JournalWrite),
-});
-const JournalFromJsonString = Schema.fromJsonString(JournalSchema);
-type Journal = typeof JournalSchema.Type;
-type PendingWrite = typeof JournalWrite.Type;
 
 export type FileInventory = Record<string, string>;
 
@@ -81,15 +63,16 @@ const attempt = <A>(operation: () => A) =>
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
-/** `wc -l`: the number of newlines, which is what the 500-line rule counts. */
-const lineCount = (markdown: string): number => markdown.split('\n').length - 1;
+/** One file to write, or to delete when `content` is null. */
+type FileChange = {
+  readonly path: string;
+  readonly content: string | null;
+};
 
 /** A stage plus the files that carry it, so a mutation can diff them. */
 type StageState = {
   readonly stage: Stage;
-  readonly layout: StageLayout;
   readonly path: string;
-  readonly markdown: string;
   readonly items: Item[];
   readonly files: ReadonlyArray<StageFileEntry>;
 };
@@ -102,9 +85,7 @@ type Loaded = {
 
 const toStageFile = (state: StageState): StageFile => ({
   stage: state.stage,
-  layout: state.layout,
   path: state.path,
-  markdown: state.markdown,
   items: state.items,
 });
 
@@ -117,61 +98,54 @@ const toSession = (loaded: Loaded): Session => ({
 const stageOf = (loaded: Loaded, stage: Stage): StageState =>
   loaded.stages.find((entry) => entry.stage === stage)!;
 
+const draftOf = (item: ItemDraft, batch: string | null): ItemDraft => ({
+  id: item.id,
+  title: item.title,
+  body: item.body,
+  summary: item.summary,
+  batch,
+});
+
 const projected = (
   loaded: Loaded,
-  updates: ReadonlyArray<{ readonly stage: Stage; readonly items: ReadonlyArray<Item> }>,
+  updates: ReadonlyArray<{ readonly stage: Stage; readonly items: ReadonlyArray<ItemDraft> }>,
 ) =>
   loaded.stages.map((state) => ({
     stage: state.stage,
     items: updates.find((update) => update.stage === state.stage)?.items ?? state.items,
   }));
 
-/** The files a transaction must create, rewrite, or delete to reach `desired`. */
+/** The files a mutation must write or remove to reach `desired`. */
 const diffFiles = (
   current: ReadonlyArray<StageFileEntry>,
   desired: ReadonlyArray<StageFileEntry>,
-): PendingWrite[] => {
+): FileChange[] => {
   const currentByPath = new Map(current.map((entry) => [entry.path, entry.content] as const));
   const desiredPaths = new Set(desired.map((entry) => entry.path));
-  const writes: PendingWrite[] = [];
+  const changes: FileChange[] = [];
   for (const entry of desired) {
-    const before = currentByPath.get(entry.path) ?? null;
-    if (before !== entry.content) writes.push({ path: entry.path, before, after: entry.content });
-  }
-  for (const entry of current) {
-    if (!desiredPaths.has(entry.path)) {
-      writes.push({ path: entry.path, before: entry.content, after: null });
+    if (currentByPath.get(entry.path) !== entry.content) {
+      changes.push({ path: entry.path, content: entry.content });
     }
   }
-  return writes;
+  for (const entry of current) {
+    if (!desiredPaths.has(entry.path)) changes.push({ path: entry.path, content: null });
+  }
+  return changes;
 };
 
-/**
- * The stage's files after this change. A file-layout stage that would pass the
- * line limit becomes a directory in the same transaction; the conversion never
- * reverses.
- */
-const stageWrites = (
-  state: StageState,
-  items: ReadonlyArray<Item>,
-  options?: { readonly directory?: boolean | undefined },
-): PendingWrite[] => {
-  const markdown = renderStageMarkdown(state.stage, items);
-  const asDirectory = state.layout === 'directory' ||
-    options?.directory === true ||
-    lineCount(markdown) > stageFileLineLimit;
-  const desired = asDirectory
-    ? renderStageDirectory({ stage: state.stage, items, current: state.files })
-    : [{ path: `${state.stage}.md`, content: markdown }];
-  return diffFiles(state.files, desired);
-};
+const stageChanges = (state: StageState, items: ReadonlyArray<ItemDraft>): FileChange[] =>
+  diffFiles(
+    state.files,
+    renderStageDirectory({ stage: state.stage, items, current: state.files }),
+  );
 
 const placeItem = (
   stage: Stage,
-  items: ReadonlyArray<Item>,
-  item: Item,
+  items: ReadonlyArray<ItemDraft>,
+  item: ItemDraft,
   beforeId: string | null | undefined,
-): Item[] => {
+): ItemDraft[] => {
   const insertAt = (index: number) => [...items.slice(0, index), item, ...items.slice(index)];
   const indexOfBefore = (from: number, to: number) => {
     const index = items.findIndex((candidate) => candidate.id === beforeId);
@@ -201,39 +175,6 @@ const placeItem = (
   return insertAt(indexOfBefore(start, end));
 };
 
-const decodeJournal = (input: string) =>
-  Schema.decodeEffect(JournalFromJsonString)(input).pipe(
-    Effect.mapError(
-      (cause) =>
-        new RepositoryError({
-          kind: 'conflict',
-          message:
-            'The session transaction journal is not a version 2 journal. Inspect .runtime/transaction.json, apply or discard it by hand, and remove it.',
-          cause,
-        }),
-    ),
-  );
-
-const safeSegments = (segments: ReadonlyArray<string>): boolean =>
-  segments.every(
-    (segment) =>
-      segment !== '' &&
-      segment !== '.' &&
-      segment !== '..' &&
-      segment !== 'ignore' &&
-      segment !== '.runtime',
-  );
-
-/** Stage files, stage item files, and the completion archive; nothing else. */
-const isJournalPath = (path: string): boolean => {
-  if (path === archivePath) return true;
-  const segments = path.split('/');
-  if (!safeSegments(segments)) return false;
-  const head = segments[0]!;
-  if (segments.length === 1) return stageNames.some((stage) => head === `${stage}.md`);
-  return stageNames.some((stage) => head === stage) && path.endsWith('.md');
-};
-
 const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: string) => {
   if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) {
     throw new SessionError({
@@ -246,7 +187,7 @@ const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: str
 const isExcludedRealPath = (realRoot: string, candidate: string): boolean =>
   relative(realRoot, candidate)
     .split(sep)
-    .some((segment) => segment === 'ignore' || segment === '.runtime');
+    .some((segment) => segment === 'ignore');
 
 export const makeRepository = (directory: string) =>
   Effect.gen(function*() {
@@ -263,58 +204,6 @@ export const makeRepository = (directory: string) =>
         return (yield* fs.stat(path)).type;
       });
 
-    const writeIfAbsent = (path: string, content: string) =>
-      fs.writeFileString(path, content, { flag: 'wx' }).pipe(
-        Effect.catch((cause) =>
-          fs.exists(path).pipe(
-            Effect.flatMap((exists) => exists ? Effect.void : Effect.fail(cause)),
-          ),
-        ),
-      );
-
-    const initialize = Effect.gen(function*() {
-      yield* fs.makeDirectory(root, { recursive: true });
-      for (const stage of stageNames) {
-        const layouts = yield* Effect.all([
-          fs.exists(absolute(`${stage}.md`)),
-          fs.exists(absolute(stage)),
-        ]);
-        if (layouts.includes(true)) continue;
-        yield* writeIfAbsent(absolute(`${stage}.md`), '');
-      }
-      yield* writeIfAbsent(absolute(gitignorePath), gitignoreContent);
-    }).pipe(Effect.mapError(asRepositoryError));
-
-    const acquireDiskLock = Effect.gen(function*() {
-      yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
-      const token = yield* crypto.randomUUIDv4;
-      yield* fs.writeFileString(absolute(accessLockPath), token, { flag: 'wx' }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new RepositoryError({
-              kind: 'conflict',
-              message:
-                'Another session process owns this directory. If it crashed, stop all session processes, remove .runtime/access.lock, and retry to recover its journal.',
-              cause,
-            }),
-        ),
-      );
-      return token;
-    }).pipe(Effect.mapError(asRepositoryError));
-
-    const releaseDiskLock = (token: string) =>
-      Effect.gen(function*() {
-        if (!(yield* fs.exists(absolute(accessLockPath)))) return;
-        if ((yield* fs.readFileString(absolute(accessLockPath))) === token) {
-          yield* fs.remove(absolute(accessLockPath));
-        }
-      }).pipe(Effect.mapError(asRepositoryError));
-
-    const withExclusiveAccess = <A, E>(effect: Effect.Effect<A, E>) =>
-      semaphore.withPermit(
-        Effect.acquireUseRelease(acquireDiskLock, () => effect, releaseDiskLock),
-      );
-
     const digestBytes = (content: Uint8Array) =>
       crypto.digest('SHA-256', content).pipe(
         Effect.map((bytes) => toHex(bytes)),
@@ -329,7 +218,7 @@ export const makeRepository = (directory: string) =>
       );
     const digest = (content: string) => digestBytes(encoder.encode(content));
 
-    /** `null` when the file is absent, which the journal records as such. */
+    /** `null` when the file is absent. */
     const readMaybe = (relativePath: string) =>
       Effect.gen(function*() {
         const path = absolute(relativePath);
@@ -346,133 +235,16 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
-    const readStageTree = (stageDirectory: string) =>
-      Effect.gen(function*() {
-        const entries: StageTreeEntry[] = [];
-        for (const name of (yield* fs.readDirectory(stageDirectory)).toSorted()) {
-          if (name.startsWith('.')) continue;
-          const child = join(stageDirectory, name);
-          const info = yield* fs.stat(child);
-          if (info.type !== 'Directory') {
-            entries.push({
-              name,
-              type: 'file',
-              content: yield* fs.readFileString(child),
-              children: [],
-            });
-            continue;
-          }
-          const children: Array<StageTreeEntry['children'][number]> = [];
-          for (const innerName of (yield* fs.readDirectory(child)).toSorted()) {
-            if (innerName.startsWith('.')) continue;
-            const inner = join(child, innerName);
-            const innerInfo = yield* fs.stat(inner);
-            const isDirectory = innerInfo.type === 'Directory';
-            children.push({
-              name: innerName,
-              type: isDirectory ? 'directory' : 'file',
-              content: isDirectory ? '' : yield* fs.readFileString(inner),
-            });
-          }
-          entries.push({ name, type: 'directory', content: '', children });
-        }
-        return entries;
-      });
-
-    const readStageState = (stage: Stage) =>
-      Effect.gen(function*() {
-        const filePath = absolute(`${stage}.md`);
-        const directoryPath = absolute(stage);
-        const [fileType, directoryType] = yield* Effect.all([
-          pathType(filePath),
-          pathType(directoryPath),
-        ]);
-        if (fileType !== null && directoryType === 'Directory') {
-          return yield* new RepositoryError({
-            kind: 'validation',
-            message: `Session has both ${stage}.md and ${stage}/. Keep one of them.`,
-          });
-        }
-        if (directoryType === 'Directory') {
-          const tree = yield* readStageTree(directoryPath);
-          const parsed = yield* attempt(() => parseStageDirectory(stage, tree));
-          const markdown = yield* attempt(() => renderStageMarkdown(stage, parsed.items));
-          return {
-            stage,
-            layout: 'directory',
-            path: directoryPath,
-            markdown,
-            items: parsed.items,
-            files: parsed.files,
-          } satisfies StageState;
-        }
-        if (fileType === null) {
-          return yield* new RepositoryError({
-            kind: 'not-found',
-            message: `Session is missing ${stage}.md. Run \`session init\`.`,
-          });
-        }
-        const markdown = yield* fs.readFileString(filePath);
-        const items = yield* attempt(() => parseStageMarkdown(stage, markdown));
-        return {
-          stage,
-          layout: 'file',
-          path: filePath,
-          markdown,
-          items,
-          files: [{ path: `${stage}.md`, content: markdown }],
-        } satisfies StageState;
-      }).pipe(Effect.mapError(asRepositoryError));
-
-    const readMarkdownFile = (relativePath: string) =>
-      Effect.gen(function*() {
-        const segments = relativePath.split(/[\\/]/u);
-        if (
-          !relativePath.endsWith('.md') ||
-          relativePath.startsWith('/') ||
-          !safeSegments(segments)
-        ) {
-          return yield* new RepositoryError({
-            kind: 'not-found',
-            message: 'Markdown file is outside the live session.',
-          });
-        }
-        const stage = stageNames.find((candidate) => relativePath === `${candidate}.md`);
-        if (stage !== undefined && (yield* pathType(absolute(stage))) === 'Directory') {
-          return (yield* readStageState(stage)).markdown;
-        }
-        const realRoot = yield* fs.realPath(root);
-        const candidate = absolute(relativePath);
-        if (!(yield* fs.exists(candidate))) {
-          return yield* new RepositoryError({
-            kind: 'not-found',
-            message: `${relativePath} does not exist.`,
-          });
-        }
-        const realCandidate = yield* fs.realPath(candidate);
-        yield* attempt(() => ensureInsideRoot(realRoot, realCandidate, relativePath));
-        if (isExcludedRealPath(realRoot, realCandidate)) {
-          return yield* new RepositoryError({
-            kind: 'not-found',
-            message: 'Markdown file is outside the live session.',
-          });
-        }
-        const info = yield* fs.stat(realCandidate);
-        if (info.type !== 'File') {
-          return yield* new RepositoryError({
-            kind: 'not-found',
-            message: `${relativePath} is not a file.`,
-          });
-        }
-        return yield* fs.readFileString(realCandidate);
-      }).pipe(Effect.mapError(asRepositoryError));
-
-    const atomicWrite = (relativePath: string, content: string, index: number) =>
+    /**
+     * Write through a dot-prefixed neighbour, which the directory parser
+     * ignores, then rename inside the same directory so the swap is atomic.
+     */
+    const atomicWrite = (relativePath: string, content: string) =>
       Effect.gen(function*() {
         const target = absolute(relativePath);
-        const temp = absolute(`.runtime/write-${index}.tmp`);
-        yield* fs.makeDirectory(dirname(target), { recursive: true });
-        yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
+        const parent = dirname(target);
+        yield* fs.makeDirectory(parent, { recursive: true });
+        const temp = join(parent, `.${basename(target)}.tmp`);
         yield* fs.writeFileString(temp, content);
         yield* fs.rename(temp, target);
       }).pipe(
@@ -526,104 +298,146 @@ export const makeRepository = (directory: string) =>
       ),
     );
 
-    const removeJournal = Effect.gen(function*() {
-      if (yield* fs.exists(absolute(journalPath))) {
-        yield* fs.remove(absolute(journalPath));
-      }
-    }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new RepositoryError({
-            kind: 'io',
-            message: 'Could not remove the completed transaction journal.',
-            cause,
-          }),
-      ),
-    );
-
-    const applyJournal = (journal: Journal) =>
+    /**
+     * Writes land before deletes. A crash between them leaves an item in two
+     * places, which `check` reports as a duplicate ID and the user resolves by
+     * deleting one file; the reverse order would lose the item.
+     */
+    const applyChanges = (changes: ReadonlyArray<FileChange>) =>
       Effect.gen(function*() {
-        for (const write of journal.writes) {
-          if (!isJournalPath(write.path)) {
-            return yield* new RepositoryError({
-              kind: 'conflict',
-              message: `Transaction journal contains unsafe path ${write.path}.`,
-            });
-          }
+        if (changes.length === 0) return;
+        for (const change of changes) {
+          if (change.content !== null) yield* atomicWrite(change.path, change.content);
         }
-
-        // Oxlint mistakes Effect.forEach's iterable argument for a callback.
-        const current = yield* Effect.forEach(
-          // eslint-disable-next-line unicorn/no-array-callback-reference
-          journal.writes,
-          (write) => readMaybe(write.path),
-        );
-        for (const [index, write] of journal.writes.entries()) {
-          const value = current[index]!;
-          if (value !== write.before && value !== write.after) {
-            return yield* new RepositoryError({
-              kind: 'conflict',
-              message: `Recovery stopped because ${write.path} changed outside the session app.`,
-            });
-          }
+        for (const change of changes) {
+          if (change.content === null) yield* removeFile(change.path);
         }
-
-        for (const [index, write] of journal.writes.entries()) {
-          if (current[index] !== write.before) continue;
-          if (write.after === null) yield* removeFile(write.path);
-          else yield* atomicWrite(write.path, write.after, index);
-        }
-        yield* removeJournal;
         yield* pruneEmptyDirectories;
       });
 
-    const recover = Effect.gen(function*() {
-      if (!(yield* fs.exists(absolute(journalPath)))) return;
-      const encoded = yield* fs.readFileString(absolute(journalPath)).pipe(
-        Effect.mapError(
-          (cause) =>
-            new RepositoryError({
-              kind: 'conflict',
-              message: 'Could not read the pending transaction journal.',
-              cause,
-            }),
-        ),
-      );
-      const journal = yield* decodeJournal(encoded);
-      yield* applyJournal(journal);
-    }).pipe(Effect.mapError(asRepositoryError));
+    const readStageTree = (stageDirectory: string) =>
+      Effect.gen(function*() {
+        const entries: StageTreeEntry[] = [];
+        for (const name of (yield* fs.readDirectory(stageDirectory)).toSorted()) {
+          if (name.startsWith('.')) continue;
+          const child = join(stageDirectory, name);
+          const info = yield* fs.stat(child);
+          if (info.type !== 'Directory') {
+            entries.push({
+              name,
+              type: 'file',
+              content: yield* fs.readFileString(child),
+              children: [],
+            });
+            continue;
+          }
+          const children: Array<StageTreeEntry['children'][number]> = [];
+          for (const innerName of (yield* fs.readDirectory(child)).toSorted()) {
+            if (innerName.startsWith('.')) continue;
+            const inner = join(child, innerName);
+            const innerInfo = yield* fs.stat(inner);
+            const isDirectory = innerInfo.type === 'Directory';
+            children.push({
+              name: innerName,
+              type: isDirectory ? 'directory' : 'file',
+              content: isDirectory ? '' : yield* fs.readFileString(inner),
+            });
+          }
+          entries.push({ name, type: 'directory', content: '', children });
+        }
+        return entries;
+      });
 
+    const readStageState = (stage: Stage) =>
+      Effect.gen(function*() {
+        const filePath = absolute(`${stage}.md`);
+        const directoryPath = absolute(stage);
+        const [fileType, directoryType] = yield* Effect.all([
+          pathType(filePath),
+          pathType(directoryPath),
+        ]);
+        if (directoryType !== 'Directory') {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: fileType === null
+              ? `Session is missing ${stage}/. Run \`session init\`.`
+              : `Session still keeps ${stage}.md instead of ${stage}/. Run \`session init\`.`,
+          });
+        }
+        const tree = yield* readStageTree(directoryPath);
+        const parsed = yield* attempt(() => parseStageDirectory(stage, tree));
+        return {
+          stage,
+          path: directoryPath,
+          items: parsed.items,
+          files: parsed.files,
+        } satisfies StageState;
+      }).pipe(Effect.mapError(asRepositoryError));
+
+    const readMarkdownFile = (relativePath: string) =>
+      Effect.gen(function*() {
+        const segments = relativePath.split(/[\\/]/u);
+        if (
+          !relativePath.endsWith('.md') ||
+          relativePath.startsWith('/') ||
+          segments.some(
+            (segment) =>
+              segment === '' || segment === '.' || segment === '..' || segment === 'ignore',
+          )
+        ) {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: 'Markdown file is outside the live session.',
+          });
+        }
+        const realRoot = yield* fs.realPath(root);
+        const candidate = absolute(relativePath);
+        if (!(yield* fs.exists(candidate))) {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: `${relativePath} does not exist.`,
+          });
+        }
+        const realCandidate = yield* fs.realPath(candidate);
+        yield* attempt(() => ensureInsideRoot(realRoot, realCandidate, relativePath));
+        if (isExcludedRealPath(realRoot, realCandidate)) {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: 'Markdown file is outside the live session.',
+          });
+        }
+        const info = yield* fs.stat(realCandidate);
+        if (info.type !== 'File') {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: `${relativePath} is not a file.`,
+          });
+        }
+        return yield* fs.readFileString(realCandidate);
+      }).pipe(Effect.mapError(asRepositoryError));
+
+    /** Every item file's path and content, in listing order. */
     const revisionOf = (stages: ReadonlyArray<StageState>) =>
       digest(
         stages
-          .map((stage) => `${stage.stage}.md\u0000${stage.markdown.length}\u0000${stage.markdown}`)
+          .flatMap((state) =>
+            state.files.map((file) => `${file.path}\u0000${file.content.length}\u0000${file.content}`)
+          )
           .join('\u0000'),
       );
 
     const loadUnlocked = Effect.gen(function*() {
-      yield* recover;
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
       yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
       return { root, revision, stages } satisfies Loaded;
     });
 
-    const writeTransaction = (writes: ReadonlyArray<PendingWrite>) =>
-      Effect.gen(function*() {
-        if (writes.length === 0) return;
-        yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
-        const journal: Journal = { version: 2, writes };
-        const encoded = yield* Schema.encodeEffect(JournalFromJsonString)(journal);
-        yield* fs.writeFileString(absolute(journalNextPath), encoded);
-        yield* fs.rename(absolute(journalNextPath), absolute(journalPath));
-        yield* applyJournal(journal);
-      }).pipe(Effect.mapError(asRepositoryError));
-
     const mutate = (
       revision: string,
-      change: (loaded: Loaded) => Effect.Effect<ReadonlyArray<PendingWrite>, RepositoryError>,
+      change: (loaded: Loaded) => Effect.Effect<ReadonlyArray<FileChange>, RepositoryError>,
     ) =>
-      withExclusiveAccess(
+      semaphore.withPermit(
         Effect.gen(function*() {
           const loaded = yield* loadUnlocked;
           if (loaded.revision !== revision) {
@@ -632,24 +446,26 @@ export const makeRepository = (directory: string) =>
               message: 'Session changed on disk. Reload before saving.',
             });
           }
-          yield* writeTransaction(yield* change(loaded));
+          yield* applyChanges(yield* change(loaded));
           return toSession(yield* loadUnlocked);
         }),
       );
 
-    const load = withExclusiveAccess(loadUnlocked.pipe(Effect.map((loaded) => toSession(loaded))));
+    const load = semaphore.withPermit(loadUnlocked.pipe(Effect.map((loaded) => toSession(loaded))));
 
-    /** Layout rules that `load` tolerates but the files must not keep. */
-    const check = withExclusiveAccess(
+    /** What `load` reads past: leftover stage files, and self-ignoring. */
+    const check = semaphore.withPermit(
       Effect.gen(function*() {
         const loaded = yield* loadUnlocked;
-        for (const state of loaded.stages) {
-          const lines = lineCount(state.markdown);
-          if (state.layout === 'file' && lines > stageFileLineLimit) {
+        for (const stage of stageNames) {
+          const leftover = yield* pathType(absolute(`${stage}.md`)).pipe(
+            Effect.mapError(asRepositoryError),
+          );
+          if (leftover !== null) {
             return yield* new RepositoryError({
               kind: 'validation',
               message:
-                `${state.stage}.md has ${lines} lines, past the ${stageFileLineLimit}-line limit. Run \`session split ${state.stage}\`.`,
+                `${stage}.md is a leftover stage file; ${stage}/ holds the items now. Fold it in and remove it.`,
             });
           }
         }
@@ -662,97 +478,17 @@ export const makeRepository = (directory: string) =>
             message: 'Session is missing .gitignore. Run `session init`.',
           });
         }
+        yield* attempt(() => {
+          for (const state of loaded.stages) {
+            for (const item of state.items) validateItemSections(state.stage, item);
+          }
+        });
         return toSession(loaded);
       }),
     );
 
-    const putFile = (input: {
-      readonly stage: Stage;
-      readonly markdown: string;
-      readonly revision: string;
-    }) =>
-      mutate(input.revision, (loaded) =>
-        Effect.gen(function*() {
-          const state = stageOf(loaded, input.stage);
-          const nextItems = yield* attempt(() =>
-            parseStageMarkdown(input.stage, input.markdown),
-          );
-          if (input.stage === 'EXECUTE') {
-            const batches = new Map(state.items.map((item) => [item.id, item.batch]));
-            const sameItems = state.items.length === nextItems.length &&
-              nextItems.every((item) => batches.get(item.id) === item.batch);
-            if (!sameItems) {
-              return yield* new RepositoryError({
-                kind: 'conflict',
-                message: 'EXECUTE edits must preserve its item IDs and batches.',
-              });
-            }
-          }
-          yield* attempt(() =>
-            validateUniqueIds(projected(loaded, [{ stage: input.stage, items: nextItems }])),
-          );
-          return yield* attempt(() => stageWrites(state, nextItems));
-        }),
-      );
-
     const addItem = (input: {
       readonly stage: Stage;
-      readonly id?: string | undefined;
-      readonly title: string;
-      readonly body: string;
-      readonly batch?: string | undefined;
-      readonly revision: string;
-    }) =>
-      mutate(input.revision, (loaded) =>
-        Effect.gen(function*() {
-          if (input.stage === 'EXECUTE') {
-            return yield* new RepositoryError({
-              kind: 'conflict',
-              message: 'EXECUTE is frozen; create items in another stage.',
-            });
-          }
-          const state = stageOf(loaded, input.stage);
-          const requested = input.batch?.trim();
-          let batch: string | null = null;
-          if (input.stage === 'QUEUE') {
-            if (requested === undefined || requested === '') {
-              return yield* new RepositoryError({
-                kind: 'validation',
-                message: 'A QUEUE item needs a batch. Pass the name of an existing batch.',
-              });
-            }
-            if (!state.items.some((item) => item.batch === requested)) {
-              return yield* new RepositoryError({
-                kind: 'validation',
-                message: `QUEUE has no batch named ${quote(requested)}.`,
-              });
-            }
-            batch = requested;
-          } else if (requested !== undefined && requested !== '') {
-            return yield* new RepositoryError({
-              kind: 'validation',
-              message: `${input.stage} items do not belong to a batch.`,
-            });
-          }
-          const id = input.id ??
-            `W-${(yield* crypto.randomUUIDv4.pipe(Effect.mapError(asRepositoryError))).slice(0, 8)}`;
-          const item = yield* attempt(() => {
-            const candidate = makeItem({
-              id,
-              title: input.title.trim(),
-              body: input.body,
-              batch,
-            });
-            validateItem(input.stage, candidate);
-            return candidate;
-          });
-          const items = yield* attempt(() => placeItem(input.stage, state.items, item, null));
-          yield* attempt(() => validateUniqueIds(projected(loaded, [{ stage: input.stage, items }])));
-          return yield* attempt(() => stageWrites(state, items));
-        }),
-      );
-
-    const updateItem = (input: {
       readonly id: string;
       readonly title: string;
       readonly body: string;
@@ -760,22 +496,29 @@ export const makeRepository = (directory: string) =>
     }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
-          const state = stageOf(loaded, found.stage);
+          if (isBatchedStage(input.stage)) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: input.stage === 'QUEUE'
+                ? 'Items enter QUEUE only through `session batch`.'
+                : 'EXECUTE is frozen; create items in another stage.',
+            });
+          }
+          const state = stageOf(loaded, input.stage);
           const item = yield* attempt(() => {
             const candidate = makeItem({
-              id: found.item.id,
+              id: input.id,
               title: input.title.trim(),
               body: input.body,
-              batch: found.item.batch,
+              batch: null,
             });
-            validateItem(found.stage, candidate);
+            validateItem(input.stage, candidate);
+            validateItemSections(input.stage, candidate);
             return candidate;
           });
-          const items = state.items.map((candidate) =>
-            candidate.id === input.id ? item : candidate,
-          );
-          return yield* attempt(() => stageWrites(state, items));
+          const items = yield* attempt(() => placeItem(input.stage, state.items, item, null));
+          yield* attempt(() => validateUniqueIds(projected(loaded, [{ stage: input.stage, items }])));
+          return yield* attempt(() => stageChanges(state, items));
         }),
       );
 
@@ -783,60 +526,35 @@ export const makeRepository = (directory: string) =>
       readonly id: string;
       readonly to: Stage;
       readonly beforeId?: string | null | undefined;
-      readonly batch?: string | undefined;
-      readonly body?: string | undefined;
       readonly revision: string;
     }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
-          if (input.to === 'EXECUTE') {
-            return yield* new RepositoryError({
-              kind: 'conflict',
-              message: 'Items enter EXECUTE only through `session start`.',
-            });
-          }
           if (found.stage === 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'EXECUTE is frozen; complete its items instead of moving them.',
             });
           }
-
-          const requested = input.batch?.trim();
-          let batch: string | null = null;
-          if (input.to === 'QUEUE') {
-            const target = requested ?? found.item.batch ?? '';
-            if (target === '') {
-              return yield* new RepositoryError({
-                kind: 'validation',
-                message: 'Moving into QUEUE needs the name of an existing batch.',
-              });
-            }
-            const queued = stageOf(loaded, 'QUEUE').items;
-            if (!queued.some((item) => item.batch === target)) {
-              return yield* new RepositoryError({
-                kind: 'validation',
-                message: `QUEUE has no batch named ${quote(target)}.`,
-              });
-            }
-            batch = yield* attempt(() => validateBatchName('QUEUE', target));
-          } else if (requested !== undefined && requested !== '') {
+          if (input.to === 'EXECUTE') {
             return yield* new RepositoryError({
-              kind: 'validation',
-              message: `${input.to} items do not belong to a batch.`,
+              kind: 'conflict',
+              message: 'Items enter EXECUTE only through `session start`.',
+            });
+          }
+          if (input.to === 'QUEUE' && found.stage !== 'QUEUE') {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: 'Items enter QUEUE only through `session batch`.',
             });
           }
 
-          const item = yield* attempt(() => {
-            const candidate = makeItem({
-              id: found.item.id,
-              title: found.item.title,
-              body: input.body ?? found.item.body,
-              batch,
-            });
-            validateItem(input.to, candidate);
-            return candidate;
+          // Inside QUEUE an item keeps its batch and only changes place in it.
+          const item = draftOf(found.item, input.to === 'QUEUE' ? found.item.batch : null);
+          yield* attempt(() => {
+            validateItem(input.to, item);
+            validateItemSections(input.to, item);
           });
 
           const source = stageOf(loaded, found.stage);
@@ -846,7 +564,7 @@ export const makeRepository = (directory: string) =>
               ? source.items[source.items.findIndex((entry) => entry.id === input.id) + 1]?.id ?? null
               : input.beforeId;
             const items = yield* attempt(() => placeItem(input.to, remaining, item, beforeId));
-            return yield* attempt(() => stageWrites(source, items));
+            return yield* attempt(() => stageChanges(source, items));
           }
 
           const target = stageOf(loaded, input.to);
@@ -854,8 +572,8 @@ export const makeRepository = (directory: string) =>
             placeItem(input.to, target.items, item, input.beforeId),
           );
           return yield* attempt(() => [
-            ...stageWrites(source, remaining),
-            ...stageWrites(target, items),
+            ...stageChanges(source, remaining),
+            ...stageChanges(target, items),
           ]);
         }),
       );
@@ -867,7 +585,7 @@ export const makeRepository = (directory: string) =>
     }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const name = yield* attempt(() => validateBatchName('QUEUE', input.name.trim()));
+          const name = input.name.trim();
           if (input.ids.length === 0) {
             return yield* new RepositoryError({
               kind: 'validation',
@@ -893,14 +611,15 @@ export const makeRepository = (directory: string) =>
           const selected = yield* attempt(() =>
             input.ids.map((id) => {
               const item = available.get(id) ?? fail(`${id} is not in BATCH.`);
-              const queued = { ...item, batch: name };
+              const queued = draftOf(item, name);
               validateItem('QUEUE', queued);
+              validateItemSections('QUEUE', queued);
               return queued;
             }),
           );
           return yield* attempt(() => [
-            ...stageWrites(pool, pool.items.filter((item) => !selectedIds.has(item.id))),
-            ...stageWrites(queue, [...queue.items, ...selected]),
+            ...stageChanges(pool, pool.items.filter((item) => !selectedIds.has(item.id))),
+            ...stageChanges(queue, [...queue.items, ...selected]),
           ]);
         }),
       );
@@ -924,10 +643,16 @@ export const makeRepository = (directory: string) =>
             });
           }
           const name = first.batch;
-          return yield* attempt(() => [
-            ...stageWrites(queue, queue.items.filter((item) => item.batch !== name)),
-            ...stageWrites(execute, queue.items.filter((item) => item.batch === name)),
-          ]);
+          const starting: ItemDraft[] = [];
+          const waiting: ItemDraft[] = [];
+          for (const item of queue.items) {
+            if (item.batch === name) starting.push(draftOf(item, name));
+            else waiting.push(item);
+          }
+          return yield* attempt(() => {
+            for (const item of starting) validateItemSections('EXECUTE', item);
+            return [...stageChanges(queue, waiting), ...stageChanges(execute, starting)];
+          });
         }),
       );
 
@@ -951,31 +676,60 @@ export const makeRepository = (directory: string) =>
           }
           const beforeArchive = yield* readMaybe(archivePath);
           const record = `# ${batch}\n\n${renderItem(found.item)}\n`;
-          const afterArchive = beforeArchive === null || beforeArchive === ''
+          const archive = beforeArchive === null || beforeArchive === ''
             ? record
             : `${beforeArchive.trimEnd()}\n\n${record}`;
-          const writes = yield* attempt(() =>
-            stageWrites(execute, execute.items.filter((item) => item.id !== input.id)),
+          const changes = yield* attempt(() =>
+            stageChanges(execute, execute.items.filter((item) => item.id !== input.id)),
           );
-          return [...writes, { path: archivePath, before: beforeArchive, after: afterArchive }];
+          return [...changes, { path: archivePath, content: archive }];
         }),
       );
 
-    const split = (input: { readonly stage: Stage; readonly revision: string }) =>
-      mutate(input.revision, (loaded) =>
-        Effect.gen(function*() {
-          const state = stageOf(loaded, input.stage);
-          if (state.layout === 'directory') {
-            return yield* new RepositoryError({
-              kind: 'validation',
-              message: `${input.stage} is already a directory.`,
-            });
-          }
-          return yield* attempt(() => stageWrites(state, state.items, { directory: true }));
-        }),
+    /**
+     * The one-shot migration from the v2 layout: a leftover `STAGE.md` becomes
+     * the stage's item files. It runs until every worktree has been initialized.
+     */
+    const initialize = Effect.gen(function*() {
+      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
+      const actions: string[] = [];
+      for (const stage of stageNames) {
+        const filePath = absolute(`${stage}.md`);
+        const directoryPath = absolute(stage);
+        const [fileType, directoryType] = yield* Effect.all([
+          pathType(filePath),
+          pathType(directoryPath),
+        ]).pipe(Effect.mapError(asRepositoryError));
+        if (fileType !== null && directoryType === 'Directory') {
+          return yield* new RepositoryError({
+            kind: 'validation',
+            message:
+              `Session has both ${stage}.md and ${stage}/. Fold ${stage}.md into ${stage}/ by hand and remove it.`,
+          });
+        }
+        yield* fs.makeDirectory(directoryPath, { recursive: true }).pipe(
+          Effect.mapError(asRepositoryError),
+        );
+        if (fileType === null) continue;
+        const markdown = yield* fs.readFileString(filePath).pipe(
+          Effect.mapError(asRepositoryError),
+        );
+        const items = yield* attempt(() => parseStageMarkdown(stage, markdown));
+        const files = yield* attempt(() =>
+          renderStageDirectory({ stage, items, current: [] })
+        );
+        for (const entry of files) yield* atomicWrite(entry.path, entry.content);
+        yield* removeFile(`${stage}.md`);
+        actions.push(`Converted ${stage}.md into ${stage}/`);
+      }
+      const hasGitignore = yield* fs.exists(absolute(gitignorePath)).pipe(
+        Effect.mapError(asRepositoryError),
       );
+      if (!hasGitignore) yield* atomicWrite(gitignorePath, gitignoreContent);
+      return actions;
+    });
 
-    const inventory = withExclusiveAccess(
+    const inventory = semaphore.withPermit(
       Effect.gen(function*() {
         yield* loadUnlocked;
         const realRoot = yield* fs.realPath(root).pipe(Effect.mapError(asRepositoryError));
@@ -993,7 +747,7 @@ export const makeRepository = (directory: string) =>
             );
             const entries: Array<readonly [string, string]> = [];
             for (const name of names) {
-              if (name === 'ignore' || name === '.runtime') continue;
+              if (name === 'ignore') continue;
               const relativePath = relativeDirectory === '' ? name : join(relativeDirectory, name);
               const candidate = join(realDirectory, name);
               const realCandidate = yield* fs.realPath(candidate).pipe(
@@ -1022,14 +776,11 @@ export const makeRepository = (directory: string) =>
       initialize,
       load,
       check,
-      putFile,
       addItem,
-      updateItem,
       moveItem,
       queueBatch,
       startBatch,
       completeItem,
-      split,
       inventory,
       readMarkdownFile,
     } as const;

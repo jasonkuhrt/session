@@ -8,19 +8,16 @@ Git.
 ```
 session [-C <worktree-or-.session>] <command>
 
-init                       migrate a symlinked .session to a real directory, write .gitignore, create missing stage files
-check                      engine check; prints "OK <revision> (<n> items)" or the first error and exits 1
+init                       create the real .session, the five stage directories, and .gitignore; migrate an older session
+check                      validate; prints "OK <revision> (<n> items)" or the first error and exits 1
 refresh [--previous F]     JSON path/hash inventory
 serve [--port N]           run the board
-ls [STAGE] [--json]        one line per item: ID, STAGE, batch (or "-"), title
-show <ID>                  the item's Markdown chunk
-add <STAGE> <ID> "<title>" [--batch NAME]      body on stdin
-set <ID> [--title T] [-]                       - reads a new body from stdin
-mv <ID> <STAGE> [--before ID] [--batch NAME] [-]   - reads a replacement body from stdin
+ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, batch, and order
+add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
+mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute
 batch "<name>" <ID...>     compose a named batch from Batch items and append it to Queue
 start                      move the first Queue batch into Execute
 done <ID>                  archive an Execute item under ignore/COMPLETED.md
-split <STAGE>              convert a file stage to a directory stage
 archive                    move this worktree's .session under the main worktree's .sessions/
 ```
 
@@ -32,23 +29,22 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 ```
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
-or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add`
-always reads its body from stdin; `set` and `mv` read one only when the `-`
-operand is present, because a caller's stdin can be an open pipe that never
-closes. A body is read in full and trimmed, and an empty one is rejected.
+or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` is
+the only command that reads stdin: it takes the new item's body there, in full,
+trimmed, and rejects an empty one.
 
 ## Move and batch rules
 
 The engine owns placement, so the CLI refuses what the stage rules forbid. `add`
-refuses Execute; it requires `--batch` naming an existing Queue batch when adding
-to Queue, and refuses `--batch` for every other stage. `mv` never moves an item
-into Execute, which `start` does, or out of it, which `done` does. Moving into
-Queue needs `--batch` naming an existing batch; moving out of Queue drops the
-batch. Within Queue, `--batch` changes the batch and `--before` must name an item
-in the resulting batch. Without `--before`, an item lands at the end of the stage
-or of its batch. The target stage's required sections are validated on arrival,
-so pipe the rewritten body with `mv ... -`; that is the ordinary way an item
-leaves Design for Batch.
+creates an item in Triage, Design, or Batch and refuses Queue and Execute,
+because a Queue batch is composed with `batch` and Execute is entered only by
+`start`. `mv` moves between Triage, Design, and Batch, and out of Queue into any
+of them, dropping the batch. It never moves an item into Queue or Execute, and
+never out of Execute, which `done` does. Within Queue, `--before` reorders an
+item inside its own batch. Without `--before`, an item lands at the end of the
+stage. The target stage's required sections are validated on arrival, so rewrite
+the item file first and then move it; that is the ordinary way an item leaves
+Design for Batch.
 
 `batch` takes items that are all in Batch. `start` requires Execute to be empty
 and keeps the batch's name. `done` archives the item under a heading naming its
@@ -56,15 +52,18 @@ batch.
 
 ## Set up and tear down
 
-`init` makes `.session` real. It resolves an older `.session` symlink and renames
-its target into place, removes a retired `.sessions` symlink beside it, writes
-the `.gitignore` when missing, and creates a zero-byte file for every stage that
-has neither a file nor a directory. It prints each action, preserves existing
-content, and is safe to re-run: a real `.session` directory is left alone, and a
-real `.sessions` directory is never touched. `serve` also creates missing stage
-files; `check` reports an incomplete setup instead. Neither creates `RULES.md`:
-standing rules are written from the user's words when the user states them, and
-the inventory reports the file like any other.
+`init` makes the session real: it creates `.session`, the five stage directories,
+and the `.gitignore` when they are missing, prints each action, preserves
+existing content, and is safe to re-run. It also converts an older session in
+place. A symlinked `.session` is replaced by its real target directory and a
+retired `.sessions` symlink beside it is removed, while a real `.sessions`
+directory is never touched. A `STAGE.md` from the single-file layout is parsed
+into `STAGE/` item files and the file is removed; a `STAGE.md` sitting beside an
+existing `STAGE/` is an error naming both. That conversion is a one-shot for the
+rollout and goes away once every worktree has run `init`. `serve` also creates
+what is missing; `check` reports an incomplete setup instead. Neither creates
+`RULES.md`: standing rules are written from the user's words when the user states
+them, and the inventory reports the file like any other.
 
 `archive` moves `.session` to `<main worktree>/.sessions/<slug>`, where the slug
 is the branch name with `/` replaced by `-`, or `detached-<short sha>` without a
@@ -84,9 +83,9 @@ previous refresh output saved outside the session directory:
 session refresh --previous /tmp/session-previous.json
 ```
 
-`ignore/` and `.runtime/` are excluded before traversal. The inventory does not
-make linked history part of current context. Resolve deleted or moved references
-instead of retaining an older item as if it were still live.
+`ignore/` is excluded before traversal. The inventory does not make linked
+history part of current context. Resolve deleted or moved references instead of
+retaining an older item as if it were still live.
 
 ## Use the board
 
@@ -97,45 +96,47 @@ reuse it. Otherwise choose another port; do not stop an unknown process.
 The header shows the launching worktree's name and Git branch. Non-Git folders
 use their own `.session` and have no branch.
 
-The board reads and writes the stage records directly and shows five lanes in
-stage order. Cards open an embedded Markdown reader. The stage control moves an
-item in one click; unavailable destinations explain what is needed first. Work
-with the agent to settle missing content. Source-file actions live in the lane
-menu; for a directory stage the source sheet says so, and saving there writes the
-item files.
+The board is a viewer with workflow actions. It shows the five lanes in stage
+order and reads the item files directly; it never writes an item's content, and
+there is no way to type a body or create an item in it. Cards open an embedded
+Markdown reader that shows the item's file path, and Markdown links inside a body
+resolve against the session directory. The stage control moves an item in one
+click; unavailable destinations explain what is needed first. Settle missing
+content with the agent or in the editor.
 
 Select ready items in the Batch lane and use "Queue batch" to name them and
-append the batch to Queue. The Queue lane groups cards under their batch heading
-in file order and offers "Start next batch", disabled with its reason while
-Execute has items or Queue is empty. Execute is frozen: its cards can only be
-completed, which archives them under `ignore/COMPLETED.md`. Nothing drops into
-Queue or Execute; a Queue card can be reordered inside its own batch or dragged
-back to Batch, Design, or Triage.
+append the batch to Queue. The Queue lane groups cards under their batch in file
+order and offers "Start next batch", disabled with its reason while Execute has
+items or Queue is empty. Execute is frozen: its cards can only be completed,
+which archives them under `ignore/COMPLETED.md`. Nothing drops into Queue or
+Execute; a Queue card can be reordered inside its own batch or dragged back to
+Batch, Design, or Triage.
 
 Visible tabs reread disk every five seconds and on return to the tab. Refresh
-pauses during editing so drafts keep the revision they opened against.
+pauses while a card is being dragged.
 
-The server rejects an outdated revision instead of overwriting newer disk edits.
-Keep the draft visible, refresh the source, and reconcile it before retrying.
-File moves use a recovery journal under `.runtime/`; do not remove that directory
-to silence a recovery conflict. Inspect the reported conflicting files first.
+Every mutation checks the revision, a digest over every item file's path and
+content, so a stale tab cannot overwrite a later edit on disk; reload and repeat
+the action when one is rejected. A mutation writes its files before it deletes
+the paths it replaced, so an interrupted one can only leave an item in two
+places, which `check` reports as a duplicate ID.
 
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
 
-## Edit without the board
+## Edit in your editor
 
-The format is ordinary Markdown. Edit it with the usual filesystem tools and run
-`check` afterward. Preserve any unrelated edits. Cross-stage moves must retain the
-whole record and remove its old occurrence; never leave duplicate IDs. Prefer
-`mv` to a hand move: it validates the target stage and keeps the batch rules.
+The item files are ordinary Markdown, and the editor is where their content is
+written. Edit them with the usual filesystem tools and run `check` afterward.
+Preserve any unrelated edits. Prefer `mv` to a hand move: it validates the target
+stage, keeps the batch rules, and renumbers the directories. A hand move must
+carry the whole record and remove its old file; never leave duplicate IDs.
 
-`check` rejects malformed records, duplicate IDs, missing stage-specific sections,
-`# ` headings outside Queue and Execute, and Queue or Execute items belonging to
-no batch. It also reports the layout faults that loading tolerates: a stage still
-in one file past the line limit, fixed by `session split <STAGE>`, and a missing
-`.gitignore`, fixed by `session init`. It does not judge acceptance criteria or
-user approval. Empty stage files must be zero bytes.
+`check` rejects malformed records, duplicate IDs, missing stage-specific
+sections, `# ` headings inside item files, Queue or Execute items belonging to no
+batch, entries whose names break the numbering pattern, and a missing
+`.gitignore`, which `session init` writes. It does not judge acceptance criteria
+or user approval. An empty stage is an empty directory.
 
 ## App development
 

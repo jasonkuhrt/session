@@ -9,7 +9,7 @@ import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import { startServer } from '../../../app/server/http.ts';
-import { findRequiredItem, quote, renderItem } from '../../../app/server/model.ts';
+import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
 import {
@@ -20,8 +20,8 @@ import {
 } from '../../../app/server/worktree.ts';
 
 /**
- * Argument parsing in front of the engine. Layout, numbering, validation and
- * the journal live in `app/server`; this file only reads argv and prints.
+ * Argument parsing in front of the engine. Layout, numbering and validation
+ * live in `app/server`; this file only reads argv and prints.
  */
 
 const commands = {
@@ -30,14 +30,11 @@ const commands = {
   refresh: { operands: '', least: 0, most: 0 },
   serve: { operands: '', least: 0, most: 0 },
   ls: { operands: '[STAGE]', least: 0, most: 1 },
-  show: { operands: '<ID>', least: 1, most: 1 },
   add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3 },
-  set: { operands: '<ID> [-]', least: 1, most: 1 },
-  mv: { operands: '<ID> <STAGE> [-]', least: 2, most: 2 },
+  mv: { operands: '<ID> <STAGE>', least: 2, most: 2 },
   batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
   start: { operands: '', least: 0, most: 0 },
   done: { operands: '<ID>', least: 1, most: 1 },
-  split: { operands: '<STAGE>', least: 1, most: 1 },
   archive: { operands: '', least: 0, most: 0 },
 } as const;
 
@@ -45,21 +42,17 @@ type Command = keyof typeof commands;
 
 const usage = `Usage: session [-C <worktree or .session>] <command>
 
-  init                                          make .session a real directory and fill in missing stages
-  check                                         validate the session and print its revision
-  refresh [--previous <inventory.json>]         print the file inventory as JSON
-  serve [--port <number>]                       run the board
-  ls [STAGE] [--json]                           list items
-  show <ID>                                     print an item
-  add <STAGE> <ID> "<title>" [--batch NAME]     add an item, body on stdin
-  set <ID> [--title TEXT] [-]                   replace a title; - reads a new body from stdin
-  mv <ID> <STAGE> [--before ID] [--batch NAME] [-]
-                                                move an item; - reads a replacement body from stdin
-  batch "<name>" <ID...>                        queue BATCH items as a named batch
-  start                                         move the first queued batch into EXECUTE
-  done <ID>                                     complete an EXECUTE item
-  split <STAGE>                                 convert a stage file into a directory
-  archive                                       move .session under the main worktree's .sessions`;
+  init                                  make .session a real directory of stage directories
+  check                                 validate the session and print its revision
+  refresh [--previous <inventory.json>] print the file inventory as JSON
+  serve [--port <number>]               run the board
+  ls [STAGE]                            list items as ID, file, title
+  add <STAGE> <ID> "<title>"            add an item, body on stdin
+  mv <ID> <STAGE> [--before ID]         move an item, or reorder it where it is
+  batch "<name>" <ID...>                queue BATCH items as a named batch
+  start                                 move the first queued batch into EXECUTE
+  done <ID>                             complete an EXECUTE item
+  archive                               move .session under the main worktree's .sessions`;
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
   readonly message: string;
@@ -74,13 +67,9 @@ type Options = {
   readonly command: Command;
   readonly operands: ReadonlyArray<string>;
   readonly directory: string;
-  readonly json: boolean;
   readonly port: number;
   readonly previous: string | undefined;
-  readonly title: string | undefined;
-  readonly batch: string | undefined;
   readonly before: string | undefined;
-  readonly stdinBody: boolean;
 };
 
 const isCommand = (value: string): value is Command => value in commands;
@@ -93,13 +82,9 @@ const valueOf = (option: string, value: string | undefined): string => {
 const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => {
   const operands: string[] = [];
   let directory = process.cwd();
-  let json = false;
   let port = 3210;
   let previous: string | undefined;
-  let title: string | undefined;
-  let batch: string | undefined;
   let before: string | undefined;
-  let stdinBody = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]!;
@@ -108,17 +93,6 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
       case '-C': {
         directory = path.resolve(valueOf('-C', value));
         index += 1;
-        break;
-      }
-      case '--json': {
-        json = true;
-        break;
-      }
-      // The conventional "read it from stdin" operand. `set` and `mv` never
-      // read stdin without it: a caller's stdin may be an open pipe that never
-      // closes, and guessing would hang the command.
-      case '-': {
-        stdinBody = true;
         break;
       }
       case '--port': {
@@ -131,16 +105,6 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
       }
       case '--previous': {
         previous = path.resolve(valueOf('--previous', value));
-        index += 1;
-        break;
-      }
-      case '--title': {
-        title = valueOf('--title', value);
-        index += 1;
-        break;
-      }
-      case '--batch': {
-        batch = valueOf('--batch', value);
         index += 1;
         break;
       }
@@ -163,18 +127,7 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
   if (rest.length < arity.least || rest.length > arity.most) {
     throw new Error(`Usage: session ${command} ${arity.operands}`.trimEnd());
   }
-  return {
-    command,
-    operands: rest,
-    directory,
-    json,
-    port,
-    previous,
-    title,
-    batch,
-    before,
-    stdinBody,
-  };
+  return { command, operands: rest, directory, port, previous, before };
 };
 
 const asStage = (value: string): Stage => {
@@ -192,16 +145,16 @@ const cliTry = <A>(operation: () => A) =>
       new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
   });
 
-const readStdin = Effect.tryPromise({
+const readBody = Effect.tryPromise({
   try: () => Bun.stdin.text(),
   catch: () => new SessionCliError({ message: 'Could not read the body from stdin.' }),
-}).pipe(Effect.map((text) => text.trim()));
-
-const requiredBody = Effect.gen(function*() {
-  const body = yield* readStdin;
-  if (body === '') return yield* new SessionCliError({ message: 'The item body is empty.' });
-  return body;
-});
+}).pipe(
+  Effect.map((text) => text.trim()),
+  Effect.filterOrFail(
+    (body) => body !== '',
+    () => new SessionCliError({ message: 'The item body is empty.' }),
+  ),
+);
 
 const itemCount = (session: Session): number =>
   session.stages.reduce((total, stage) => total + stage.items.length, 0);
@@ -220,13 +173,12 @@ const changesFrom = (previous: FileInventory, current: FileInventory) => ({
   deleted: Object.keys(previous).filter((path) => current[path] === undefined),
 });
 
-const initialize = (resolved: WorktreeSession) =>
+const initialize = (resolved: WorktreeSession, repository: SessionRepository) =>
   Effect.gen(function*() {
     for (const action of yield* migrateSessionDirectory(resolved.worktree.path)) {
       yield* Console.log(action);
     }
-    const repository = yield* makeRepository(resolved.directory);
-    yield* repository.initialize;
+    for (const action of yield* repository.initialize) yield* Console.log(action);
     yield* Console.log(`Initialized ${resolved.directory}`);
   });
 
@@ -275,36 +227,18 @@ const list = (options: Options, repository: SessionRepository) =>
       ? undefined
       : yield* cliTry(() => asStage(options.operands[0]!));
     const session = yield* repository.load;
-    const rows: Array<{
-      id: string;
-      stage: Stage;
-      batch: string | null;
-      title: string;
-    }> = [];
+    const rows: Array<{ id: string; path: string; title: string }> = [];
     for (const stage of session.stages) {
       if (only !== undefined && stage.stage !== only) continue;
       for (const item of stage.items) {
-        rows.push({ id: item.id, stage: stage.stage, batch: item.batch, title: item.title });
+        rows.push({ id: item.id, path: item.path, title: item.title });
       }
     }
-    if (options.json) {
-      yield* Console.log(JSON.stringify(rows, null, 2));
-      return;
-    }
     const idWidth = Math.max(2, ...rows.map((row) => row.id.length));
-    const batchWidth = Math.max(1, ...rows.map((row) => (row.batch ?? '-').length));
+    const pathWidth = Math.max(4, ...rows.map((row) => row.path.length));
     for (const row of rows) {
-      yield* Console.log(
-        `${row.id.padEnd(idWidth)}  ${row.stage.padEnd(7)}  ${(row.batch ?? '-').padEnd(batchWidth)}  ${row.title}`,
-      );
+      yield* Console.log(`${row.id.padEnd(idWidth)}  ${row.path.padEnd(pathWidth)}  ${row.title}`);
     }
-  });
-
-const show = (options: Options, repository: SessionRepository) =>
-  Effect.gen(function*() {
-    const session = yield* repository.load;
-    const found = yield* cliTry(() => findRequiredItem(session.stages, options.operands[0]!));
-    yield* Console.log(renderItem(found.item));
   });
 
 const add = (options: Options, repository: SessionRepository) =>
@@ -312,49 +246,25 @@ const add = (options: Options, repository: SessionRepository) =>
     const stage = yield* cliTry(() => asStage(options.operands[0]!));
     const id = options.operands[1]!;
     const title = options.operands[2]!;
-    const body = yield* requiredBody;
+    const body = yield* readBody;
     const session = yield* repository.load;
-    yield* repository.addItem({
-      stage,
-      id,
-      title,
-      body,
-      batch: options.batch,
-      revision: session.revision,
-    });
+    yield* repository.addItem({ stage, id, title, body, revision: session.revision });
     yield* Console.log(`Added ${id} to ${stage}`);
-  });
-
-const set = (options: Options, repository: SessionRepository) =>
-  Effect.gen(function*() {
-    const id = options.operands[0]!;
-    const session = yield* repository.load;
-    const found = yield* cliTry(() => findRequiredItem(session.stages, id));
-    const body = options.stdinBody ? yield* requiredBody : found.item.body;
-    yield* repository.updateItem({
-      id,
-      title: options.title ?? found.item.title,
-      body,
-      revision: session.revision,
-    });
-    yield* Console.log(`Updated ${id}`);
   });
 
 const move = (options: Options, repository: SessionRepository) =>
   Effect.gen(function*() {
     const id = options.operands[0]!;
     const stage = yield* cliTry(() => asStage(options.operands[1]!));
-    const body = options.stdinBody ? yield* requiredBody : undefined;
     const session = yield* repository.load;
-    yield* repository.moveItem({
+    const moved = yield* repository.moveItem({
       id,
       to: stage,
       beforeId: options.before,
-      batch: options.batch,
-      body,
       revision: session.revision,
     });
-    yield* Console.log(`Moved ${id} to ${stage}`);
+    const item = stageIn(moved, stage).items.find((entry) => entry.id === id)!;
+    yield* Console.log(`Moved ${id} to ${item.path}`);
   });
 
 const queue = (options: Options, repository: SessionRepository) =>
@@ -384,16 +294,6 @@ const complete = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Completed ${id}`);
   });
 
-const split = (options: Options, repository: SessionRepository) =>
-  Effect.gen(function*() {
-    const stage = yield* cliTry(() => asStage(options.operands[0]!));
-    const session = yield* repository.load;
-    const after = yield* repository.split({ stage, revision: session.revision });
-    yield* Console.log(
-      `Split ${stage} into ${counted(stageIn(after, stage).items.length, 'file')}`,
-    );
-  });
-
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -403,65 +303,19 @@ const check = (repository: SessionRepository) =>
 const runCommand = (options: Options) =>
   Effect.gen(function*() {
     const resolved = yield* resolveWorktreeSession(options.directory);
-    if (options.command === 'init') {
-      yield* initialize(resolved);
-      return;
-    }
-    if (options.command === 'archive') {
-      yield* archive(resolved);
-      return;
-    }
-    if (options.command === 'serve') {
-      yield* serve(options, resolved);
-      return;
-    }
-
     const repository = yield* makeRepository(resolved.directory);
     switch (options.command) {
-      case 'check': {
-        yield* check(repository);
-        break;
-      }
-      case 'refresh': {
-        yield* refresh(options, repository, resolved.directory);
-        break;
-      }
-      case 'ls': {
-        yield* list(options, repository);
-        break;
-      }
-      case 'show': {
-        yield* show(options, repository);
-        break;
-      }
-      case 'add': {
-        yield* add(options, repository);
-        break;
-      }
-      case 'set': {
-        yield* set(options, repository);
-        break;
-      }
-      case 'mv': {
-        yield* move(options, repository);
-        break;
-      }
-      case 'batch': {
-        yield* queue(options, repository);
-        break;
-      }
-      case 'start': {
-        yield* start(repository);
-        break;
-      }
-      case 'done': {
-        yield* complete(options, repository);
-        break;
-      }
-      case 'split': {
-        yield* split(options, repository);
-        break;
-      }
+      case 'init': { yield* initialize(resolved, repository); break; }
+      case 'archive': { yield* archive(resolved); break; }
+      case 'serve': { yield* serve(options, resolved); break; }
+      case 'check': { yield* check(repository); break; }
+      case 'refresh': { yield* refresh(options, repository, resolved.directory); break; }
+      case 'ls': { yield* list(options, repository); break; }
+      case 'add': { yield* add(options, repository); break; }
+      case 'mv': { yield* move(options, repository); break; }
+      case 'batch': { yield* queue(options, repository); break; }
+      case 'start': { yield* start(repository); break; }
+      case 'done': { yield* complete(options, repository); break; }
     }
   });
 

@@ -10,31 +10,10 @@ import { makeRepository, RepositoryError } from './repository.ts';
 import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
 
 const Stage = Schema.Literals(stageNames);
-const PutFile = Schema.Struct({
-  stage: Stage,
-  markdown: Schema.String,
-  revision: Schema.String,
-});
-const AddItem = Schema.Struct({
-  stage: Stage,
-  id: Schema.optionalKey(Schema.String),
-  title: Schema.String,
-  body: Schema.String,
-  batch: Schema.optionalKey(Schema.String),
-  revision: Schema.String,
-});
-const UpdateItem = Schema.Struct({
-  id: Schema.String,
-  title: Schema.String,
-  body: Schema.String,
-  revision: Schema.String,
-});
 const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
   beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
-  batch: Schema.optionalKey(Schema.String),
-  body: Schema.optionalKey(Schema.String),
   revision: Schema.String,
 });
 const QueueBatch = Schema.Struct({
@@ -140,18 +119,6 @@ export const createRequestHandler = async (options: {
         });
       }
 
-      if (request.method === 'PUT' && url.pathname === '/api/file') {
-        const input = await runRepository(decodeBody(request, PutFile));
-        return json(await attachWorktree(await runRepository(repository.putFile(input))));
-      }
-      if (request.method === 'POST' && url.pathname === '/api/item') {
-        const input = await runRepository(decodeBody(request, AddItem));
-        return json(await attachWorktree(await runRepository(repository.addItem(input))));
-      }
-      if (request.method === 'PUT' && url.pathname === '/api/item') {
-        const input = await runRepository(decodeBody(request, UpdateItem));
-        return json(await attachWorktree(await runRepository(repository.updateItem(input))));
-      }
       if (request.method === 'POST' && url.pathname === '/api/move') {
         const input = await runRepository(decodeBody(request, MoveItem));
         return json(await attachWorktree(await runRepository(repository.moveItem(input))));

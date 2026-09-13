@@ -1,11 +1,10 @@
 import * as React from 'react'
 
-import type { Item, Session, Stage } from '../contract'
+import type { Item, Session } from '../contract'
 import { stageNames } from '../contract'
 import { Board } from './components/board'
 import { DetailDialog } from './components/item-detail'
-import { AddCandidateDialog, BatchDialog, CompleteDialog } from './components/session-dialogs'
-import { SourceEditor } from './components/source-editor'
+import { BatchDialog, CompleteDialog } from './components/session-dialogs'
 import { Skeleton } from './components/ui/skeleton'
 import { ApiError, SessionApi } from './lib/api'
 
@@ -17,11 +16,8 @@ function App() {
   const [notice, setNotice] = React.useState<string | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [selectedItem, setSelectedItem] = React.useState<string | null>(null)
-  const [editingStage, setEditingStage] = React.useState<{ stage: Stage; revision: string } | null>(null)
-  const [adding, setAdding] = React.useState(false)
   const [batching, setBatching] = React.useState(false)
   const [completing, setCompleting] = React.useState<Item | null>(null)
-  const [editorConflict, setEditorConflict] = React.useState<{ revision: string; markdown: string } | null>(null)
   const [batchSelection, setSelectedBatchIds] = React.useState<Set<string>>(new Set())
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
@@ -44,7 +40,7 @@ function App() {
   }, [load])
 
   React.useEffect(() => {
-    if (editingStage || pending || dragging) return
+    if (pending || dragging) return
     const controller = new AbortController()
     let refreshing = false
     const refresh = async () => {
@@ -56,10 +52,10 @@ function App() {
         refreshing = false
       }
     }
-    // Disk changes arrive automatically. Pause while editing so the draft keeps
-    // its opening revision; a conflicting save still shows the current source.
-    // Cancel an in-flight read too, so it cannot replace a later mutation result.
-    // Dragging pauses refresh because the sortable library owns placement until drop.
+    // Disk changes arrive automatically; the editor owns the content, the board
+    // only reads it. Cancel an in-flight read so it cannot replace a later
+    // mutation result. Dragging pauses refresh because the sortable library
+    // owns placement until drop.
     const interval = window.setInterval(refresh, 5_000)
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refresh)
@@ -69,7 +65,7 @@ function App() {
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [editingStage, pending, dragging, load])
+  }, [pending, dragging, load])
 
   const batchIds = new Set(session?.stages.find(stage => stage.stage === 'BATCH')?.items.map(item => item.id))
   const selectedBatchIds = new Set([...batchSelection].filter(id => batchIds.has(id)))
@@ -98,39 +94,8 @@ function App() {
     [load, session],
   )
 
-  const saveFile = React.useCallback(
-    async (stage: Stage, markdown: string, revision: string) => {
-      setPending(true)
-      setNotice(null)
-      try {
-        const next = await SessionApi.saveFile({ stage, markdown, revision })
-        setSession(next)
-        return true
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 409) {
-          try {
-            const latest = await SessionApi.read()
-            setSession(latest)
-            const latestMarkdown = latest.stages.find((entry) => entry.stage === stage)?.markdown ?? ''
-            setEditorConflict({ revision: latest.revision, markdown: latestMarkdown })
-            setNotice(null)
-          } catch (refreshError) {
-            setNotice(refreshError instanceof Error ? refreshError.message : 'Could not refresh the changed source.')
-          }
-        } else {
-          setNotice(error instanceof Error ? error.message : 'The request failed')
-        }
-        return false
-      } finally {
-        setPending(false)
-      }
-    },
-    [],
-  )
-
   const selectedStage = session?.stages.find(stage => stage.items.some(item => item.id === selectedItem))
   const currentItem = selectedStage?.items.find(item => item.id === selectedItem) ?? null
-  const sourceStage = session?.stages.find(stage => stage.stage === editingStage?.stage)
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -164,11 +129,6 @@ function App() {
             pending={pending}
             selectedBatchIds={selectedBatchIds}
             onOpen={setSelectedItem}
-            onEdit={stage => {
-              setEditorConflict(null)
-              setEditingStage({ stage, revision: session.revision })
-            }}
-            onAdd={() => setAdding(true)}
             onSelect={(id, selected) => setSelectedBatchIds(current => {
               const next = new Set(current)
               if (selected) next.add(id)
@@ -178,8 +138,7 @@ function App() {
             onQueue={() => setBatching(true)}
             onStart={() => void mutate('/api/start', {})}
             onComplete={setCompleting}
-            onMove={(id, to, beforeId, batch) =>
-              mutate('/api/move', batch === null ? { id, to, beforeId } : { id, to, beforeId, batch })}
+            onMove={(id, to, beforeId) => mutate('/api/move', { id, to, beforeId })}
             onDraggingChange={setDragging}
           />
         ) : <p className="py-20 text-center text-muted-foreground">The session files could not be loaded.</p>}
@@ -193,39 +152,6 @@ function App() {
         onOpenChange={open => { if (!open) setSelectedItem(null) }}
         onMove={to => { if (currentItem) void mutate('/api/move', { id: currentItem.id, to }) }}
         onComplete={() => { if (currentItem) setCompleting(currentItem) }}
-      />
-      {sourceStage && editingStage ? (
-        <SourceEditor
-          stage={sourceStage}
-          revision={editingStage.revision}
-          conflict={editorConflict}
-          open
-          pending={pending}
-          onOpenChange={(open) => {
-            if (!open) {
-              setEditingStage(null)
-              setEditorConflict(null)
-            }
-          }}
-          onUseLatest={(revision) => {
-            setEditingStage({ stage: editingStage.stage, revision })
-            setEditorConflict(null)
-          }}
-          onSave={saveFile}
-        />
-      ) : null}
-
-      <AddCandidateDialog
-        open={adding}
-        pending={pending}
-        onOpenChange={setAdding}
-        onAdd={(title, body) =>
-          mutate('/api/item', {
-            stage: 'TRIAGE',
-            title,
-            body: `### Decision\n\n${body || 'What should we decide?'}`,
-          })
-        }
       />
 
       <BatchDialog

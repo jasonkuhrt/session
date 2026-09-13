@@ -1,4 +1,4 @@
-import { CheckCircle2, Layers3, Sparkles } from 'lucide-react'
+import { CheckCircle2, Layers3 } from 'lucide-react'
 import * as React from 'react'
 
 import type { Item } from '../../contract'
@@ -14,78 +14,6 @@ import {
 } from './ui/dialog'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Textarea } from './ui/textarea'
-
-export function AddCandidateDialog({
-  open,
-  pending,
-  onOpenChange,
-  onAdd,
-}: {
-  open: boolean
-  pending: boolean
-  onOpenChange: (open: boolean) => void
-  onAdd: (title: string, body: string) => Promise<boolean>
-}) {
-  const [title, setTitle] = React.useState('')
-  const [body, setBody] = React.useState('')
-
-  const reset = () => {
-    setTitle('')
-    setBody('')
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next)
-        if (!next) reset()
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <Sparkles className="size-4 text-muted-foreground" />
-          <DialogTitle>Add a candidate</DialogTitle>
-          <DialogDescription>Capture it in Triage. Shape and move it when the idea earns attention.</DialogDescription>
-        </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={async (event) => {
-            event.preventDefault()
-            if (!title.trim()) return
-            const added = await onAdd(title.trim(), body.trim())
-            if (!added) return
-            reset()
-            onOpenChange(false)
-          }}
-        >
-          <Field label="Title">
-            <Input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="A concise working title"
-              required
-            />
-          </Field>
-          <Field label="Detail" optional>
-            <Textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder="Markdown: context, questions, constraints…"
-            />
-          </Field>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-            <Button type="submit" disabled={!title.trim() || pending}>
-              {pending ? 'Adding…' : 'Add to Triage'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 export function BatchDialog({
   open,
@@ -125,14 +53,15 @@ export function BatchDialog({
             if (name.trim()) onQueue(name.trim())
           }}
         >
-          <Field label="Batch name">
+          <div className="space-y-2">
+            <Label>Batch name</Label>
             <Input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="What outcome unites this work?"
               required
             />
-          </Field>
+          </div>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
             <Button type="submit" disabled={!name.trim() || count === 0 || pending}>
@@ -175,17 +104,5 @@ export function CompleteDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function Field({ label, optional, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label>{label}</Label>
-        {optional ? <span className="text-xs text-muted-foreground">Optional</span> : null}
-      </div>
-      {children}
-    </div>
   )
 }
