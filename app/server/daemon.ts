@@ -310,14 +310,6 @@ export const runDaemon = async () => {
       }),
     );
 
-  const pathExists = (path: string) =>
-    runNode(
-      Effect.gen(function*() {
-        const fs = yield* FileSystem.FileSystem;
-        return yield* fs.exists(path);
-      }).pipe(Effect.orElseSucceed(() => false)),
-    );
-
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
@@ -344,18 +336,25 @@ export const runDaemon = async () => {
     });
   };
 
-  const isDirectory = (path: string) =>
+  /**
+   * A worktree belongs on the index while it exists and owns a real `.session`
+   * directory. A symlink is somebody else's session, and a missing one means
+   * the worktree has left: `session open` there is what brings it back.
+   */
+  const isTrackable = (path: string) =>
     runNode(
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem;
-        if (!(yield* fs.exists(path))) return false;
-        return (yield* fs.stat(path)).type === 'Directory';
+        const session = join(path, '.session');
+        if (Option.isSome(yield* fs.readLink(session).pipe(Effect.option))) return false;
+        if (!(yield* fs.exists(session))) return false;
+        return (yield* fs.stat(session)).type === 'Directory';
       }).pipe(Effect.orElseSucceed(() => false)),
     );
 
   /**
    * Resolve every new path at once, then take them in order. A path arrives
-   * from a local client, so the daemon only ever tracks a directory it can see.
+   * from a local client, so the daemon only ever tracks what it can serve.
    */
   const track = async (paths: ReadonlyArray<string>) => {
     const fresh: string[] = [];
@@ -364,7 +363,7 @@ export const runDaemon = async () => {
     }
     const checked = await mapWorktrees(fresh, async (path) => ({
       path,
-      usable: await isDirectory(path),
+      usable: await isTrackable(path),
     }));
     const usable: string[] = [];
     for (const entry of checked) if (entry.usable) usable.push(entry.path);
@@ -379,23 +378,21 @@ export const runDaemon = async () => {
   const discover = async () => {
     const known = [...tracked.values()];
     const probed = await mapWorktrees(known, async (entry) => {
-      const [exists, siblings] = await Promise.all([
-        pathExists(entry.path),
+      const [trackable, siblings] = await Promise.all([
+        isTrackable(entry.path),
         runNode(listGitWorktrees(entry.path).pipe(Effect.orElseSucceed(() => []))),
       ]);
-      return { entry, exists, siblings };
+      return { entry, trackable, siblings };
     });
     const candidates = new Set<string>();
     for (const item of probed) {
-      if (!item.exists) {
-        untrack(item.entry.path);
-        continue;
-      }
+      // Its siblings are still worth knowing even as this one leaves.
+      if (!item.trackable) untrack(item.entry.path);
       for (const sibling of item.siblings) candidates.add(sibling.path);
     }
     const sessions = await mapWorktrees([...candidates], async (path) => ({
       path,
-      ready: await pathExists(join(path, '.session')),
+      ready: await isTrackable(path),
     }));
     const ready: string[] = [];
     for (const candidate of sessions) if (candidate.ready) ready.push(candidate.path);
