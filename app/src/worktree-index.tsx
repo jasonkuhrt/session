@@ -12,6 +12,32 @@ import { stageMeta } from './lib/workflow'
 
 const changedAt = (iso: string | null) => (iso === null ? '—' : new Date(iso).toLocaleString())
 
+const hour = 3_600_000
+
+/** Freshness bands, in order; a row lands in the first band it fits. */
+const bands = [
+  { label: 'Changed in the last 24 hours', within: 24 * hour },
+  { label: 'Changed in the last 5 days', within: 5 * 24 * hour },
+  { label: 'Older', within: Number.POSITIVE_INFINITY },
+] as const
+
+const ageOf = (row: WorktreeSummary, now: number) =>
+  row.lastChange === null ? Number.POSITIVE_INFINITY : now - Date.parse(row.lastChange)
+
+/** Rows split by band, newest first inside each; empty bands are dropped. */
+function bandRows(rows: readonly WorktreeSummary[]) {
+  const now = Date.now()
+  const buckets = bands.map(band => ({ band, rows: [] as WorktreeSummary[] }))
+  for (const row of rows) {
+    const age = ageOf(row, now)
+    // The last band is unbounded, so every row lands somewhere.
+    const bucket = buckets.find(candidate => age <= candidate.band.within) ?? buckets.at(-1)
+    bucket?.rows.push(row)
+  }
+  for (const bucket of buckets) bucket.rows.sort((left, right) => ageOf(left, now) - ageOf(right, now))
+  return buckets.filter(bucket => bucket.rows.length > 0)
+}
+
 export function WorktreeIndex() {
   const [rows, setRows] = React.useState<readonly WorktreeSummary[] | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
@@ -73,7 +99,16 @@ export function WorktreeIndex() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map(row => <Row key={row.path} row={row} />)}
+              {bandRows(rows).map(entry => (
+                <React.Fragment key={entry.band.label}>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={9} className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {entry.band.label} · {entry.rows.length}
+                    </TableCell>
+                  </TableRow>
+                  {entry.rows.map(row => <Row key={row.path} row={row} />)}
+                </React.Fragment>
+              ))}
             </TableBody>
           </Table>
         )}
