@@ -1,10 +1,9 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
-import * as Option from 'effect/Option';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
+import { makeRepository } from './repository.ts';
 
 export type WorktreeMetadata = {
   readonly name: string;
@@ -47,7 +46,8 @@ const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
     ),
   );
 
-const readGitWorktrees = (worktreePath: string) =>
+/** Every worktree Git knows about, as seen from one of them. */
+export const listGitWorktrees = (worktreePath: string) =>
   Effect.gen(function*() {
     const result = yield* runGit(worktreePath, ['worktree', 'list', '--porcelain', '-z']);
     if (result.exitCode !== 0) {
@@ -79,7 +79,7 @@ export const refreshWorktreeMetadata = (metadata: WorktreeMetadata) =>
   Effect.gen(function*() {
     const topLevel = yield* runGit(metadata.path, ['rev-parse', '--show-toplevel']);
     if (topLevel.exitCode !== 0) return { ...metadata, branch: null };
-    const worktrees = yield* readGitWorktrees(metadata.path);
+    const worktrees = yield* listGitWorktrees(metadata.path);
     const current = worktrees.find((worktree) => worktree.path === metadata.path);
     if (current === undefined) {
       return yield* new WorktreeError({
@@ -105,7 +105,7 @@ export const resolveWorktreeSession = (input: string) =>
     }
 
     const worktreePath = resolve(topLevel.stdout);
-    const worktrees = yield* readGitWorktrees(worktreePath);
+    const worktrees = yield* listGitWorktrees(worktreePath);
     const mainWorktree = worktrees[0];
     const current = worktrees.find((worktree) => worktree.path === worktreePath);
     if (mainWorktree === undefined || current === undefined) {
@@ -134,101 +134,20 @@ export const resolveWorktreeSession = (input: string) =>
     } satisfies WorktreeSession;
   });
 
-const asWorktreeError = (error: unknown): WorktreeError =>
-  error instanceof WorktreeError
-    ? error
-    : new WorktreeError({
-        message: error instanceof Error ? error.message : String(error),
-        cause: error,
-      });
-
-/** `rename` across filesystems fails, so fall back to copying the tree. */
-const moveDirectory = (from: string, to: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem;
-    const renamed = yield* fs.rename(from, to).pipe(Effect.option);
-    if (Option.isSome(renamed)) return;
-    yield* fs.copy(from, to);
-    yield* fs.remove(from, { recursive: true });
-  });
+/**
+ * Route key for a worktree: its name, encoded segment by segment so a nested
+ * name (`email-backend/Heartbeat`) still addresses one board under `/w/`.
+ */
+export const encodeWorktreeKey = (name: string): string =>
+  name.split('/').map((segment) => encodeURIComponent(segment)).join('/');
 
 /**
- * Turn a shared, symlinked session into a real `.session` directory at the
- * worktree root. Idempotent: a real directory is left alone. Returns what it
- * did, one line per action.
+ * The one setup step, and the only one: every command runs it first, and the
+ * daemon runs it for every worktree it serves. It scaffolds, it never
+ * converts an older session. Returns what it had to create.
  */
-export const migrateSessionDirectory = (worktree: string) =>
+export const ensureSession = (session: WorktreeSession) =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem;
-    const actions: string[] = [];
-
-    const sessionPath = join(worktree, '.session');
-    const link = yield* fs.readLink(sessionPath).pipe(Effect.option);
-    if (Option.isSome(link)) {
-      const target = resolve(worktree, link.value);
-      const info = yield* fs.stat(target).pipe(Effect.option);
-      if (Option.isNone(info) || info.value.type !== 'Directory') {
-        return yield* new WorktreeError({
-          message:
-            `${sessionPath} points at ${target}, which is not a directory. Resolve it by hand, then run init again.`,
-        });
-      }
-      yield* fs.remove(sessionPath);
-      yield* moveDirectory(target, sessionPath);
-      actions.push(`Moved ${target} to ${sessionPath}`);
-    }
-
-    // The shared store link is retired; a real `.sessions` directory is not.
-    const storePath = join(worktree, '.sessions');
-    const storeLink = yield* fs.readLink(storePath).pipe(Effect.option);
-    if (Option.isSome(storeLink)) {
-      yield* fs.remove(storePath);
-      actions.push(`Removed the retired link ${storePath}`);
-    }
-
-    return actions;
-  }).pipe(Effect.mapError(asWorktreeError));
-
-const archiveSlug = (worktreePath: string, branch: string | null) =>
-  Effect.gen(function*() {
-    if (branch !== null) return branch.replaceAll('/', '-');
-    const head = yield* runGit(worktreePath, ['rev-parse', '--short', 'HEAD']);
-    if (head.exitCode !== 0) {
-      return yield* new WorktreeError({ message: 'Could not read the detached HEAD.' });
-    }
-    return `detached-${head.stdout}`;
+    const repository = yield* makeRepository(session.directory);
+    return yield* repository.initialize;
   });
-
-/** Park a finished worktree's session under the main worktree's `.sessions`. */
-export const archiveSessionDirectory = (worktree: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem;
-    const sessionPath = join(worktree, '.session');
-    const info = yield* fs.stat(sessionPath).pipe(Effect.option);
-    if (Option.isNone(info) || info.value.type !== 'Directory') {
-      return yield* new WorktreeError({ message: `${sessionPath} is not a directory.` });
-    }
-
-    const topLevel = yield* runGit(worktree, ['rev-parse', '--show-toplevel']);
-    if (topLevel.exitCode !== 0) {
-      return yield* new WorktreeError({ message: 'Archiving a session requires a Git worktree.' });
-    }
-    const worktreePath = resolve(topLevel.stdout);
-    const worktrees = yield* readGitWorktrees(worktreePath);
-    const mainWorktree = worktrees[0];
-    const current = worktrees.find((entry) => entry.path === worktreePath);
-    if (mainWorktree === undefined || current === undefined) {
-      return yield* new WorktreeError({ message: 'Git did not list the requested worktree.' });
-    }
-
-    const slug = yield* archiveSlug(worktreePath, current.branch);
-    const target = join(mainWorktree.path, '.sessions', slug);
-    if (yield* fs.exists(target)) {
-      return yield* new WorktreeError({
-        message: `${target} already exists. Move or remove it before archiving.`,
-      });
-    }
-    yield* fs.makeDirectory(dirname(target), { recursive: true });
-    yield* moveDirectory(sessionPath, target);
-    return target;
-  }).pipe(Effect.mapError(asWorktreeError));

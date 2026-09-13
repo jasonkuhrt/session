@@ -1,3 +1,4 @@
+import { LayoutGrid } from 'lucide-react'
 import * as React from 'react'
 
 import type { Item, Session } from '../contract'
@@ -5,8 +6,10 @@ import { stageNames } from '../contract'
 import { Board } from './components/board'
 import { DetailDialog } from './components/item-detail'
 import { BatchDialog, CompleteDialog } from './components/session-dialogs'
+import { Button } from './components/ui/button'
 import { Skeleton } from './components/ui/skeleton'
 import { ApiError, SessionApi } from './lib/api'
+import { basePath } from './lib/base'
 
 function App() {
   const [session, setSession] = React.useState<Session | null>(null)
@@ -39,33 +42,38 @@ function App() {
     return () => controller.abort()
   }, [load])
 
+  // The daemon pushes one `changed` event per debounced write under `.session`;
+  // the board never polls. A refetch waits while a mutation is in flight or a
+  // card is being dragged, because the sortable library owns placement until
+  // drop. Reconnecting refetches too, since writes can land while the stream
+  // is down.
+  const busy = pending || dragging
+  const busyRef = React.useRef(busy)
+  const missedRef = React.useRef(false)
+  const droppedRef = React.useRef(false)
+
   React.useEffect(() => {
-    if (pending || dragging) return
-    const controller = new AbortController()
-    let refreshing = false
-    const refresh = async () => {
-      if (document.hidden || refreshing) return
-      refreshing = true
-      try {
-        await load(controller.signal)
-      } finally {
-        refreshing = false
-      }
+    const source = new EventSource(`${basePath}/api/events`)
+    const refetch = () => {
+      if (busyRef.current) missedRef.current = true
+      else void load()
     }
-    // Disk changes arrive automatically; the editor owns the content, the board
-    // only reads it. Cancel an in-flight read so it cannot replace a later
-    // mutation result. Dragging pauses refresh because the sortable library
-    // owns placement until drop.
-    const interval = window.setInterval(refresh, 5_000)
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      controller.abort()
-      window.clearInterval(interval)
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [pending, dragging, load])
+    source.addEventListener('changed', refetch)
+    source.addEventListener('error', () => { droppedRef.current = true })
+    source.addEventListener('open', () => {
+      if (!droppedRef.current) return
+      droppedRef.current = false
+      refetch()
+    })
+    return () => source.close()
+  }, [load])
+
+  React.useEffect(() => {
+    busyRef.current = busy
+    if (busy || !missedRef.current) return
+    missedRef.current = false
+    void load()
+  }, [busy, load])
 
   const batchIds = new Set(session?.stages.find(stage => stage.stage === 'BATCH')?.items.map(item => item.id))
   const selectedBatchIds = new Set([...batchSelection].filter(id => batchIds.has(id)))
@@ -99,7 +107,7 @@ function App() {
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="border-b px-6 py-5">
+      <header className="flex items-center gap-8 border-b px-6 py-5">
         {session?.worktree ? (
           <dl className="flex gap-8 text-sm">
             <div>
@@ -112,6 +120,9 @@ function App() {
             </div>
           </dl>
         ) : null}
+        <Button variant="ghost" size="sm" className="ml-auto" render={<a aria-label="All sessions" href="/" />}>
+          <LayoutGrid /> All sessions
+        </Button>
       </header>
       {notice || loadError ? (
         <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">

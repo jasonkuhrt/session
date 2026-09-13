@@ -61,3 +61,54 @@ export const SessionSchema = Schema.Struct({
     items: Schema.Array(ItemSchema).pipe(Schema.mutable),
   })).pipe(Schema.mutable),
 });
+
+/** The one daemon per user listens here; `session open` upserts it. */
+export const daemonPort = 53045;
+
+export type DaemonInfo = {
+  pid: number;
+  port: number;
+  /** ISO 8601. */
+  startedAt: string;
+  /** Newest mtime across the server, contract, dist and CLI sources the daemon was started from. */
+  sourceStamp: string;
+};
+
+export const DaemonInfoSchema = Schema.Struct({
+  pid: Schema.Int,
+  port: Schema.Int,
+  startedAt: Schema.String,
+  sourceStamp: Schema.String,
+});
+
+/** One row of the index: a tracked worktree and what its session holds. */
+export type WorktreeSummary = {
+  /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
+  key: string;
+  name: string;
+  path: string;
+  branch: string | null;
+  running: { batch: string; items: number } | null;
+  counts: Record<Stage, number>;
+  /** ISO 8601 of the newest item file, or null for an empty session. */
+  lastChange: string | null;
+  /** Set when another tracked worktree already owns this key; the row is not served. */
+  conflict: string | null;
+};
+
+export const WorktreeSummarySchema = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  running: Schema.NullOr(Schema.Struct({ batch: Schema.String, items: Schema.Int })),
+  counts: Schema.Struct({
+    TRIAGE: Schema.Int,
+    DESIGN: Schema.Int,
+    BATCH: Schema.Int,
+    QUEUE: Schema.Int,
+    EXECUTE: Schema.Int,
+  }),
+  lastChange: Schema.NullOr(Schema.String),
+  conflict: Schema.NullOr(Schema.String),
+});

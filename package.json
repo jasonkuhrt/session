@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/session/scripts/session.ts serve",
+    "dev": "bun run src/session/scripts/session.ts open",
     "build": "bun run app/build.ts",
     "check": "bun run lint && bun run doctor && bun run build",
     "install:skill": "bash install.sh",

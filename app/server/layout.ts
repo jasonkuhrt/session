@@ -1,3 +1,5 @@
+import * as DateTime from 'effect/DateTime';
+import * as Effect from 'effect/Effect';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage } from '../contract.ts';
 import {
@@ -39,6 +41,23 @@ export type StageTreeEntry = {
 };
 
 const formatPrefix = (value: number): string => String(value).padStart(3, '0');
+
+/** Archived items live here, outside the agent's context like `ignore/`. */
+export const archiveDirectory = 'archive';
+
+/** The archive day, in the machine's own zone: this is a human's filing. */
+export const archiveDay = DateTime.now.pipe(
+  Effect.map((now) => DateTime.formatIsoDate(now.pipe(DateTime.setZone(DateTime.zoneMakeLocal())))),
+);
+
+/** A name that reads on its own: the day, the item, and the state it left. */
+export const archiveFilePath = (input: {
+  readonly day: string;
+  readonly id: string;
+  readonly title: string;
+  readonly state: string;
+}): string =>
+  `${archiveDirectory}/${input.day} ${input.id} — ${input.title.replaceAll('/', '-')} (${input.state}).md`;
 
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {
   const match: RegExpExecArray = entryName.exec(name) ??

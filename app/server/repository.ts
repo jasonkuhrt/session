@@ -3,10 +3,14 @@ import * as Crypto from 'effect/Crypto';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import * as Option from 'effect/Option';
 import * as Semaphore from 'effect/Semaphore';
 import type { Item, Session, Stage, StageFile } from '../contract.ts';
 import { isBatchedStage, stageNames } from '../contract.ts';
 import {
+  archiveDay,
+  archiveDirectory,
+  archiveFilePath,
   parseStageDirectory,
   renderStageDirectory,
   type StageFileEntry,
@@ -17,9 +21,7 @@ import {
   findRequiredItem,
   type ItemDraft,
   makeItem,
-  parseStageMarkdown,
   quote,
-  renderItem,
   SessionError,
   validateItem,
   validateItemSections,
@@ -29,7 +31,6 @@ import {
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
 const encoder = new TextEncoder();
-const archivePath = 'ignore/COMPLETED.md';
 const gitignorePath = '.gitignore';
 const gitignoreContent = '*\n';
 
@@ -187,7 +188,7 @@ const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: str
 const isExcludedRealPath = (realRoot: string, candidate: string): boolean =>
   relative(realRoot, candidate)
     .split(sep)
-    .some((segment) => segment === 'ignore');
+    .some((segment) => segment === 'ignore' || segment === archiveDirectory);
 
 export const makeRepository = (directory: string) =>
   Effect.gen(function*() {
@@ -217,23 +218,6 @@ export const makeRepository = (directory: string) =>
         ),
       );
     const digest = (content: string) => digestBytes(encoder.encode(content));
-
-    /** `null` when the file is absent. */
-    const readMaybe = (relativePath: string) =>
-      Effect.gen(function*() {
-        const path = absolute(relativePath);
-        if (!(yield* fs.exists(path))) return null;
-        return yield* fs.readFileString(path);
-      }).pipe(
-        Effect.mapError(
-          (cause) =>
-            new RepositoryError({
-              kind: 'io',
-              message: `Could not read ${relativePath}.`,
-              cause,
-            }),
-        ),
-      );
 
     /**
      * Write through a dot-prefixed neighbour, which the directory parser
@@ -360,8 +344,8 @@ export const makeRepository = (directory: string) =>
           return yield* new RepositoryError({
             kind: 'not-found',
             message: fileType === null
-              ? `Session is missing ${stage}/. Run \`session init\`.`
-              : `Session still keeps ${stage}.md instead of ${stage}/. Run \`session init\`.`,
+              ? `Session is missing ${stage}/. Run any session command to create it.`
+              : `Session is missing ${stage}/. Run any session command to create it, then fold ${stage}.md into it by hand.`,
           });
         }
         const tree = yield* readStageTree(directoryPath);
@@ -382,7 +366,11 @@ export const makeRepository = (directory: string) =>
           relativePath.startsWith('/') ||
           segments.some(
             (segment) =>
-              segment === '' || segment === '.' || segment === '..' || segment === 'ignore',
+              segment === '' ||
+              segment === '.' ||
+              segment === '..' ||
+              segment === 'ignore' ||
+              segment === archiveDirectory,
           )
         ) {
           return yield* new RepositoryError({
@@ -453,9 +441,27 @@ export const makeRepository = (directory: string) =>
 
     const load = semaphore.withPermit(loadUnlocked.pipe(Effect.map((loaded) => toSession(loaded))));
 
+    /**
+     * A link into a store that was never created is litter. A link that leads
+     * somewhere is somebody else's directory, and nothing operates through it.
+     */
+    const sessionLink = Effect.gen(function*() {
+      const link = yield* fs.readLink(root).pipe(Effect.option);
+      if (Option.isNone(link)) return 'directory' as const;
+      // `exists` follows the link, so a dead one answers false.
+      return (yield* fs.exists(root)) ? ('live' as const) : ('dangling' as const);
+    }).pipe(Effect.mapError(asRepositoryError));
+
+    const symlinkRefusal = new RepositoryError({
+      kind: 'validation',
+      message:
+        `${root} is a symlink; replace it with a real directory (the sweep does this), then retry.`,
+    });
+
     /** What `load` reads past: leftover stage files, and self-ignoring. */
     const check = semaphore.withPermit(
       Effect.gen(function*() {
+        if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
         const loaded = yield* loadUnlocked;
         for (const stage of stageNames) {
           const leftover = yield* pathType(absolute(`${stage}.md`)).pipe(
@@ -464,8 +470,7 @@ export const makeRepository = (directory: string) =>
           if (leftover !== null) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message:
-                `${stage}.md is a leftover stage file; ${stage}/ holds the items now. Fold it in and remove it.`,
+              message: `${stage}.md is a leftover stage file; fold it into ${stage}/ by hand.`,
             });
           }
         }
@@ -475,7 +480,7 @@ export const makeRepository = (directory: string) =>
         if (!hasGitignore) {
           return yield* new RepositoryError({
             kind: 'validation',
-            message: 'Session is missing .gitignore. Run `session init`.',
+            message: 'Session is missing .gitignore. Run any session command to write it.',
           });
         }
         yield* attempt(() => {
@@ -656,6 +661,45 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
+    /**
+     * Move one item out of the board and into `archive/`, under a name that
+     * reads on its own: the day, the item, and the state it left from.
+     */
+    const fileAway = (input: {
+      readonly id: string;
+      readonly state: string;
+      readonly loaded: Loaded;
+      readonly from: Stage;
+    }) =>
+      Effect.gen(function*() {
+        const state = stageOf(input.loaded, input.from);
+        const item = state.items.find((candidate) => candidate.id === input.id)!;
+        const held = state.files.find((file) => file.path === item.path);
+        if (held === undefined) {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: `${item.path} is no longer on disk.`,
+          });
+        }
+        const path = archiveFilePath({
+          day: yield* archiveDay,
+          id: item.id,
+          title: item.title,
+          state: input.state,
+        });
+        const taken = yield* pathType(absolute(path)).pipe(Effect.mapError(asRepositoryError));
+        if (taken !== null) {
+          return yield* new RepositoryError({
+            kind: 'conflict',
+            message: `${path} already exists. Move it aside first.`,
+          });
+        }
+        const changes = yield* attempt(() =>
+          stageChanges(state, state.items.filter((candidate) => candidate.id !== input.id)),
+        );
+        return [{ path, content: held.content }, ...changes];
+      });
+
     const completeItem = (input: { readonly id: string; readonly revision: string }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
@@ -666,68 +710,89 @@ export const makeRepository = (directory: string) =>
               message: `Item ${input.id} is not in EXECUTE.`,
             });
           }
-          const execute = stageOf(loaded, 'EXECUTE');
-          const batch = found.item.batch;
-          if (batch === null) {
-            return yield* new RepositoryError({
-              kind: 'validation',
-              message: `EXECUTE/${input.id} has no batch.`,
-            });
-          }
-          const beforeArchive = yield* readMaybe(archivePath);
-          const record = `# ${batch}\n\n${renderItem(found.item)}\n`;
-          const archive = beforeArchive === null || beforeArchive === ''
-            ? record
-            : `${beforeArchive.trimEnd()}\n\n${record}`;
-          const changes = yield* attempt(() =>
-            stageChanges(execute, execute.items.filter((item) => item.id !== input.id)),
-          );
-          return [...changes, { path: archivePath, content: archive }];
+          return yield* fileAway({ id: input.id, state: 'done', loaded, from: 'EXECUTE' });
         }),
       );
 
-    /**
-     * The one-shot migration from the v2 layout: a leftover `STAGE.md` becomes
-     * the stage's item files. It runs until every worktree has been initialized.
-     */
-    const initialize = Effect.gen(function*() {
-      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
-      const actions: string[] = [];
-      for (const stage of stageNames) {
-        const filePath = absolute(`${stage}.md`);
-        const directoryPath = absolute(stage);
-        const [fileType, directoryType] = yield* Effect.all([
-          pathType(filePath),
-          pathType(directoryPath),
-        ]).pipe(Effect.mapError(asRepositoryError));
-        if (fileType !== null && directoryType === 'Directory') {
-          return yield* new RepositoryError({
-            kind: 'validation',
-            message:
-              `Session has both ${stage}.md and ${stage}/. Fold ${stage}.md into ${stage}/ by hand and remove it.`,
+    /** Any stage, including EXECUTE, where it means the batch gave the item up. */
+    const archiveItem = (input: { readonly id: string; readonly revision: string }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
+          return yield* fileAway({
+            id: input.id,
+            state: found.stage.toLowerCase(),
+            loaded,
+            from: found.stage,
           });
+        }),
+      );
+
+    /** Scaffolds what is missing. It never converts an older session. */
+    const initialize = Effect.gen(function*() {
+      const actions: string[] = [];
+      const link = yield* sessionLink;
+      if (link === 'live') return yield* symlinkRefusal;
+      if (link === 'dangling') {
+        // `remove` unlinks the link itself; nothing it pointed at ever existed.
+        yield* fs.remove(root).pipe(Effect.mapError(asRepositoryError));
+        actions.push(`Removed the dangling link ${root}`);
+      }
+      if ((yield* pathType(root).pipe(Effect.mapError(asRepositoryError))) === null) {
+        actions.push(`Created ${root}`);
+      }
+      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
+      const created: Stage[] = [];
+      for (const stage of stageNames) {
+        const directoryPath = absolute(stage);
+        if ((yield* pathType(directoryPath).pipe(Effect.mapError(asRepositoryError))) === null) {
+          created.push(stage);
         }
         yield* fs.makeDirectory(directoryPath, { recursive: true }).pipe(
           Effect.mapError(asRepositoryError),
         );
-        if (fileType === null) continue;
-        const markdown = yield* fs.readFileString(filePath).pipe(
-          Effect.mapError(asRepositoryError),
-        );
-        const items = yield* attempt(() => parseStageMarkdown(stage, markdown));
-        const files = yield* attempt(() =>
-          renderStageDirectory({ stage, items, current: [] })
-        );
-        for (const entry of files) yield* atomicWrite(entry.path, entry.content);
-        yield* removeFile(`${stage}.md`);
-        actions.push(`Converted ${stage}.md into ${stage}/`);
+      }
+      if (created.length > 0) {
+        actions.push(`Created ${created.map((stage) => `${stage}/`).join(' ')}`);
       }
       const hasGitignore = yield* fs.exists(absolute(gitignorePath)).pipe(
         Effect.mapError(asRepositoryError),
       );
-      if (!hasGitignore) yield* atomicWrite(gitignorePath, gitignoreContent);
+      if (!hasGitignore) {
+        yield* atomicWrite(gitignorePath, gitignoreContent);
+        actions.push(`Wrote ${gitignorePath}`);
+      }
       return actions;
     });
+
+    /** The newest item file's mtime, for the index. Null when nothing is filed. */
+    const lastChange = semaphore.withPermit(
+      Effect.gen(function*() {
+        let newest: Date | undefined;
+        const consider = (mtime: Option.Option<Date>) => {
+          if (Option.isNone(mtime)) return;
+          if (newest === undefined || mtime.value > newest) newest = mtime.value;
+        };
+        for (const stage of stageNames) {
+          const stageDirectory = absolute(stage);
+          if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
+          for (const name of yield* fs.readDirectory(stageDirectory)) {
+            if (name.startsWith('.')) continue;
+            const child = join(stageDirectory, name);
+            const info = yield* fs.stat(child);
+            if (info.type !== 'Directory') {
+              consider(info.mtime);
+              continue;
+            }
+            for (const innerName of yield* fs.readDirectory(child)) {
+              if (innerName.startsWith('.')) continue;
+              consider((yield* fs.stat(join(child, innerName))).mtime);
+            }
+          }
+        }
+        return newest?.toISOString() ?? null;
+      }).pipe(Effect.mapError(asRepositoryError)),
+    );
 
     const inventory = semaphore.withPermit(
       Effect.gen(function*() {
@@ -747,7 +812,7 @@ export const makeRepository = (directory: string) =>
             );
             const entries: Array<readonly [string, string]> = [];
             for (const name of names) {
-              if (name === 'ignore') continue;
+              if (name === 'ignore' || name === archiveDirectory) continue;
               const relativePath = relativeDirectory === '' ? name : join(relativeDirectory, name);
               const candidate = join(realDirectory, name);
               const realCandidate = yield* fs.realPath(candidate).pipe(
@@ -781,7 +846,9 @@ export const makeRepository = (directory: string) =>
       queueBatch,
       startBatch,
       completeItem,
+      archiveItem,
       inventory,
+      lastChange,
       readMarkdownFile,
     } as const;
   });
