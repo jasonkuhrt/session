@@ -56,6 +56,16 @@
       }
     },
     {
+      "files": ["src/session/scripts/session.ts"],
+      "rules": {
+        // The CLI is one argv table plus one small function per command. File,
+        // function, and import limits would scatter that surface across files.
+        "eslint/max-lines": "off",
+        "eslint/max-lines-per-function": "off",
+        "import/max-dependencies": "off"
+      }
+    },
+    {
       "files": ["app/src/**/*.tsx"],
       "rules": {
         // React view composition naturally concentrates imports and event

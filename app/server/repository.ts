@@ -5,13 +5,24 @@ import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Schema from 'effect/Schema';
 import * as Semaphore from 'effect/Semaphore';
-import type { Item, Session, Stage, StageFile } from '../contract.ts';
-import { stageNames } from '../contract.ts';
+import type { Item, Session, Stage, StageFile, StageLayout } from '../contract.ts';
+import { isBatchedStage, stageFileLineLimit, stageNames } from '../contract.ts';
 import {
+  parseStageDirectory,
+  renderStageDirectory,
+  type StageFileEntry,
+  type StageTreeEntry,
+} from './layout.ts';
+import {
+  fail,
   findRequiredItem,
+  makeItem,
   parseStageMarkdown,
+  quote,
+  renderItem,
   renderStageMarkdown,
   SessionError,
+  validateBatchName,
   validateItem,
   validateUniqueIds,
 } from './model.ts';
@@ -20,21 +31,25 @@ import {
 
 const encoder = new TextEncoder();
 const archivePath = 'ignore/COMPLETED.md';
+const gitignorePath = '.gitignore';
+const gitignoreContent = '*\n';
 const journalPath = '.runtime/transaction.json';
 const journalNextPath = '.runtime/transaction.next.json';
 const accessLockPath = '.runtime/access.lock';
 
+/** `null` is "the file is absent", which a rename or a split needs on both sides. */
 const JournalWrite = Schema.Struct({
   path: Schema.String,
-  before: Schema.String,
-  after: Schema.String,
+  before: Schema.NullOr(Schema.String),
+  after: Schema.NullOr(Schema.String),
 });
 const JournalSchema = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   writes: Schema.Array(JournalWrite),
 });
 const JournalFromJsonString = Schema.fromJsonString(JournalSchema);
 type Journal = typeof JournalSchema.Type;
+type PendingWrite = typeof JournalWrite.Type;
 
 export type FileInventory = Record<string, string>;
 
@@ -66,59 +81,125 @@ const attempt = <A>(operation: () => A) =>
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
-const copyItem = (item: Item, group = item.group): Item => ({
-  id: item.id,
-  title: item.title,
-  body: item.body,
-  summary: item.summary,
-  group,
+/** `wc -l`: the number of newlines, which is what the 500-line rule counts. */
+const lineCount = (markdown: string): number => markdown.split('\n').length - 1;
+
+/** A stage plus the files that carry it, so a mutation can diff them. */
+type StageState = {
+  readonly stage: Stage;
+  readonly layout: StageLayout;
+  readonly path: string;
+  readonly markdown: string;
+  readonly items: Item[];
+  readonly files: ReadonlyArray<StageFileEntry>;
+};
+
+type Loaded = {
+  readonly root: string;
+  readonly revision: string;
+  readonly stages: StageState[];
+};
+
+const toStageFile = (state: StageState): StageFile => ({
+  stage: state.stage,
+  layout: state.layout,
+  path: state.path,
+  markdown: state.markdown,
+  items: state.items,
 });
 
-const insertItem = (stage: Stage, items: Item[], item: Item): Item[] => {
-  if ((stage === 'BATCH' || stage === 'EXECUTE') && item.group === null) {
-    const firstGrouped = items.findIndex((candidate) => candidate.group !== null);
-    if (firstGrouped !== -1) {
-      return [...items.slice(0, firstGrouped), item, ...items.slice(firstGrouped)];
+const toSession = (loaded: Loaded): Session => ({
+  directory: loaded.root,
+  revision: loaded.revision,
+  stages: loaded.stages.map(toStageFile),
+});
+
+const stageOf = (loaded: Loaded, stage: Stage): StageState =>
+  loaded.stages.find((entry) => entry.stage === stage)!;
+
+const projected = (
+  loaded: Loaded,
+  updates: ReadonlyArray<{ readonly stage: Stage; readonly items: ReadonlyArray<Item> }>,
+) =>
+  loaded.stages.map((state) => ({
+    stage: state.stage,
+    items: updates.find((update) => update.stage === state.stage)?.items ?? state.items,
+  }));
+
+/** The files a transaction must create, rewrite, or delete to reach `desired`. */
+const diffFiles = (
+  current: ReadonlyArray<StageFileEntry>,
+  desired: ReadonlyArray<StageFileEntry>,
+): PendingWrite[] => {
+  const currentByPath = new Map(current.map((entry) => [entry.path, entry.content] as const));
+  const desiredPaths = new Set(desired.map((entry) => entry.path));
+  const writes: PendingWrite[] = [];
+  for (const entry of desired) {
+    const before = currentByPath.get(entry.path) ?? null;
+    if (before !== entry.content) writes.push({ path: entry.path, before, after: entry.content });
+  }
+  for (const entry of current) {
+    if (!desiredPaths.has(entry.path)) {
+      writes.push({ path: entry.path, before: entry.content, after: null });
     }
   }
-  return [...items, item];
+  return writes;
+};
+
+/**
+ * The stage's files after this change. A file-layout stage that would pass the
+ * line limit becomes a directory in the same transaction; the conversion never
+ * reverses.
+ */
+const stageWrites = (
+  state: StageState,
+  items: ReadonlyArray<Item>,
+  options?: { readonly directory?: boolean | undefined },
+): PendingWrite[] => {
+  const markdown = renderStageMarkdown(state.stage, items);
+  const asDirectory = state.layout === 'directory' ||
+    options?.directory === true ||
+    lineCount(markdown) > stageFileLineLimit;
+  const desired = asDirectory
+    ? renderStageDirectory({ stage: state.stage, items, current: state.files })
+    : [{ path: `${state.stage}.md`, content: markdown }];
+  return diffFiles(state.files, desired);
 };
 
 const placeItem = (
   stage: Stage,
-  items: Item[],
+  items: ReadonlyArray<Item>,
   item: Item,
   beforeId: string | null | undefined,
 ): Item[] => {
-  if (beforeId === undefined || beforeId === null) return insertItem(stage, items, item);
-  const index = items.findIndex((candidate) => candidate.id === beforeId);
-  if (index === -1) {
-    throw new SessionError({
-      kind: 'validation',
-      message: `${stage}: cannot place ${item.id} before missing item ${beforeId}.`,
-    });
-  }
-  const firstGrouped = items.findIndex((candidate) => candidate.group !== null);
-  const boundary = firstGrouped === -1 ? items.length : firstGrouped;
-  // Markdown has no header for returning to an ungrouped region. Keep both
-  // kinds on their side of that boundary when a drop crosses it.
-  const insertionIndex = stage === 'BATCH' || stage === 'EXECUTE'
-    ? item.group === null ? Math.min(index, boundary) : Math.max(index, boundary)
-    : index;
-  return [...items.slice(0, insertionIndex), item, ...items.slice(insertionIndex)];
-};
+  const insertAt = (index: number) => [...items.slice(0, index), item, ...items.slice(index)];
+  const indexOfBefore = (from: number, to: number) => {
+    const index = items.findIndex((candidate) => candidate.id === beforeId);
+    if (index < from || index >= to) {
+      fail(`${stage}: cannot place ${item.id} before ${String(beforeId)}.`);
+    }
+    return index;
+  };
 
-const replaceStage = (
-  stages: StageFile[],
-  stage: Stage,
-  items: Item[],
-  markdown = renderStageMarkdown(stage, items),
-): StageFile[] =>
-  stages.map((entry) =>
-    entry.stage === stage
-      ? { ...entry, markdown, items }
-      : entry,
-  );
+  if (!isBatchedStage(stage)) {
+    if (beforeId === undefined || beforeId === null) return [...items, item];
+    return insertAt(indexOfBefore(0, items.length));
+  }
+
+  const batch: string = item.batch ??
+    fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
+  const start = items.findIndex((candidate) => candidate.batch === batch);
+  if (start === -1) {
+    if (beforeId !== undefined && beforeId !== null) {
+      fail(`${stage}: batch ${quote(batch)} has no item ${beforeId}.`);
+    }
+    return [...items, item];
+  }
+  let end = start;
+  while (end < items.length && items[end]!.batch === batch) end += 1;
+  if (beforeId === undefined || beforeId === null) return insertAt(end);
+  return insertAt(indexOfBefore(start, end));
+};
 
 const decodeJournal = (input: string) =>
   Schema.decodeEffect(JournalFromJsonString)(input).pipe(
@@ -126,11 +207,32 @@ const decodeJournal = (input: string) =>
       (cause) =>
         new RepositoryError({
           kind: 'conflict',
-          message: 'The session transaction journal is malformed.',
+          message:
+            'The session transaction journal is not a version 2 journal. Inspect .runtime/transaction.json, apply or discard it by hand, and remove it.',
           cause,
         }),
     ),
   );
+
+const safeSegments = (segments: ReadonlyArray<string>): boolean =>
+  segments.every(
+    (segment) =>
+      segment !== '' &&
+      segment !== '.' &&
+      segment !== '..' &&
+      segment !== 'ignore' &&
+      segment !== '.runtime',
+  );
+
+/** Stage files, stage item files, and the completion archive; nothing else. */
+const isJournalPath = (path: string): boolean => {
+  if (path === archivePath) return true;
+  const segments = path.split('/');
+  if (!safeSegments(segments)) return false;
+  const head = segments[0]!;
+  if (segments.length === 1) return stageNames.some((stage) => head === `${stage}.md`);
+  return stageNames.some((stage) => head === stage) && path.endsWith('.md');
+};
 
 const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: string) => {
   if (candidate !== realRoot && !candidate.startsWith(`${realRoot}${sep}`)) {
@@ -155,22 +257,32 @@ export const makeRepository = (directory: string) =>
 
     const absolute = (relativePath: string) => join(root, relativePath);
 
+    const pathType = (path: string) =>
+      Effect.gen(function*() {
+        if (!(yield* fs.exists(path))) return null;
+        return (yield* fs.stat(path)).type;
+      });
+
+    const writeIfAbsent = (path: string, content: string) =>
+      fs.writeFileString(path, content, { flag: 'wx' }).pipe(
+        Effect.catch((cause) =>
+          fs.exists(path).pipe(
+            Effect.flatMap((exists) => exists ? Effect.void : Effect.fail(cause)),
+          ),
+        ),
+      );
+
     const initialize = Effect.gen(function*() {
       yield* fs.makeDirectory(root, { recursive: true });
       for (const stage of stageNames) {
-        const path = absolute(`${stage}.md`);
-        if (!(yield* fs.exists(path))) {
-          yield* fs.writeFileString(path, '', { flag: 'wx' }).pipe(
-            Effect.catch((cause) =>
-              fs.exists(path).pipe(
-                Effect.flatMap((exists) =>
-                  exists ? Effect.void : Effect.fail(cause),
-                ),
-              ),
-            ),
-          );
-        }
+        const layouts = yield* Effect.all([
+          fs.exists(absolute(`${stage}.md`)),
+          fs.exists(absolute(stage)),
+        ]);
+        if (layouts.includes(true)) continue;
+        yield* writeIfAbsent(absolute(`${stage}.md`), '');
       }
+      yield* writeIfAbsent(absolute(gitignorePath), gitignoreContent);
     }).pipe(Effect.mapError(asRepositoryError));
 
     const acquireDiskLock = Effect.gen(function*() {
@@ -217,10 +329,11 @@ export const makeRepository = (directory: string) =>
       );
     const digest = (content: string) => digestBytes(encoder.encode(content));
 
-    const readOptional = (relativePath: string) =>
+    /** `null` when the file is absent, which the journal records as such. */
+    const readMaybe = (relativePath: string) =>
       Effect.gen(function*() {
         const path = absolute(relativePath);
-        if (!(yield* fs.exists(path))) return '';
+        if (!(yield* fs.exists(path))) return null;
         return yield* fs.readFileString(path);
       }).pipe(
         Effect.mapError(
@@ -233,17 +346,82 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
-    const readStage = (stage: Stage) =>
+    const readStageTree = (stageDirectory: string) =>
       Effect.gen(function*() {
-        const relativePath = `${stage}.md`;
-        const path = absolute(relativePath);
-        if (!(yield* fs.exists(path))) {
+        const entries: StageTreeEntry[] = [];
+        for (const name of (yield* fs.readDirectory(stageDirectory)).toSorted()) {
+          if (name.startsWith('.')) continue;
+          const child = join(stageDirectory, name);
+          const info = yield* fs.stat(child);
+          if (info.type !== 'Directory') {
+            entries.push({
+              name,
+              type: 'file',
+              content: yield* fs.readFileString(child),
+              children: [],
+            });
+            continue;
+          }
+          const children: Array<StageTreeEntry['children'][number]> = [];
+          for (const innerName of (yield* fs.readDirectory(child)).toSorted()) {
+            if (innerName.startsWith('.')) continue;
+            const inner = join(child, innerName);
+            const innerInfo = yield* fs.stat(inner);
+            const isDirectory = innerInfo.type === 'Directory';
+            children.push({
+              name: innerName,
+              type: isDirectory ? 'directory' : 'file',
+              content: isDirectory ? '' : yield* fs.readFileString(inner),
+            });
+          }
+          entries.push({ name, type: 'directory', content: '', children });
+        }
+        return entries;
+      });
+
+    const readStageState = (stage: Stage) =>
+      Effect.gen(function*() {
+        const filePath = absolute(`${stage}.md`);
+        const directoryPath = absolute(stage);
+        const [fileType, directoryType] = yield* Effect.all([
+          pathType(filePath),
+          pathType(directoryPath),
+        ]);
+        if (fileType !== null && directoryType === 'Directory') {
           return yield* new RepositoryError({
-            kind: 'not-found',
-            message: `Session is missing ${relativePath}. Run session.ts init <dir>.`,
+            kind: 'validation',
+            message: `Session has both ${stage}.md and ${stage}/. Keep one of them.`,
           });
         }
-        return yield* fs.readFileString(path);
+        if (directoryType === 'Directory') {
+          const tree = yield* readStageTree(directoryPath);
+          const parsed = yield* attempt(() => parseStageDirectory(stage, tree));
+          const markdown = yield* attempt(() => renderStageMarkdown(stage, parsed.items));
+          return {
+            stage,
+            layout: 'directory',
+            path: directoryPath,
+            markdown,
+            items: parsed.items,
+            files: parsed.files,
+          } satisfies StageState;
+        }
+        if (fileType === null) {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: `Session is missing ${stage}.md. Run \`session init\`.`,
+          });
+        }
+        const markdown = yield* fs.readFileString(filePath);
+        const items = yield* attempt(() => parseStageMarkdown(stage, markdown));
+        return {
+          stage,
+          layout: 'file',
+          path: filePath,
+          markdown,
+          items,
+          files: [{ path: `${stage}.md`, content: markdown }],
+        } satisfies StageState;
       }).pipe(Effect.mapError(asRepositoryError));
 
     const readMarkdownFile = (relativePath: string) =>
@@ -252,19 +430,16 @@ export const makeRepository = (directory: string) =>
         if (
           !relativePath.endsWith('.md') ||
           relativePath.startsWith('/') ||
-          segments.some(
-            (segment) =>
-              segment === '' ||
-              segment === '.' ||
-              segment === '..' ||
-              segment === 'ignore' ||
-              segment === '.runtime',
-          )
+          !safeSegments(segments)
         ) {
           return yield* new RepositoryError({
             kind: 'not-found',
             message: 'Markdown file is outside the live session.',
           });
+        }
+        const stage = stageNames.find((candidate) => relativePath === `${candidate}.md`);
+        if (stage !== undefined && (yield* pathType(absolute(stage))) === 'Directory') {
+          return (yield* readStageState(stage)).markdown;
         }
         const realRoot = yield* fs.realPath(root);
         const candidate = absolute(relativePath);
@@ -295,9 +470,8 @@ export const makeRepository = (directory: string) =>
     const atomicWrite = (relativePath: string, content: string, index: number) =>
       Effect.gen(function*() {
         const target = absolute(relativePath);
-        const parent = dirname(target);
         const temp = absolute(`.runtime/write-${index}.tmp`);
-        yield* fs.makeDirectory(parent, { recursive: true });
+        yield* fs.makeDirectory(dirname(target), { recursive: true });
         yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
         yield* fs.writeFileString(temp, content);
         yield* fs.rename(temp, target);
@@ -311,6 +485,46 @@ export const makeRepository = (directory: string) =>
             }),
         ),
       );
+
+    const removeFile = (relativePath: string) =>
+      Effect.gen(function*() {
+        const target = absolute(relativePath);
+        if (yield* fs.exists(target)) yield* fs.remove(target);
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new RepositoryError({
+              kind: 'io',
+              message: `Could not remove ${relativePath}.`,
+              cause,
+            }),
+        ),
+      );
+
+    /** A stage directory keeps itself; the batch directories it empties do not. */
+    const pruneEmptyDirectories = Effect.gen(function*() {
+      for (const stage of stageNames) {
+        const stageDirectory = absolute(stage);
+        if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
+        for (const name of yield* fs.readDirectory(stageDirectory)) {
+          const child = join(stageDirectory, name);
+          if ((yield* pathType(child)) !== 'Directory') continue;
+          // `remove` needs `recursive` for a directory even when it is empty.
+          if ((yield* fs.readDirectory(child)).length === 0) {
+            yield* fs.remove(child, { recursive: true });
+          }
+        }
+      }
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new RepositoryError({
+            kind: 'io',
+            message: 'Could not remove an emptied batch directory.',
+            cause,
+          }),
+      ),
+    );
 
     const removeJournal = Effect.gen(function*() {
       if (yield* fs.exists(absolute(journalPath))) {
@@ -329,12 +543,8 @@ export const makeRepository = (directory: string) =>
 
     const applyJournal = (journal: Journal) =>
       Effect.gen(function*() {
-        const allowed = new Set<string>([
-          ...stageNames.map((stage) => `${stage}.md`),
-          archivePath,
-        ]);
         for (const write of journal.writes) {
-          if (!allowed.has(write.path)) {
+          if (!isJournalPath(write.path)) {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: `Transaction journal contains unsafe path ${write.path}.`,
@@ -346,7 +556,7 @@ export const makeRepository = (directory: string) =>
         const current = yield* Effect.forEach(
           // eslint-disable-next-line unicorn/no-array-callback-reference
           journal.writes,
-          (write) => readOptional(write.path),
+          (write) => readMaybe(write.path),
         );
         for (const [index, write] of journal.writes.entries()) {
           const value = current[index]!;
@@ -359,11 +569,12 @@ export const makeRepository = (directory: string) =>
         }
 
         for (const [index, write] of journal.writes.entries()) {
-          if (current[index] === write.before) {
-            yield* atomicWrite(write.path, write.after, index);
-          }
+          if (current[index] !== write.before) continue;
+          if (write.after === null) yield* removeFile(write.path);
+          else yield* atomicWrite(write.path, write.after, index);
         }
         yield* removeJournal;
+        yield* pruneEmptyDirectories;
       });
 
     const recover = Effect.gen(function*() {
@@ -380,104 +591,107 @@ export const makeRepository = (directory: string) =>
       );
       const journal = yield* decodeJournal(encoded);
       yield* applyJournal(journal);
-    });
+    }).pipe(Effect.mapError(asRepositoryError));
 
-    const readStages = Effect.gen(function*() {
-      const markdown = yield* Effect.all(
-        stageNames.map((stage) => readStage(stage)),
-      );
-      const stages = yield* attempt(() =>
-        stageNames.map(
-          (stage, index): StageFile => ({
-            stage,
-            file: absolute(`${stage}.md`),
-            markdown: markdown[index]!,
-            items: parseStageMarkdown(stage, markdown[index]!),
-          }),
-        ),
-      );
-      yield* attempt(() => validateUniqueIds(stages));
-      return stages;
-    });
-
-    const revisionOf = (stages: StageFile[]) =>
+    const revisionOf = (stages: ReadonlyArray<StageState>) =>
       digest(
         stages
-          .map((stage) => `${stage.stage}.md\0${stage.markdown.length}\0${stage.markdown}`)
-          .join('\0'),
+          .map((stage) => `${stage.stage}.md\u0000${stage.markdown.length}\u0000${stage.markdown}`)
+          .join('\u0000'),
       );
 
     const loadUnlocked = Effect.gen(function*() {
       yield* recover;
-      const stages = yield* readStages;
+      const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
+      yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
-      return { directory: root, revision, stages } satisfies Session;
+      return { root, revision, stages } satisfies Loaded;
     });
 
-    const writeTransaction = (writes: Journal['writes']) =>
+    const writeTransaction = (writes: ReadonlyArray<PendingWrite>) =>
       Effect.gen(function*() {
         if (writes.length === 0) return;
         yield* fs.makeDirectory(absolute('.runtime'), { recursive: true });
-        const journal: Journal = { version: 1, writes };
+        const journal: Journal = { version: 2, writes };
         const encoded = yield* Schema.encodeEffect(JournalFromJsonString)(journal);
         yield* fs.writeFileString(absolute(journalNextPath), encoded);
         yield* fs.rename(absolute(journalNextPath), absolute(journalPath));
         yield* applyJournal(journal);
-      }).pipe(
-        Effect.mapError(asRepositoryError),
-      );
+      }).pipe(Effect.mapError(asRepositoryError));
 
     const mutate = (
       revision: string,
-      change: (
-        session: Session,
-      ) => Effect.Effect<ReadonlyArray<{ path: string; before: string; after: string }>, RepositoryError>,
+      change: (loaded: Loaded) => Effect.Effect<ReadonlyArray<PendingWrite>, RepositoryError>,
     ) =>
       withExclusiveAccess(
         Effect.gen(function*() {
-          const session = yield* loadUnlocked;
-          if (session.revision !== revision) {
+          const loaded = yield* loadUnlocked;
+          if (loaded.revision !== revision) {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'Session changed on disk. Reload before saving.',
             });
           }
-          yield* writeTransaction(yield* change(session));
-          return yield* loadUnlocked;
+          yield* writeTransaction(yield* change(loaded));
+          return toSession(yield* loadUnlocked);
         }),
       );
 
-    const load = withExclusiveAccess(loadUnlocked);
+    const load = withExclusiveAccess(loadUnlocked.pipe(Effect.map((loaded) => toSession(loaded))));
+
+    /** Layout rules that `load` tolerates but the files must not keep. */
+    const check = withExclusiveAccess(
+      Effect.gen(function*() {
+        const loaded = yield* loadUnlocked;
+        for (const state of loaded.stages) {
+          const lines = lineCount(state.markdown);
+          if (state.layout === 'file' && lines > stageFileLineLimit) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message:
+                `${state.stage}.md has ${lines} lines, past the ${stageFileLineLimit}-line limit. Run \`session split ${state.stage}\`.`,
+            });
+          }
+        }
+        const hasGitignore = yield* fs.exists(absolute(gitignorePath)).pipe(
+          Effect.mapError(asRepositoryError),
+        );
+        if (!hasGitignore) {
+          return yield* new RepositoryError({
+            kind: 'validation',
+            message: 'Session is missing .gitignore. Run `session init`.',
+          });
+        }
+        return toSession(loaded);
+      }),
+    );
 
     const putFile = (input: {
       readonly stage: Stage;
       readonly markdown: string;
       readonly revision: string;
     }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
+          const state = stageOf(loaded, input.stage);
           const nextItems = yield* attempt(() =>
             parseStageMarkdown(input.stage, input.markdown),
           );
-          const current = session.stages.find((stage) => stage.stage === input.stage)!;
           if (input.stage === 'EXECUTE') {
-            const currentGroups = new Map(current.items.map((item) => [item.id, item.group]));
-            const sameIds =
-              current.items.length === nextItems.length &&
-              nextItems.every((item) => currentGroups.has(item.id));
-            const sameGroups = nextItems.every(
-              (item) => currentGroups.get(item.id) === item.group,
-            );
-            if (!sameIds || !sameGroups) {
+            const batches = new Map(state.items.map((item) => [item.id, item.batch]));
+            const sameItems = state.items.length === nextItems.length &&
+              nextItems.every((item) => batches.get(item.id) === item.batch);
+            if (!sameItems) {
               return yield* new RepositoryError({
                 kind: 'conflict',
-                message: 'EXECUTE edits must preserve its item IDs and groups.',
+                message: 'EXECUTE edits must preserve its item IDs and batches.',
               });
             }
           }
-          const next = replaceStage(session.stages, input.stage, nextItems, input.markdown);
-          yield* attempt(() => validateUniqueIds(next));
-          return [{ path: `${input.stage}.md`, before: current.markdown, after: input.markdown }];
+          yield* attempt(() =>
+            validateUniqueIds(projected(loaded, [{ stage: input.stage, items: nextItems }])),
+          );
+          return yield* attempt(() => stageWrites(state, nextItems));
         }),
       );
 
@@ -486,10 +700,10 @@ export const makeRepository = (directory: string) =>
       readonly id?: string | undefined;
       readonly title: string;
       readonly body: string;
-      readonly group?: string | undefined;
+      readonly batch?: string | undefined;
       readonly revision: string;
     }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           if (input.stage === 'EXECUTE') {
             return yield* new RepositoryError({
@@ -497,31 +711,44 @@ export const makeRepository = (directory: string) =>
               message: 'EXECUTE is frozen; create items in another stage.',
             });
           }
-          const stage = session.stages.find((entry) => entry.stage === input.stage)!;
-          const id =
-            input.id ??
+          const state = stageOf(loaded, input.stage);
+          const requested = input.batch?.trim();
+          let batch: string | null = null;
+          if (input.stage === 'QUEUE') {
+            if (requested === undefined || requested === '') {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: 'A QUEUE item needs a batch. Pass the name of an existing batch.',
+              });
+            }
+            if (!state.items.some((item) => item.batch === requested)) {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: `QUEUE has no batch named ${quote(requested)}.`,
+              });
+            }
+            batch = requested;
+          } else if (requested !== undefined && requested !== '') {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `${input.stage} items do not belong to a batch.`,
+            });
+          }
+          const id = input.id ??
             `W-${(yield* crypto.randomUUIDv4.pipe(Effect.mapError(asRepositoryError))).slice(0, 8)}`;
-          const item: Item = {
-            id,
-            title: input.title.trim(),
-            body: input.body.trim(),
-            summary: input.body.trim().split(/\r?\n/u).find((line) => line.trim() !== '')?.trim() ?? input.title,
-            group: input.group?.trim() || null,
-          };
-          yield* attempt(() => validateItem(input.stage, item));
-          const items = insertItem(input.stage, stage.items, item);
-          const after = yield* attempt(() =>
-            renderStageMarkdown(input.stage, items),
-          );
-          const next = replaceStage(session.stages, input.stage, items, after);
-          yield* attempt(() => validateUniqueIds(next));
-          return [
-            {
-              path: `${input.stage}.md`,
-              before: stage.markdown,
-              after,
-            },
-          ];
+          const item = yield* attempt(() => {
+            const candidate = makeItem({
+              id,
+              title: input.title.trim(),
+              body: input.body,
+              batch,
+            });
+            validateItem(input.stage, candidate);
+            return candidate;
+          });
+          const items = yield* attempt(() => placeItem(input.stage, state.items, item, null));
+          yield* attempt(() => validateUniqueIds(projected(loaded, [{ stage: input.stage, items }])));
+          return yield* attempt(() => stageWrites(state, items));
         }),
       );
 
@@ -531,27 +758,24 @@ export const makeRepository = (directory: string) =>
       readonly body: string;
       readonly revision: string;
     }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const found = yield* attempt(() => findRequiredItem(session.stages, input.id));
-          const stage = session.stages.find((entry) => entry.stage === found.stage)!;
-          const item: Item = {
-            ...found.item,
-            title: input.title.trim(),
-            body: input.body.trim(),
-          };
-          yield* attempt(() => validateItem(found.stage, item));
-          const items = stage.items.map((candidate) =>
+          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
+          const state = stageOf(loaded, found.stage);
+          const item = yield* attempt(() => {
+            const candidate = makeItem({
+              id: found.item.id,
+              title: input.title.trim(),
+              body: input.body,
+              batch: found.item.batch,
+            });
+            validateItem(found.stage, candidate);
+            return candidate;
+          });
+          const items = state.items.map((candidate) =>
             candidate.id === input.id ? item : candidate,
           );
-          const after = yield* attempt(() => renderStageMarkdown(found.stage, items));
-          return [
-            {
-              path: `${found.stage}.md`,
-              before: stage.markdown,
-              after,
-            },
-          ];
+          return yield* attempt(() => stageWrites(state, items));
         }),
       );
 
@@ -559,175 +783,201 @@ export const makeRepository = (directory: string) =>
       readonly id: string;
       readonly to: Stage;
       readonly beforeId?: string | null | undefined;
+      readonly batch?: string | undefined;
       readonly body?: string | undefined;
       readonly revision: string;
     }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const found = yield* attempt(() => findRequiredItem(session.stages, input.id));
-          if (input.to === 'EXECUTE' && found.stage !== 'EXECUTE') {
+          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
+          if (input.to === 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: 'Items enter EXECUTE only through a batch.',
+              message: 'Items enter EXECUTE only through `session start`.',
             });
           }
-          if (found.stage === 'EXECUTE' && input.to !== 'EXECUTE') {
+          if (found.stage === 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'EXECUTE is frozen; complete its items instead of moving them.',
             });
           }
 
-          const source = session.stages.find((entry) => entry.stage === found.stage)!;
-          const sourceItems = source.items.filter((item) => item.id !== input.id);
-          const targetItem = copyItem(
-            input.body === undefined
-              ? found.item
-              : { ...found.item, body: input.body.trim() },
-            input.to === 'BATCH' || input.to === 'EXECUTE' ? found.item.group : null,
-          );
-          yield* attempt(() => validateItem(input.to, targetItem));
-
-          if (found.stage === input.to) {
-            if (input.beforeId === input.id && input.body === undefined) return [];
-            const beforeId = input.beforeId === input.id
-              ? source.items[source.items.findIndex((item) => item.id === input.id) + 1]?.id ?? null
-              : input.beforeId;
-            const items = yield* attempt(() =>
-              placeItem(input.to, sourceItems, targetItem, beforeId),
-            );
-            const after = yield* attempt(() => renderStageMarkdown(input.to, items));
-            return [{ path: `${input.to}.md`, before: source.markdown, after }];
+          const requested = input.batch?.trim();
+          let batch: string | null = null;
+          if (input.to === 'QUEUE') {
+            const target = requested ?? found.item.batch ?? '';
+            if (target === '') {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: 'Moving into QUEUE needs the name of an existing batch.',
+              });
+            }
+            const queued = stageOf(loaded, 'QUEUE').items;
+            if (!queued.some((item) => item.batch === target)) {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: `QUEUE has no batch named ${quote(target)}.`,
+              });
+            }
+            batch = yield* attempt(() => validateBatchName('QUEUE', target));
+          } else if (requested !== undefined && requested !== '') {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `${input.to} items do not belong to a batch.`,
+            });
           }
 
-          const target = session.stages.find((entry) => entry.stage === input.to)!;
-          const targetItems = yield* attempt(() =>
-            placeItem(input.to, target.items, targetItem, input.beforeId),
+          const item = yield* attempt(() => {
+            const candidate = makeItem({
+              id: found.item.id,
+              title: found.item.title,
+              body: input.body ?? found.item.body,
+              batch,
+            });
+            validateItem(input.to, candidate);
+            return candidate;
+          });
+
+          const source = stageOf(loaded, found.stage);
+          const remaining = source.items.filter((candidate) => candidate.id !== input.id);
+          if (found.stage === input.to) {
+            const beforeId = input.beforeId === input.id
+              ? source.items[source.items.findIndex((entry) => entry.id === input.id) + 1]?.id ?? null
+              : input.beforeId;
+            const items = yield* attempt(() => placeItem(input.to, remaining, item, beforeId));
+            return yield* attempt(() => stageWrites(source, items));
+          }
+
+          const target = stageOf(loaded, input.to);
+          const items = yield* attempt(() =>
+            placeItem(input.to, target.items, item, input.beforeId),
           );
-          const sourceMarkdown = yield* attempt(() =>
-            renderStageMarkdown(found.stage, sourceItems),
-          );
-          const targetMarkdown = yield* attempt(() =>
-            renderStageMarkdown(input.to, targetItems),
-          );
-          return [
-            {
-              path: `${found.stage}.md`,
-              before: source.markdown,
-              after: sourceMarkdown,
-            },
-            {
-              path: `${input.to}.md`,
-              before: target.markdown,
-              after: targetMarkdown,
-            },
-          ];
+          return yield* attempt(() => [
+            ...stageWrites(source, remaining),
+            ...stageWrites(target, items),
+          ]);
         }),
       );
 
-    const startBatch = (input: {
-      readonly ids: ReadonlyArray<string>;
+    const queueBatch = (input: {
       readonly name: string;
+      readonly ids: ReadonlyArray<string>;
       readonly revision: string;
     }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
+          const name = yield* attempt(() => validateBatchName('QUEUE', input.name.trim()));
           if (input.ids.length === 0) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: 'A batch requires at least one item.',
+              message: 'A batch needs at least one item.',
             });
           }
           const selectedIds = new Set(input.ids);
           if (selectedIds.size !== input.ids.length) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: 'A batch cannot contain duplicate item IDs.',
+              message: 'A batch cannot repeat an item ID.',
             });
           }
-          const name = input.name.trim();
-          if (name === '') {
+          const pool = stageOf(loaded, 'BATCH');
+          const queue = stageOf(loaded, 'QUEUE');
+          if (queue.items.some((item) => item.batch === name)) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: 'A batch requires a name.',
+              message: `QUEUE already has a batch named ${quote(name)}.`,
             });
           }
-          const batch = session.stages.find((entry) => entry.stage === 'BATCH')!;
-          const execute = session.stages.find((entry) => entry.stage === 'EXECUTE')!;
-          if (execute.items.length > 0 || execute.markdown !== '') {
+          const available = new Map(pool.items.map((item) => [item.id, item]));
+          const selected = yield* attempt(() =>
+            input.ids.map((id) => {
+              const item = available.get(id) ?? fail(`${id} is not in BATCH.`);
+              const queued = { ...item, batch: name };
+              validateItem('QUEUE', queued);
+              return queued;
+            }),
+          );
+          return yield* attempt(() => [
+            ...stageWrites(pool, pool.items.filter((item) => !selectedIds.has(item.id))),
+            ...stageWrites(queue, [...queue.items, ...selected]),
+          ]);
+        }),
+      );
+
+    const startBatch = (input: { readonly revision: string }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const queue = stageOf(loaded, 'QUEUE');
+          const execute = stageOf(loaded, 'EXECUTE');
+          if (execute.items.length > 0) {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: 'Complete the current EXECUTE batch first.',
             });
           }
-          const batchItems = new Map(batch.items.map((item) => [item.id, item]));
-          const selected = yield* attempt(() =>
-            input.ids.map((id) => {
-              const item = batchItems.get(id);
-              if (item === undefined) {
-                throw new RepositoryError({
-                  kind: 'validation',
-                  message: `Batch item ${id} is not in BATCH.`,
-                });
-              }
-              return copyItem(item, name);
-            }),
-          );
-          const batchMarkdown = yield* attempt(() =>
-            renderStageMarkdown(
-              'BATCH',
-              batch.items.filter((item) => !selectedIds.has(item.id)),
-            ),
-          );
-          const executeMarkdown = yield* attempt(() =>
-            renderStageMarkdown('EXECUTE', selected),
-          );
-          return [
-            {
-              path: 'BATCH.md',
-              before: batch.markdown,
-              after: batchMarkdown,
-            },
-            { path: 'EXECUTE.md', before: execute.markdown, after: executeMarkdown },
-          ];
-        }).pipe(Effect.mapError(asRepositoryError)),
+          const first = queue.items[0];
+          if (first === undefined) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: 'QUEUE is empty; queue a batch first.',
+            });
+          }
+          const name = first.batch;
+          return yield* attempt(() => [
+            ...stageWrites(queue, queue.items.filter((item) => item.batch !== name)),
+            ...stageWrites(execute, queue.items.filter((item) => item.batch === name)),
+          ]);
+        }),
       );
 
     const completeItem = (input: { readonly id: string; readonly revision: string }) =>
-      mutate(input.revision, (session) =>
+      mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const found = yield* attempt(() => findRequiredItem(session.stages, input.id));
+          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
           if (found.stage !== 'EXECUTE') {
             return yield* new RepositoryError({
               kind: 'conflict',
               message: `Item ${input.id} is not in EXECUTE.`,
             });
           }
-          const execute = session.stages.find((entry) => entry.stage === 'EXECUTE')!;
-          const beforeArchive = yield* readOptional(archivePath);
-          const record = `# ${found.item.group ?? 'Completed'}\n\n## ${found.item.id} — ${found.item.title}\n\n${found.item.body.trim()}\n`;
-          const afterArchive = beforeArchive === '' ? record : `${beforeArchive.trimEnd()}\n\n${record}`;
-          const executeMarkdown = yield* attempt(() =>
-            renderStageMarkdown(
-              'EXECUTE',
-              execute.items.filter((item) => item.id !== input.id),
-            ),
+          const execute = stageOf(loaded, 'EXECUTE');
+          const batch = found.item.batch;
+          if (batch === null) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `EXECUTE/${input.id} has no batch.`,
+            });
+          }
+          const beforeArchive = yield* readMaybe(archivePath);
+          const record = `# ${batch}\n\n${renderItem(found.item)}\n`;
+          const afterArchive = beforeArchive === null || beforeArchive === ''
+            ? record
+            : `${beforeArchive.trimEnd()}\n\n${record}`;
+          const writes = yield* attempt(() =>
+            stageWrites(execute, execute.items.filter((item) => item.id !== input.id)),
           );
-          return [
-            {
-              path: 'EXECUTE.md',
-              before: execute.markdown,
-              after: executeMarkdown,
-            },
-            { path: archivePath, before: beforeArchive, after: afterArchive },
-          ];
+          return [...writes, { path: archivePath, before: beforeArchive, after: afterArchive }];
+        }),
+      );
+
+    const split = (input: { readonly stage: Stage; readonly revision: string }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const state = stageOf(loaded, input.stage);
+          if (state.layout === 'directory') {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `${input.stage} is already a directory.`,
+            });
+          }
+          return yield* attempt(() => stageWrites(state, state.items, { directory: true }));
         }),
       );
 
     const inventory = withExclusiveAccess(
       Effect.gen(function*() {
-        yield* recover;
-        yield* readStages;
+        yield* loadUnlocked;
         const realRoot = yield* fs.realPath(root).pipe(Effect.mapError(asRepositoryError));
         const visited = new Set<string>();
         const walk = (
@@ -771,12 +1021,15 @@ export const makeRepository = (directory: string) =>
       root,
       initialize,
       load,
+      check,
       putFile,
       addItem,
       updateItem,
       moveItem,
+      queueBatch,
       startBatch,
       completeItem,
+      split,
       inventory,
       readMarkdownFile,
     } as const;

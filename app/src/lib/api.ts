@@ -42,7 +42,10 @@ async function run<E>(program: Effect.Effect<Session, E, HttpClient.HttpClient>,
 export const SessionApi = {
   read: (signal?: AbortSignal) => run(execute(HttpClientRequest.get('/api/session')), signal),
 
-  mutate: (path: '/api/item' | '/api/move' | '/api/batch' | '/api/complete', body: Record<string, unknown>) =>
+  mutate: (
+    path: '/api/item' | '/api/move' | '/api/batch' | '/api/start' | '/api/complete',
+    body: Record<string, unknown>,
+  ) =>
     HttpClientRequest.post(path).pipe(HttpClientRequest.bodyJsonUnsafe(body), execute, run),
 
   saveFile: (body: { stage: Stage; markdown: string; revision: string }) =>
