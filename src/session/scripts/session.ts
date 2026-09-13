@@ -11,6 +11,7 @@ import { stageNames } from '../../../app/contract.ts';
 import {
   ensureDaemon,
   openInBrowser,
+  publicOrigin,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
 import { quote } from '../../../app/server/model.ts';
@@ -181,7 +182,8 @@ const openBoard = (resolved: WorktreeSession) =>
   Effect.gen(function*() {
     const settings = yield* ensureDaemon;
     yield* trackWorktree({ settings, path: resolved.worktree.path });
-    const url = `http://127.0.0.1:${settings.port}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
+    const origin = yield* publicOrigin(settings);
+    const url = `${origin}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
     yield* Console.log(url);
     yield* openInBrowser(url);
   });
