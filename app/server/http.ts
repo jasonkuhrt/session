@@ -1,10 +1,11 @@
 import { join, resolve } from 'node:path';
 import { NodeServices } from '@effect/platform-node';
-import { file, serve } from 'bun';
+import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
 import type { Session } from '../contract.ts';
+import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { makeRepository, RepositoryError } from './repository.ts';
 import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
@@ -73,12 +74,59 @@ const writeIsSameOrigin = (request: Request): boolean => {
 
 const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
+/** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
+ *  by default, so a quiet session must still say something. */
+const keepAliveMilliseconds = 5_000;
+
+/**
+ * One server-sent event per notification from the daemon's watcher, which owns
+ * the debounce. A board served without a change source keeps a silent stream
+ * rather than a 404, so the client connects once instead of retrying forever.
+ */
+const eventStream = (events: SessionEvents | undefined): Response => {
+  const encoder = new TextEncoder();
+  let unsubscribe: (() => void) | undefined;
+  let keepAlive: ReturnType<typeof setInterval> | undefined;
+
+  const stop = () => {
+    unsubscribe?.();
+    unsubscribe = undefined;
+    if (keepAlive !== undefined) clearInterval(keepAlive);
+    keepAlive = undefined;
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (frame: string) => {
+        try {
+          controller.enqueue(encoder.encode(frame));
+        } catch {
+          stop();
+        }
+      };
+      write(': open\n\n');
+      unsubscribe = events?.subscribe(() => write('event: changed\ndata: {}\n\n'));
+      keepAlive = setInterval(() => write(': keep-alive\n\n'), keepAliveMilliseconds);
+    },
+    cancel: stop,
+  });
+
+  return new Response(body, {
+    headers: {
+      'cache-control': 'no-store',
+      'content-type': 'text/event-stream; charset=utf-8',
+      connection: 'keep-alive',
+    },
+  });
+};
+
 /* eslint-disable max-lines-per-function -- The HTTP boundary is a small linear route table; splitting each route would add indirection without isolating behavior. */
 export const createRequestHandler = async (options: {
   readonly directory: string;
   readonly distDirectory?: string | undefined;
   readonly worktree?: WorktreeMetadata | undefined;
   readonly refreshWorktree?: boolean | undefined;
+  readonly events?: SessionEvents | undefined;
 }) => {
   const repository = await Effect.runPromise(
     makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
@@ -104,6 +152,10 @@ export const createRequestHandler = async (options: {
 
       if (request.method === 'GET' && url.pathname === '/api/session') {
         return json(await attachWorktree(await runRepository(repository.load)));
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/events') {
+        return eventStream(options.events);
       }
 
       if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
@@ -157,21 +209,3 @@ export const createRequestHandler = async (options: {
   };
 };
 /* eslint-enable max-lines-per-function */
-
-export const startServer = async (options: {
-  readonly directory: string;
-  readonly port?: number | undefined;
-  readonly distDirectory?: string | undefined;
-  readonly worktree?: WorktreeMetadata | undefined;
-}) => {
-  const repository = await Effect.runPromise(
-    makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
-  );
-  await Effect.runPromise(repository.initialize);
-  const fetch = await createRequestHandler({ ...options, refreshWorktree: true });
-  return serve({
-    hostname: '127.0.0.1',
-    port: options.port ?? 3210,
-    fetch,
-  });
-};

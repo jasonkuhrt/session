@@ -8,13 +8,17 @@ import * as Path from 'effect/Path';
 import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
-import { startServer } from '../../../app/server/http.ts';
+import {
+  ensureDaemon,
+  openInBrowser,
+  trackWorktree,
+} from '../../../app/server/daemon.ts';
 import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
 import {
-  archiveSessionDirectory,
-  migrateSessionDirectory,
+  encodeWorktreeKey,
+  ensureSession,
   resolveWorktreeSession,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
@@ -28,31 +32,31 @@ const commands = {
   init: { operands: '', least: 0, most: 0 },
   check: { operands: '', least: 0, most: 0 },
   refresh: { operands: '', least: 0, most: 0 },
-  serve: { operands: '', least: 0, most: 0 },
   ls: { operands: '[STAGE]', least: 0, most: 1 },
   add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3 },
   mv: { operands: '<ID> <STAGE>', least: 2, most: 2 },
   batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
   start: { operands: '', least: 0, most: 0 },
   done: { operands: '<ID>', least: 1, most: 1 },
-  archive: { operands: '', least: 0, most: 0 },
+  archive: { operands: '<ID>', least: 1, most: 1 },
+  open: { operands: '', least: 0, most: 0 },
 } as const;
 
 type Command = keyof typeof commands;
 
 const usage = `Usage: session [-C <worktree or .session>] <command>
 
-  init                                  make .session a real directory of stage directories
+  init                                  create what the session is missing and say what that was
   check                                 validate the session and print its revision
   refresh [--previous <inventory.json>] print the file inventory as JSON
-  serve [--port <number>]               run the board
   ls [STAGE]                            list items as ID, file, title
   add <STAGE> <ID> "<title>"            add an item, body on stdin
   mv <ID> <STAGE> [--before ID]         move an item, or reorder it where it is
   batch "<name>" <ID...>                queue BATCH items as a named batch
   start                                 move the first queued batch into EXECUTE
   done <ID>                             complete an EXECUTE item
-  archive                               move .session under the main worktree's .sessions`;
+  archive <ID>                          file an item away, from any stage
+  open                                  ensure the daemon and open this worktree's board`;
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
   readonly message: string;
@@ -67,7 +71,6 @@ type Options = {
   readonly command: Command;
   readonly operands: ReadonlyArray<string>;
   readonly directory: string;
-  readonly port: number;
   readonly previous: string | undefined;
   readonly before: string | undefined;
 };
@@ -82,7 +85,6 @@ const valueOf = (option: string, value: string | undefined): string => {
 const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => {
   const operands: string[] = [];
   let directory = process.cwd();
-  let port = 3210;
   let previous: string | undefined;
   let before: string | undefined;
 
@@ -92,14 +94,6 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
     switch (argument) {
       case '-C': {
         directory = path.resolve(valueOf('-C', value));
-        index += 1;
-        break;
-      }
-      case '--port': {
-        port = Number(valueOf('--port', value));
-        if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-          throw new Error('--port must be an integer from 1 through 65535.');
-        }
         index += 1;
         break;
       }
@@ -127,7 +121,7 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
   if (rest.length < arity.least || rest.length > arity.most) {
     throw new Error(`Usage: session ${command} ${arity.operands}`.trimEnd());
   }
-  return { command, operands: rest, directory, port, previous, before };
+  return { command, operands: rest, directory, previous, before };
 };
 
 const asStage = (value: string): Stage => {
@@ -173,34 +167,23 @@ const changesFrom = (previous: FileInventory, current: FileInventory) => ({
   deleted: Object.keys(previous).filter((path) => current[path] === undefined),
 });
 
-const initialize = (resolved: WorktreeSession, repository: SessionRepository) =>
+/** `init` is the ensure step with its actions printed; every verb runs it. */
+const report = (actions: ReadonlyArray<string>) =>
   Effect.gen(function*() {
-    for (const action of yield* migrateSessionDirectory(resolved.worktree.path)) {
-      yield* Console.log(action);
+    if (actions.length === 0) {
+      yield* Console.log('Nothing to do');
+      return;
     }
-    for (const action of yield* repository.initialize) yield* Console.log(action);
-    yield* Console.log(`Initialized ${resolved.directory}`);
+    for (const action of actions) yield* Console.log(action);
   });
 
-const archive = (resolved: WorktreeSession) =>
+const openBoard = (resolved: WorktreeSession) =>
   Effect.gen(function*() {
-    const target = yield* archiveSessionDirectory(resolved.worktree.path);
-    yield* Console.log(`Archived ${resolved.directory} to ${target}`);
-  });
-
-const serve = (options: Options, resolved: WorktreeSession) =>
-  Effect.gen(function*() {
-    const server = yield* Effect.tryPromise(() =>
-      startServer({
-        directory: resolved.directory,
-        worktree: resolved.worktree,
-        port: options.port,
-      }),
-    );
-    yield* Console.log(`Session app: http://${server.hostname}:${server.port}`);
-    yield* Console.log(
-      `Worktree: ${resolved.worktree.name} (${resolved.worktree.branch ?? 'detached/non-Git'})`,
-    );
+    const settings = yield* ensureDaemon;
+    yield* trackWorktree({ settings, path: resolved.worktree.path });
+    const url = `http://127.0.0.1:${settings.port}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
+    yield* Console.log(url);
+    yield* openInBrowser(url);
   });
 
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
@@ -294,20 +277,31 @@ const complete = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Completed ${id}`);
   });
 
+const archive = (options: Options, repository: SessionRepository) =>
+  Effect.gen(function*() {
+    const id = options.operands[0]!;
+    const session = yield* repository.load;
+    yield* repository.archiveItem({ id, revision: session.revision });
+    yield* Console.log(`Archived ${id}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
-    yield* Console.log(`OK ${session.revision} (${counted(itemCount(session), 'item')})`);
+    const total = itemCount(session);
+    yield* Console.log(`OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`);
   });
 
 const runCommand = (options: Options) =>
   Effect.gen(function*() {
     const resolved = yield* resolveWorktreeSession(options.directory);
+    // Everything but the validator converges the session before it runs.
+    const ensured = options.command === 'check' ? [] : yield* ensureSession(resolved);
     const repository = yield* makeRepository(resolved.directory);
     switch (options.command) {
-      case 'init': { yield* initialize(resolved, repository); break; }
-      case 'archive': { yield* archive(resolved); break; }
-      case 'serve': { yield* serve(options, resolved); break; }
+      case 'init': { yield* report(ensured); break; }
+      case 'archive': { yield* archive(options, repository); break; }
+      case 'open': { yield* openBoard(resolved); break; }
       case 'check': { yield* check(repository); break; }
       case 'refresh': { yield* refresh(options, repository, resolved.directory); break; }
       case 'ls': { yield* list(options, repository); break; }

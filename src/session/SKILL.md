@@ -43,10 +43,14 @@ files directly. Queue and Execute hold one directory per batch with that batch's
 item files inside, so every item there belongs to a batch.
 [references/records.md](references/records.md) has the format.
 
-`session init` creates the five stage directories and the `.gitignore`. It also
-converts an older session in place: a symlinked `.session` becomes a real
-directory, and a `STAGE.md` becomes `STAGE/`. That conversion is a one-shot for
-the rollout and goes away once every worktree has run it.
+Nothing has to be set up. A command that touches the records creates `.session`,
+the five stage directories, and the `.gitignore` when they are missing; `check`
+only reads what is on disk. `session init` does that scaffolding and nothing
+else, printing what it created, for handing the directory to an editor.
+
+The CLI never migrates an old session. A `.session` that is a symlink is refused
+by every command, and a leftover `STAGE.md` is reported by `check`, both naming
+the fix. Convert an old session by hand.
 
 ## Rules
 
@@ -59,7 +63,7 @@ Read it first in every session and again whenever a refresh reports it changed.
 It governs over habits, memories, and defaults for as long as the session
 lasts. Write it only from the user's own words, naming who set each rule and
 when; never add, relax, or reinterpret a rule on the agent's initiative. A
-session without standing rules has no `RULES.md`; `init` does not scaffold one.
+session without standing rules has no `RULES.md`; nothing scaffolds one.
 
 ## Work with the files
 
@@ -81,9 +85,9 @@ Before acting, refresh changed context with the CLI. Load `RULES.md` when it
 exists, the five stage records, and only relevant supporting context. Keep the
 path/hash inventory in the conversation; read changed files and avoid reloading
 unchanged material.
-`ignore/` is outside normal context: do not traverse, read, summarize, or follow
-links into it during a refresh. Read inactive history only when the user asks for
-it.
+`ignore/` and `archive/` are outside normal context: do not traverse, read,
+summarize, or follow links into them during a refresh. Read inactive history only
+when the user asks for it.
 
 ## Design and execute
 
@@ -100,14 +104,19 @@ and `session start` does not add it.
 
 Execution continues through the agreed outcome, including verification and
 landing when requested. A task is not complete merely because only tests or CI
-remain. Remove a completed item from Execute with `session done`, which files it
-under `ignore/`, outside live context. An empty stage is an empty directory.
+remain. Finish an item in Execute with `session done`, which files it under
+`archive/`, outside live context. `session archive <ID>` files an item from any
+stage the same way and records the stage it left, so a rejected candidate or an
+abandoned one stays on the record. An empty stage is an empty directory, and
+`session check` reports a session with no items left as empty.
 
 ## Board and validation
 
 The board is a viewer with workflow actions. It shows the five lanes and it
 moves, queues, starts, and completes items; it never writes an item's content.
-For the app, launch command, and file operations, read
+One daemon serves the board of every worktree it knows, along with an index of
+them, and each board follows the files as they change. Run `session open` only
+when the user asks for the board. For the app and its file operations, read
 [references/operations.md](references/operations.md). The UI owns no second copy
 of work state. Do not recreate a per-task viewer, content module, or task
 database.

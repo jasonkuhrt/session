@@ -180,6 +180,7 @@
           },
           {
             "include": [
+              "app/server/daemon.ts",
               "app/server/http.ts",
               "app/src/lib/api.ts",
               "src/session/scripts/session.ts"
@@ -193,10 +194,10 @@
             }
           },
           {
-            "include": ["app/build.ts"],
+            "include": ["app/build.ts", "app/server/daemon.ts"],
             "options": {
               "diagnosticSeverity": {
-                // This Bun entrypoint owns terminal output directly; the
+                // These Bun entrypoints own terminal output directly; the
                 // server's application logic still logs through Effect.
                 "globalConsole": "off"
               }
@@ -213,7 +214,18 @@
             }
           },
           {
+            "include": ["app/src/worktree-index.tsx"],
+            "options": {
+              "diagnosticSeverity": {
+                // The index formats an ISO timestamp from the daemon for the
+                // viewer's locale; it models no time of its own.
+                "globalDate": "off"
+              }
+            }
+          },
+          {
             "include": [
+              "app/server/daemon.ts",
               "app/server/http.ts",
               "app/server/repository.ts",
               "app/server/worktree.ts"

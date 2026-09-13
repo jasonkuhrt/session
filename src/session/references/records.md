@@ -3,7 +3,8 @@
 The session root holds the five stage directories, a `.gitignore` of exactly `*`,
 and, when the user has set standing rules for the session, `RULES.md` (see the
 skill's Rules section). Supporting context lives in `context/` when needed.
-`ignore/` contains inactive history and is not ordinary agent context. Existing
+`ignore/` and `archive/` hold inactive history and are not ordinary agent
+context. Existing
 supporting files should be migrated deliberately, preserving evidence and links
 rather than discarding them because their names differ from the new convention.
 
@@ -84,8 +85,28 @@ Queue holds the composed batches in order, none of them started. Execute holds
 the one running batch and is frozen. `session start` is the only way in: it
 requires Execute to be empty and carries the first Queue batch across under its
 own name. Content can be clarified without expanding the selected item set.
-`session done` is the only way out; it files the item under `ignore/COMPLETED.md`
-below a heading naming its batch.
+`session done` is the way out for finished work and `session archive` for work
+that is abandoned; both file the item under `archive/`.
+
+## Archive
+
+`archive/` is flat: one file per archived item, named for the day it was
+archived, the item, and the state it left.
+
+```
+archive/
+  2026-09-13 BE-16 — Peel the email backend (done).md
+  2026-09-13 DEV-3 — Protect worktree backups (triage).md
+```
+
+The state is `done` for an item finished in Execute with `session done`, and the
+lowercase stage it left for one filed with `session archive <ID>`, which works
+from any stage. `(batch)` is settled work that never ran, `(triage)` a candidate
+that was rejected, and `(execute)` a started item that was abandoned. A `/` in
+the title becomes `-` in the file name, and an existing archive file is never
+overwritten. The content is the item's chunk exactly as its own file held it.
+Like `ignore/`, the directory is outside agent context: a refresh skips it, and
+it is never loaded as a stage.
 
 ## Executing agent
 
@@ -153,7 +174,9 @@ can contain undecided candidates and already settled work. Its filename does
 not decide the destination. Do not create an execution batch merely as a side
 effect of migration.
 
-`session init` converts a `STAGE.md` from the single-file layout into `STAGE/`
-item files. A `BATCH.md` carried over from the four-stage layout may still hold
-`# ` headings; batches live in Queue now, so remove them and re-form each group
-with `session batch "<name>" <ID...>`.
+The CLI never converts an old session. A `.session` that is a symlink is refused
+until it is replaced by a real directory, and a `STAGE.md` from the single-file
+layout is reported by `check` until it is folded into `STAGE/` by hand: split it
+at its `## ` headings into one numbered file per item, then delete it. A
+`BATCH.md` may still hold `# ` headings; batches live in Queue now, so drop them
+and re-form each group with `session batch "<name>" <ID...>`.

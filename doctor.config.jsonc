@@ -12,6 +12,13 @@
         // compound children share size and variant styling.
         "files": ["app/src/components/ui/toggle-group.tsx"],
         "rules": ["react-doctor/jsx-no-constructed-context-values"]
+      },
+      {
+        // `session open` posts its own worktree path to its own daemon over
+        // loopback. The daemon tracks a path only after seeing that it is a
+        // directory, and serves nothing beyond the boards it already owns.
+        "files": ["app/server/daemon.ts"],
+        "rules": ["react-doctor/local-rpc-native-bridge-risk"]
       }
     ]
   },

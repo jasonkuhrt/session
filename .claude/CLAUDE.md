@@ -10,5 +10,9 @@ directory of numbered item files; the app must not maintain a second task
 database or lifecycle. The board is a viewer with workflow actions and never
 writes an item's content.
 
+Commands scaffold the session as they go, so nothing depends on an imperative
+setup step, and the CLI never migrates an old one. One daemon serves every
+tracked worktree's board.
+
 Keep stage names identical in files, CLI, and UI. Design collaboration and focused
 explanations compose through `design-together` and `show-me`.

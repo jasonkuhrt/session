@@ -1,6 +1,7 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { basePath } from '../lib/base'
 import { Button } from './ui/button'
 
 const markdownComponents = {
@@ -63,14 +64,16 @@ export function MarkdownLink({ href, children }: { href: string | undefined; chi
     return <span>{children}</span>
   }
 
-  const target =
-    href.startsWith('#') || href.startsWith('/files/') || /^(https?:|mailto:)/iu.test(href)
-      ? href
-      : `/files/${href.replace(/^\.\//u, '')}`
-
   return (
-    <a href={target} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">
+    <a href={fileHref(href)} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">
       {children}
     </a>
   )
+}
+
+/** Session-relative link targets resolve through this board's files route. */
+function fileHref(href: string) {
+  if (href.startsWith('#') || /^(https?:|mailto:)/iu.test(href)) return href
+  if (href.startsWith('/files/')) return `${basePath}${href}`
+  return `${basePath}/files/${href.replace(/^\.\//u, '')}`
 }

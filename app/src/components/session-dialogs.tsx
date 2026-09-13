@@ -92,8 +92,8 @@ export function CompleteDialog({
           <CheckCircle2 className="size-4 text-muted-foreground" />
           <DialogTitle>Complete this work?</DialogTitle>
           <DialogDescription>
-            <span className="text-foreground">{item?.title}</span> will leave Execute and be recorded by the source
-            workflow.
+            <span className="text-foreground">{item?.title}</span> will leave Execute and be filed under{' '}
+            <code className="font-mono">archive/</code> as done.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
