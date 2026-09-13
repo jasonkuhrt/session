@@ -1,24 +1,50 @@
 ---
 name: session
-description: Manage .session as the working record for Triage, Design, Batch, and Execute, under the session's standing rules. Use when organizing session work, deciding or batching items, refreshing context, maintaining the four Markdown files or RULES.md, or opening the session board.
+description: Manage .session as the working record for Triage, Design, Batch, Queue, and Execute, and drive it with the session CLI, under the session's standing rules. Use when organizing session work, deciding, batching, queueing or executing items, refreshing context, maintaining the five stage records or RULES.md, or opening the session board.
 ---
 
 # Session
 
-One item, one file, one meaning. The four files are work states, not a mandatory
+One item, one file, one meaning. The five stages are work states, not a mandatory
 sequence; simple work can skip Design. The user owns priorities, acceptance,
 batch composition, and when execution begins.
 
-| File | Contains | Leaves when |
+| Stage | Contains | Leaves when |
 | --- | --- | --- |
-| `TRIAGE.md` | Candidates not yet accepted for work. | The user accepts, rejects, or redirects the candidate. |
-| `DESIGN.md` | Accepted work with unresolved consequential design questions. | Its outcome and acceptance conditions are settled. |
-| `BATCH.md` | Settled work being grouped for execution. | The user selects a batch to execute. |
-| `EXECUTE.md` | The current selected batch. | Each item reaches its agreed completion, or the user changes the batch. |
+| `TRIAGE` | Candidates not yet accepted. | The user accepts, rejects, or redirects. |
+| `DESIGN` | Accepted work with open questions. | Outcome and acceptance are settled. |
+| `BATCH` | Settled work, a flat pool ready to batch. | The user composes it into a queued batch. |
+| `QUEUE` | Named batches in order, composed, not started. | The user starts the first batch. |
+| `EXECUTE` | The one running batch. Frozen. | Each item completes, or the user changes the batch. |
 
-Finished designs leave `DESIGN.md` immediately. Readiness does not authorize
-execution. New ready items wait in `BATCH.md` while a batch is running. Do not
-append them to `EXECUTE.md` without the user's explicit change of scope.
+Those are the stage names, in that order, in the files, the CLI, and the UI.
+Finished designs leave Design immediately. Readiness does not authorize
+execution: ready items wait in Batch, composed batches wait in Queue, and
+starting the first one is the user's explicit act. Work that arrives while a
+batch is running waits in Batch. Do not add it to Execute without the user's
+explicit change of scope.
+
+## The files are the source of truth
+
+The CLI and the board are viewers and writers over the files, never owners.
+Everything must keep working when the user opens `.session/` in a file manager
+and an editor and never runs either tool: nothing in the layout requires a
+process to be running or to have run, every rule is checkable from the files
+alone, and every record is ordinary Markdown.
+
+## The session directory
+
+`.session` is a real directory at the worktree root, never a symlink. It holds a
+`.gitignore` of exactly `*`, which ignores the directory and that file. `session
+init` turns an older symlinked `.session` into a real one in place and creates
+what is missing.
+
+A stage is one file, `TRIAGE.md`, until it passes 500 lines; past that it is a
+directory, `TRIAGE/`, of numbered item files. The conversion never reverses, and
+a stage never has both. Batches are `# Batch name` headings and exist only in
+Queue and Execute, where every item belongs to one. Triage, Design, and Batch
+are flat: a `# ` heading there is a validation error.
+[references/records.md](references/records.md) has both formats.
 
 ## Rules
 
@@ -35,18 +61,22 @@ session without standing rules has no `RULES.md`; `init` does not scaffold one.
 
 ## Work with the files
 
-Use the active worktree's `.session` directory, resolving its symlink. Never
-change checkouts just to refresh context. Keep records directly readable and
-editable as Markdown; the board reads and writes those same files.
+Use the active worktree's `.session` directory. Never change checkouts just to
+refresh context.
+
+Use the `session` CLI for adds, moves, batches, splits, and completion: it owns
+placement, numbering, validation, and the recovery journal. Edit the files
+directly for content, and run `session check` after hand edits. Both write the
+same records; [references/operations.md](references/operations.md) has the
+commands.
 
 Read [references/records.md](references/records.md) when creating, migrating, or
 moving items. It defines the small stage-specific format and supporting folders.
 Use stable IDs across stages. Do not infer authorization from an old filename,
 confidence label, or another agent's suggestion; reconcile the conversation.
 
-Before acting, refresh changed context with the CLI described in
-[references/operations.md](references/operations.md). Load `RULES.md` when it
-exists, the four stage files, and only relevant supporting context. Keep the
+Before acting, refresh changed context with the CLI. Load `RULES.md` when it
+exists, the five stage records, and only relevant supporting context. Keep the
 path/hash inventory in the conversation; read changed files and avoid reloading
 unchanged material.
 `ignore/` and `.runtime/` are outside normal context: do not traverse, read,
@@ -61,17 +91,23 @@ leave a finished copy in Design. Resolve incidental implementation choices using
 the accepted intent. If execution exposes a consequential change, discuss it
 and update the affected item's state rather than quietly changing the contract.
 
+An agent that picks up an item in Execute writes a trailing `### Agent` section
+naming itself by harness and session id, so other agents, including mixed-model
+teams, can address it. It is a convention the engine neither writes nor enforces,
+and `session start` does not add it.
+
 Execution continues through the agreed outcome, including verification and
 landing when requested. A task is not complete merely because only tests or CI
-remain. Remove completed items from the active file. Empty stages are literally
-zero-byte files; completion records go under `ignore/`, outside live context.
+remain. Remove a completed item from Execute with `session done`, which files it
+under `ignore/`, outside live context. An empty file stage is a zero-byte file;
+an empty directory stage has no entries.
 
 ## Board and validation
 
 For the app, launch command, and file operations, read
-[references/operations.md](references/operations.md). Stage names in the UI and
-filenames are exactly **Triage, Design, Batch, Execute**. The UI owns no second
-copy of work state. Do not recreate a per-task viewer, content module, or queue.
+[references/operations.md](references/operations.md). The UI owns no second copy
+of work state. Do not recreate a per-task viewer, content module, or task
+database.
 
 Validate after editing or migrating records. The checker proves structural
 invariants, not that a design is sound or the user agreed. The agent still owns
