@@ -10,7 +10,7 @@ class InstallError extends Data.TaggedError('InstallError')<{ readonly message: 
 const install = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const home = values.home ?? (yield* Config.string('HOME'));
+  const home = values.home ?? (yield* Config.String('HOME'));
   const source = path.join(import.meta.dir, 'src/session');
   const roots = [path.join(home, '.codex/skills'), path.join(home, '.claude/skills')];
   const backup = path.join(home, '.codex/retired-skills');
