@@ -1,19 +1,34 @@
 import { Schema } from 'effect';
 
-export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'EXECUTE'] as const;
+export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
 export type Stage = typeof stageNames[number];
+
+/** Stages whose items belong to a named batch, rendered as `# Batch name` headings. */
+export type BatchedStage = 'QUEUE' | 'EXECUTE';
+export const isBatchedStage = (stage: Stage): stage is BatchedStage =>
+  stage === 'QUEUE' || stage === 'EXECUTE';
+
+/** A stage is one Markdown file until it passes this many lines; then it is a directory of item files. */
+export const stageFileLineLimit = 500;
+
+export const stageLayouts = ['file', 'directory'] as const;
+export type StageLayout = typeof stageLayouts[number];
 
 export type Item = {
   id: string;
   title: string;
   body: string;
   summary: string;
-  group: string | null;
+  /** The batch the item belongs to. Always set in QUEUE and EXECUTE, never elsewhere. */
+  batch: string | null;
 };
 
 export type StageFile = {
   stage: Stage;
-  file: string;
+  layout: StageLayout;
+  /** Absolute path of `STAGE.md` or of the `STAGE/` directory. */
+  path: string;
+  /** The whole stage as Markdown; for a directory stage, the rendered concatenation of its item files. */
   markdown: string;
   items: Item[];
 };
@@ -34,7 +49,7 @@ export const ItemSchema = Schema.Struct({
   title: Schema.String,
   body: Schema.String,
   summary: Schema.String,
-  group: Schema.NullOr(Schema.String),
+  batch: Schema.NullOr(Schema.String),
 });
 
 export const SessionSchema = Schema.Struct({
@@ -47,7 +62,8 @@ export const SessionSchema = Schema.Struct({
   })),
   stages: Schema.Array(Schema.Struct({
     stage: Schema.Literals(stageNames),
-    file: Schema.String,
+    layout: Schema.Literals(stageLayouts),
+    path: Schema.String,
     markdown: Schema.String,
     items: Schema.Array(ItemSchema).pipe(Schema.mutable),
   })).pipe(Schema.mutable),

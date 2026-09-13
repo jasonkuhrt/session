@@ -34,7 +34,7 @@ export function DetailDialog({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-[42rem] max-w-[42rem] sm:max-w-[42rem]">
         <SheetHeader className="gap-4 border-b">
-          {item.group ? <p className="text-sm font-medium text-muted-foreground">{item.group}</p> : null}
+          {item.batch ? <p className="text-sm font-medium text-muted-foreground">{item.batch}</p> : null}
           <div className="flex items-baseline gap-2 pr-10">
             <SheetTitle className="text-xl">{item.title}</SheetTitle>
             <span className="shrink-0 font-mono text-xs text-muted-foreground">{item.id}</span>
@@ -42,7 +42,7 @@ export function DetailDialog({
 
           <TooltipProvider>
             <ToggleGroup
-              className="grid w-full grid-cols-4"
+              className="grid w-full grid-cols-5"
               spacing={0}
               variant="outline"
               value={[stage]}

@@ -12,30 +12,37 @@ const install = Effect.gen(function*() {
   const path = yield* Path.Path;
   const home = values.home ?? (yield* Config.String('HOME'));
   const source = path.join(import.meta.dir, 'src/session');
+  const command = path.join(import.meta.dir, 'bin/session');
   const roots = [path.join(home, '.codex/skills'), path.join(home, '.claude/skills')];
+  const binRoot = path.join(home, '.local/bin');
   const backup = path.join(home, '.codex/retired-skills');
+  // The skill links plus the `session` command, each linked from its own root.
+  const links = [
+    ...roots.map((root) => ({ root, name: 'session', source })),
+    { root: binRoot, name: 'session', source: command },
+  ];
 
-  // Preflight both destinations before retiring any entrypoint. A conflicting
+  // Preflight every destination before retiring any entrypoint. A conflicting
   // user-owned installation must leave the current harness fully usable.
-  for (const root of roots) {
-    const target = path.join(root, 'session');
+  for (const entry of links) {
+    const target = path.join(entry.root, entry.name);
     const link = yield* fs.readLink(target).pipe(Effect.option);
-    if (Option.isSome(link) && path.resolve(root, link.value) !== source) {
+    if (Option.isSome(link) && path.resolve(entry.root, link.value) !== entry.source) {
       return yield* new InstallError({
         message: `Refusing to replace an unrelated session link: ${target}`,
       });
     }
     if (Option.isNone(link) && (yield* fs.exists(target))) {
       return yield* new InstallError({
-        message: `Refusing to replace a user-owned directory: ${target}`,
+        message: `Refusing to replace a user-owned path: ${target}`,
       });
     }
   }
 
-  for (const root of roots) {
-    yield* fs.makeDirectory(root, { recursive: true });
-    const target = path.join(root, 'session');
-    if (!(yield* fs.exists(target))) yield* fs.symlink(source, target);
+  for (const entry of links) {
+    yield* fs.makeDirectory(entry.root, { recursive: true });
+    const target = path.join(entry.root, entry.name);
+    if (!(yield* fs.exists(target))) yield* fs.symlink(entry.source, target);
     yield* Console.log(`Installed ${target}`);
   }
 

@@ -4,6 +4,7 @@ export const requiredSections: Record<Stage, ReadonlyArray<string>> = {
   TRIAGE: ['Decision'],
   DESIGN: ['Open questions'],
   BATCH: ['Outcome', 'Acceptance'],
+  QUEUE: ['Outcome', 'Acceptance'],
   EXECUTE: ['Outcome', 'Acceptance'],
 };
 

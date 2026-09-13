@@ -15,8 +15,8 @@ serve [--port N]           run the board
 ls [STAGE] [--json]        one line per item: ID, STAGE, batch (or "-"), title
 show <ID>                  the item's Markdown chunk
 add <STAGE> <ID> "<title>" [--batch NAME]      body on stdin
-set <ID> [--title T]                           body on stdin when stdin is not a TTY
-mv <ID> <STAGE> [--before ID] [--batch NAME]   body on stdin, when piped, replaces the body
+set <ID> [--title T] [-]                       - reads a new body from stdin
+mv <ID> <STAGE> [--before ID] [--batch NAME] [-]   - reads a replacement body from stdin
 batch "<name>" <ID...>     compose a named batch from Batch items and append it to Queue
 start                      move the first Queue batch into Execute
 done <ID>                  archive an Execute item under ignore/COMPLETED.md
@@ -32,8 +32,10 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 ```
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
-or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. A body
-read from stdin is read in full and trimmed; `add` rejects an empty one.
+or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add`
+always reads its body from stdin; `set` and `mv` read one only when the `-`
+operand is present, because a caller's stdin can be an open pipe that never
+closes. A body is read in full and trimmed, and an empty one is rejected.
 
 ## Move and batch rules
 
@@ -45,8 +47,8 @@ Queue needs `--batch` naming an existing batch; moving out of Queue drops the
 batch. Within Queue, `--batch` changes the batch and `--before` must name an item
 in the resulting batch. Without `--before`, an item lands at the end of the stage
 or of its batch. The target stage's required sections are validated on arrival,
-so pipe the rewritten body with the move; that is the ordinary way an item leaves
-Design for Batch.
+so pipe the rewritten body with `mv ... -`; that is the ordinary way an item
+leaves Design for Batch.
 
 `batch` takes items that are all in Batch. `start` requires Execute to be empty
 and keeps the batch's name. `done` archives the item under a heading naming its

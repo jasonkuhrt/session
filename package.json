@@ -3,14 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run app/server/main.ts",
+    "dev": "bun run src/session/scripts/session.ts serve",
     "build": "bun run app/build.ts",
     "check": "bun run lint && bun run doctor && bun run build",
     "install:skill": "bash install.sh",
     "lint": "oxlint .",
     "doctor": "react-doctor . --lint --scope full --blocking error --yes --no-score",
-    "check:types": "effect-tsgo patch && tsc -p tsconfig.json",
-    "session:check": "bun run src/session/scripts/session.ts check"
+    "check:types": "effect-tsgo patch && tsc -p tsconfig.json"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

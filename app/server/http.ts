@@ -20,7 +20,7 @@ const AddItem = Schema.Struct({
   id: Schema.optionalKey(Schema.String),
   title: Schema.String,
   body: Schema.String,
-  group: Schema.optionalKey(Schema.String),
+  batch: Schema.optionalKey(Schema.String),
   revision: Schema.String,
 });
 const UpdateItem = Schema.Struct({
@@ -33,12 +33,16 @@ const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
   beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
+  batch: Schema.optionalKey(Schema.String),
   body: Schema.optionalKey(Schema.String),
   revision: Schema.String,
 });
-const StartBatch = Schema.Struct({
+const QueueBatch = Schema.Struct({
   ids: Schema.Array(Schema.String),
   name: Schema.String,
+  revision: Schema.String,
+});
+const StartBatch = Schema.Struct({
   revision: Schema.String,
 });
 const CompleteItem = Schema.Struct({
@@ -153,6 +157,10 @@ export const createRequestHandler = async (options: {
         return json(await attachWorktree(await runRepository(repository.moveItem(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/batch') {
+        const input = await runRepository(decodeBody(request, QueueBatch));
+        return json(await attachWorktree(await runRepository(repository.queueBatch(input))));
+      }
+      if (request.method === 'POST' && url.pathname === '/api/start') {
         const input = await runRepository(decodeBody(request, StartBatch));
         return json(await attachWorktree(await runRepository(repository.startBatch(input))));
       }

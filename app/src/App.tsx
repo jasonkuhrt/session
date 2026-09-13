@@ -4,7 +4,8 @@ import type { Item, Session, Stage } from '../contract'
 import { stageNames } from '../contract'
 import { Board } from './components/board'
 import { DetailDialog } from './components/item-detail'
-import { AddCandidateDialog, BatchDialog, CompleteDialog, SourceEditor } from './components/session-dialogs'
+import { AddCandidateDialog, BatchDialog, CompleteDialog } from './components/session-dialogs'
+import { SourceEditor } from './components/source-editor'
 import { Skeleton } from './components/ui/skeleton'
 import { ApiError, SessionApi } from './lib/api'
 
@@ -154,7 +155,7 @@ function App() {
       ) : null}
       <main className="overflow-x-auto p-6">
         {loading ? (
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-5 gap-4">
             {stageNames.map(stage => <Skeleton key={stage} className="h-64" />)}
           </div>
         ) : session ? (
@@ -174,9 +175,11 @@ function App() {
               else next.delete(id)
               return next
             })}
-            onBatch={() => setBatching(true)}
+            onQueue={() => setBatching(true)}
+            onStart={() => void mutate('/api/start', {})}
             onComplete={setCompleting}
-            onMove={(id, to, beforeId) => mutate('/api/move', { id, to, beforeId })}
+            onMove={(id, to, beforeId, batch) =>
+              mutate('/api/move', batch === null ? { id, to, beforeId } : { id, to, beforeId, batch })}
             onDraggingChange={setDragging}
           />
         ) : <p className="py-20 text-center text-muted-foreground">The session files could not be loaded.</p>}
@@ -230,7 +233,7 @@ function App() {
         pending={pending}
         count={selectedBatchIds.size}
         onOpenChange={setBatching}
-        onStart={async name => {
+        onQueue={async name => {
           if (await mutate('/api/batch', { ids: [...selectedBatchIds], name })) {
             setSelectedBatchIds(new Set())
             setBatching(false)

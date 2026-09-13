@@ -165,6 +165,7 @@
           },
           {
             "include": [
+              "app/server/layout.ts",
               "app/server/model.ts",
               "app/src/lib/workflow.ts",
               "app/stage-rules.ts"
@@ -180,7 +181,6 @@
           {
             "include": [
               "app/server/http.ts",
-              "app/server/main.ts",
               "app/src/lib/api.ts",
               "src/session/scripts/session.ts"
             ],
@@ -193,10 +193,10 @@
             }
           },
           {
-            "include": ["app/build.ts", "app/server/main.ts"],
+            "include": ["app/build.ts"],
             "options": {
               "diagnosticSeverity": {
-                // These Bun entrypoints own terminal output directly; the
+                // This Bun entrypoint owns terminal output directly; the
                 // server's application logic still logs through Effect.
                 "globalConsole": "off"
               }
