@@ -119,7 +119,9 @@ beside that file, in `daemon.log`. `open` reuses a healthy daemon whose stamp
 still matches the sources on disk. It replaces one that is unhealthy or built
 from older sources, killing the old process first, so a rebuilt board reaches
 every worktree at the next `open`. A foreign process holding the port is an error
-naming it; there is no fallback port.
+naming it; there is no fallback port. When a portless proxy is alive on the machine, `open` registers the daemon as
+the `session` alias (once, again only if the port moves) and prints and opens
+`https://session.localhost/w/<key>/` instead of the raw port.
 
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one

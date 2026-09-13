@@ -65,11 +65,17 @@ const decodeBody = <A, I>(request: Request, schema: Schema.Codec<A, I>) =>
     ),
   );
 
+/**
+ * A browser says where a write came from. Behind a local proxy such as
+ * portless the scheme the browser used is not the one this server sees, so
+ * trust the fetch metadata when a browser sends it and otherwise compare hosts.
+ */
 const writeIsSameOrigin = (request: Request): boolean => {
-  const url = new URL(request.url);
-  const origin = request.headers.get('origin');
   const fetchSite = request.headers.get('sec-fetch-site');
-  return (origin === null || origin === url.origin) && fetchSite !== 'cross-site';
+  if (fetchSite !== null) return fetchSite === 'same-origin' || fetchSite === 'none';
+  const origin = request.headers.get('origin');
+  if (origin === null) return true;
+  return URL.canParse(origin) && new URL(origin).host === new URL(request.url).host;
 };
 
 const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);

@@ -236,6 +236,66 @@ export const trackWorktree = (input: { readonly settings: DaemonSettings; readon
     Effect.mapError((cause) => new DaemonError({ message: 'The daemon refused the worktree.', cause })),
   );
 
+// --- a nicer address through portless, when its proxy runs on this machine --
+
+const aliasName = 'session';
+const PortlessRoutesJson = Schema.Struct({ hostname: Schema.String, port: Schema.Int }).pipe(
+  Schema.Array,
+  Schema.fromJsonString,
+);
+
+const processAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The board's public origin. With a portless proxy alive on this machine the
+ * daemon is registered as the `session` alias and the board lives at
+ * `https://session.localhost`; otherwise the raw port is the address.
+ */
+export const publicOrigin = (settings: DaemonSettings) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const fallback = `http://127.0.0.1:${settings.port}`;
+    const directory = join(yield* Config.String('HOME'), '.portless');
+    const read = (name: string) => fs.readFileString(join(directory, name)).pipe(Effect.option);
+
+    const pid = yield* read('proxy.pid');
+    if (Option.isNone(pid) || !processAlive(Number(pid.value.trim()))) return fallback;
+    const proxyPort = yield* read('proxy.port');
+    const scheme = Option.isSome(proxyPort) && proxyPort.value.trim() === '443' ? 'https' : 'http';
+
+    const route = Effect.gen(function*() {
+      const routes = yield* read('routes.json');
+      if (Option.isNone(routes)) return null;
+      const decoded = yield* Schema.decodeEffect(PortlessRoutesJson)(routes.value).pipe(Effect.option);
+      if (Option.isNone(decoded)) return null;
+      return decoded.value.find((entry) => entry.hostname.split('.')[0] === aliasName) ?? null;
+    });
+
+    let entry = yield* route;
+    if (entry === null || entry.port !== settings.port) {
+      // One-time registration, redone only when the port moved.
+      yield* Effect.tryPromise({
+        try: () =>
+          spawn(
+            [process.execPath, 'x', 'portless', 'alias', aliasName, String(settings.port), '--force'],
+            { cwd: repositoryRoot, stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' },
+          ).exited,
+        catch: (cause) => new DaemonError({ message: 'Could not register the portless alias.', cause }),
+      }).pipe(Effect.ignore);
+      entry = yield* route;
+    }
+    return entry === null || entry.port !== settings.port
+      ? fallback
+      : `${scheme}://${entry.hostname}`;
+  });
+
 /** macOS opens the board; everywhere else the printed URL is the whole story. */
 export const openInBrowser = (url: string) =>
   Effect.gen(function*() {
@@ -468,7 +528,8 @@ export const runDaemon = async () => {
       .find((candidate) => rest === candidate.key || rest.startsWith(`${candidate.key}/`));
     if (entry === undefined) return json({ error: 'No such worktree.' }, 404);
     if (entry.conflict !== null) return json({ error: entry.conflict }, 409);
-    if (rest === entry.key) return Response.redirect(new URL(`/w/${entry.key}/`, url).href, 307);
+    // Relative, so the address the browser used (a proxy's, or the raw port) is kept.
+    if (rest === entry.key) return new Response(null, { status: 307, headers: { location: `/w/${entry.key}/` } });
     const target = new URL(url);
     target.pathname = rest.slice(entry.key.length);
     return (await handlerFor(entry))(new Request(target, request));

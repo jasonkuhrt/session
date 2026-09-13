@@ -45,7 +45,9 @@ command to point at another one. The
 worktree to it, and opens its board. The index at the root lists every worktree
 the daemon knows, with its branch, running batch, item counts per stage, and last
 change; each board sits under `/w/<worktree name>/`. The daemon also finds the
-other worktrees of the same repository that already have a `.session`.
+other worktrees of the same repository that already have a `.session`. When a [portless](https://github.com/vercel-labs/portless) proxy is running on
+the machine, `open` registers the daemon as its `session` alias and the board
+lives at `https://session.localhost/`; the raw port stays reachable.
 
 A board reads that worktree's five stage directories and shows a Kanban board and
 Markdown reader. It is a viewer with workflow actions: move an item, compose a
