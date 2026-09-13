@@ -9,6 +9,9 @@ export class SessionError extends Data.TaggedError('SessionError')<{
   readonly cause?: unknown;
 }> {}
 
+/** An item before its file has a place: the path follows from the stage's order. */
+export type ItemDraft = Omit<Item, 'path'>;
+
 const itemHeading = /^## ([A-Za-z0-9][A-Za-z0-9._-]*) — (\S(?:.*\S)?)$/u;
 const batchHeading = /^# (\S(?:.*\S)?)$/u;
 const fenceMarker = /^\s*(`{3,}|~{3,})/u;
@@ -42,7 +45,8 @@ export const validateBatchName = (stage: Stage, name: string): string => {
   return name;
 };
 
-export const validateItem = (stage: Stage, item: Item): void => {
+/** Structure: what every reader of the files must be able to rely on. */
+export const validateItem = (stage: Stage, item: ItemDraft): void => {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(item.id)) {
     fail(`${stage}: invalid item ID ${quote(item.id)}.`);
   }
@@ -54,6 +58,15 @@ export const validateItem = (stage: Stage, item: Item): void => {
   } else if (item.batch !== null) {
     fail(`${stage}/${item.id}: ${batchFix}.`);
   }
+};
+
+/**
+ * Content: the sections a stage requires of the items it holds. A mutation
+ * checks the stage it places an item in, and `check` checks where each item
+ * sits. Loading does not, so an item file can be rewritten for its next stage
+ * and moved there afterwards.
+ */
+export const validateItemSections = (stage: Stage, item: ItemDraft): void => {
   for (const section of requiredSections[stage]) {
     if (!sectionHasContent(item.body, section)) {
       fail(`${stage}/${item.id}: ### ${section} requires content.`);
@@ -66,7 +79,7 @@ export const makeItem = (input: {
   readonly title: string;
   readonly body: string;
   readonly batch: string | null;
-}): Item => {
+}): ItemDraft => {
   const body = input.body.trim();
   return {
     id: input.id,
@@ -78,17 +91,21 @@ export const makeItem = (input: {
 };
 
 /** One item's Markdown chunk: its heading and body, as stored in an item file. */
-export const renderItem = (item: Item): string =>
+export const renderItem = (item: ItemDraft): string =>
   `## ${item.id} — ${item.title}\n\n${item.body.trim()}`;
 
+/**
+ * The multi-item stage format that v2 wrote into `STAGE.md`. `init` uses it to
+ * convert a leftover stage file into item files; nothing else parses it.
+ */
 // This is one state machine: item, batch, and fence transitions must stay adjacent.
 // eslint-disable-next-line max-lines-per-function -- Splitting the parser would hide those transitions across helpers.
-export const parseStageMarkdown = (stage: Stage, markdown: string): Item[] => {
+export const parseStageMarkdown = (stage: Stage, markdown: string): ItemDraft[] => {
   if (markdown === '') return [];
 
   const batched = isBatchedStage(stage);
   const lines = markdown.replaceAll('\r\n', '\n').split('\n');
-  const items: Item[] = [];
+  const items: ItemDraft[] = [];
   const batches = new Set<string>();
   let batch: string | null = null;
   let current:
@@ -167,7 +184,7 @@ export const parseStageMarkdown = (stage: Stage, markdown: string): Item[] => {
   return items;
 };
 
-/** One item file of a directory stage: its own chunk, with the batch coming from the directory name. */
+/** One item file of a stage directory: the batch comes from the directory name. */
 export const parseItemFile = (input: {
   readonly stage: Stage;
   readonly path: string;
@@ -200,38 +217,14 @@ export const parseItemFile = (input: {
     }
   }
 
-  const item = makeItem({
+  const draft = makeItem({
     id: input.id,
     title: heading[2]!,
     body: lines.slice(1).join('\n'),
     batch: input.batch,
   });
-  validateItem(input.stage, item);
-  return item;
-};
-
-export const renderStageMarkdown = (stage: Stage, items: ReadonlyArray<Item>): string => {
-  if (items.length === 0) return '';
-
-  const batched = isBatchedStage(stage);
-  const chunks: string[] = [];
-  const seen = new Set<string>();
-  let batch: string | null = null;
-  for (const item of items) {
-    validateItem(stage, item);
-    if (batched && item.batch !== batch) {
-      const name: string = item.batch ??
-        fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
-      if (seen.has(name)) {
-        fail(`${stage}: batch ${quote(name)} is split apart; keep its items together.`);
-      }
-      seen.add(name);
-      chunks.push(`# ${name}`);
-      batch = name;
-    }
-    chunks.push(renderItem(item));
-  }
-  return `${chunks.join('\n\n')}\n`;
+  validateItem(input.stage, draft);
+  return { ...draft, path: input.path };
 };
 
 export const findRequiredItem = (
@@ -249,7 +242,7 @@ export const findRequiredItem = (
 };
 
 export const validateUniqueIds = (
-  stages: ReadonlyArray<{ stage: Stage; items: ReadonlyArray<Item> }>,
+  stages: ReadonlyArray<{ stage: Stage; items: ReadonlyArray<ItemDraft> }>,
 ): void => {
   const owners = new Map<string, Stage>();
   for (const stage of stages) {

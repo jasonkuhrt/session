@@ -1,7 +1,7 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { DragDropProvider, useDroppable } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { Check, ExternalLink, FilePenLine, GripVertical, MoreHorizontal, Plus } from 'lucide-react'
+import { Check, GripVertical } from 'lucide-react'
 import type { Item, Stage, StageFile } from '../../contract'
 import { cn } from '../lib/utils'
 import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
@@ -9,7 +9,6 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { Checkbox } from './ui/checkbox'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu'
 
 /** Where a drag would land: a lane carries no batch, a card carries its own. */
 type DropTarget = { stage: Stage; batch: string | null }
@@ -19,13 +18,11 @@ type BoardProps = {
   pending: boolean
   selectedBatchIds: ReadonlySet<string>
   onOpen: (id: string) => void
-  onEdit: (stage: Stage) => void
-  onAdd: () => void
   onSelect: (id: string, selected: boolean) => void
   onQueue: () => void
   onStart: () => void
   onComplete: (item: Item) => void
-  onMove: (id: string, stage: Stage, beforeId: string | null, batch: string | null) => Promise<boolean>
+  onMove: (id: string, stage: Stage, beforeId: string | null) => Promise<boolean>
   onDraggingChange: (dragging: boolean) => void
 }
 
@@ -86,12 +83,12 @@ export function Board(props: BoardProps) {
           return
         }
         // dnd-kit supplies the final optimistic index within the target group.
-        // Persist a stable neighbor ID so the Markdown engine owns the actual
-        // move and resulting order.
+        // Persist a stable neighbor ID so the engine owns the actual move and
+        // resulting order; a queued card's neighbours are its own batch.
         const destination = props.stages.find(stage => stage.stage === to)
         const peers = destination?.items.filter(item => item.id !== entry.item.id && item.batch === batch) ?? []
         const beforeId = target.type === 'lane' ? null : peers[source.index]?.id ?? null
-        void props.onMove(entry.item.id, to, beforeId, batch).finally(() => props.onDraggingChange(false))
+        void props.onMove(entry.item.id, to, beforeId).finally(() => props.onDraggingChange(false))
       }}
     >
       <div className="grid min-w-300 grid-cols-5 items-start gap-4">
@@ -125,16 +122,6 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
       <div className="flex items-center gap-2">
         <h2 className="font-medium">{meta.label}</h2>
         <Badge variant="secondary">{stage.items.length}</Badge>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={`${meta.label} actions`} />}>
-            <MoreHorizontal />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {stage.stage === 'TRIAGE' ? <DropdownMenuItem onClick={props.onAdd}><Plus /> Add candidate</DropdownMenuItem> : null}
-            <DropdownMenuItem onClick={() => props.onEdit(stage.stage)}><FilePenLine /> Edit source file</DropdownMenuItem>
-            <DropdownMenuItem render={<a aria-label={`Open ${stage.stage} Markdown`} href={`/files/${stage.stage}.md`} target="_blank" rel="noreferrer" />}><ExternalLink /> Open Markdown</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
       <p className="text-sm text-muted-foreground">{meta.hint}</p>
       {stage.stage === 'BATCH' ? (

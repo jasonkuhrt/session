@@ -35,16 +35,18 @@ alone, and every record is ordinary Markdown.
 ## The session directory
 
 `.session` is a real directory at the worktree root, never a symlink. It holds a
-`.gitignore` of exactly `*`, which ignores the directory and that file. `session
-init` turns an older symlinked `.session` into a real one in place and creates
-what is missing.
+`.gitignore` of exactly `*`, which ignores the directory and that file.
 
-A stage is one file, `TRIAGE.md`, until it passes 500 lines; past that it is a
-directory, `TRIAGE/`, of numbered item files. The conversion never reverses, and
-a stage never has both. Batches are `# Batch name` headings and exist only in
-Queue and Execute, where every item belongs to one. Triage, Design, and Batch
-are flat: a `# ` heading there is a validation error.
-[references/records.md](references/records.md) has both formats.
+Every stage is a directory of numbered item files. One item is one file, and an
+empty stage is an empty directory. Triage, Design, and Batch hold their item
+files directly. Queue and Execute hold one directory per batch with that batch's
+item files inside, so every item there belongs to a batch.
+[references/records.md](references/records.md) has the format.
+
+`session init` creates the five stage directories and the `.gitignore`. It also
+converts an older session in place: a symlinked `.session` becomes a real
+directory, and a `STAGE.md` becomes `STAGE/`. That conversion is a one-shot for
+the rollout and goes away once every worktree has run it.
 
 ## Rules
 
@@ -64,10 +66,10 @@ session without standing rules has no `RULES.md`; `init` does not scaffold one.
 Use the active worktree's `.session` directory. Never change checkouts just to
 refresh context.
 
-Use the `session` CLI for adds, moves, batches, splits, and completion: it owns
-placement, numbering, validation, and the recovery journal. Edit the files
-directly for content, and run `session check` after hand edits. Both write the
-same records; [references/operations.md](references/operations.md) has the
+Use the `session` CLI for structure: adding, moving, composing a batch, starting
+it, and completing an item. It owns placement, numbering, and validation. Write
+content in an editor, in the item files themselves, and run `session check` after
+hand edits. [references/operations.md](references/operations.md) has the
 commands.
 
 Read [references/records.md](references/records.md) when creating, migrating, or
@@ -79,9 +81,9 @@ Before acting, refresh changed context with the CLI. Load `RULES.md` when it
 exists, the five stage records, and only relevant supporting context. Keep the
 path/hash inventory in the conversation; read changed files and avoid reloading
 unchanged material.
-`ignore/` and `.runtime/` are outside normal context: do not traverse, read,
-summarize, or follow links into them during a refresh. Read inactive history only
-when the user asks for it.
+`ignore/` is outside normal context: do not traverse, read, summarize, or follow
+links into it during a refresh. Read inactive history only when the user asks for
+it.
 
 ## Design and execute
 
@@ -99,11 +101,12 @@ and `session start` does not add it.
 Execution continues through the agreed outcome, including verification and
 landing when requested. A task is not complete merely because only tests or CI
 remain. Remove a completed item from Execute with `session done`, which files it
-under `ignore/`, outside live context. An empty file stage is a zero-byte file;
-an empty directory stage has no entries.
+under `ignore/`, outside live context. An empty stage is an empty directory.
 
 ## Board and validation
 
+The board is a viewer with workflow actions. It shows the five lanes and it
+moves, queues, starts, and completes items; it never writes an item's content.
 For the app, launch command, and file operations, read
 [references/operations.md](references/operations.md). The UI owns no second copy
 of work state. Do not recreate a per-task viewer, content module, or task

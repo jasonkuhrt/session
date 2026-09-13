@@ -39,6 +39,7 @@ export function DetailDialog({
             <SheetTitle className="text-xl">{item.title}</SheetTitle>
             <span className="shrink-0 font-mono text-xs text-muted-foreground">{item.id}</span>
           </div>
+          <p className="break-all font-mono text-xs text-muted-foreground">{item.path}</p>
 
           <TooltipProvider>
             <ToggleGroup

@@ -2,6 +2,7 @@ import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage } from '../contract.ts';
 import {
   fail,
+  type ItemDraft,
   parseItemFile,
   quote,
   renderItem,
@@ -161,9 +162,9 @@ const insertBetween = (existing: ReadonlyArray<number | null>): number[] | undef
 /** Items grouped into their batches, in file order. */
 const groupByBatch = (
   stage: Stage,
-  items: ReadonlyArray<Item>,
-): Array<{ batch: string; items: Item[] }> => {
-  const groups: Array<{ batch: string; items: Item[] }> = [];
+  items: ReadonlyArray<ItemDraft>,
+): Array<{ batch: string; items: ItemDraft[] }> => {
+  const groups: Array<{ batch: string; items: ItemDraft[] }> = [];
   for (const item of items) {
     validateItem(stage, item);
     const batch: string = item.batch ??
@@ -210,12 +211,12 @@ const currentPrefixes = (
 /** The item files a stage directory should hold for these items, in this order. */
 export const renderStageDirectory = (input: {
   readonly stage: Stage;
-  readonly items: ReadonlyArray<Item>;
+  readonly items: ReadonlyArray<ItemDraft>;
   readonly current: ReadonlyArray<StageFileEntry>;
 }): StageFileEntry[] => {
   const { stage } = input;
   const known = currentPrefixes(input.current);
-  const file = (directory: string, prefix: number, item: Item): StageFileEntry => ({
+  const file = (directory: string, prefix: number, item: ItemDraft): StageFileEntry => ({
     path: `${directory}/${formatPrefix(prefix)}-${item.id}.md`,
     content: `${renderItem(item)}\n`,
   });

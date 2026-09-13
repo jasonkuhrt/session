@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import { SessionSchema, type Session, type Stage } from '../../contract'
+import { SessionSchema, type Session } from '../../contract'
 
 export class ApiError extends Data.TaggedError('ApiError')<{
   readonly status: number
@@ -43,11 +43,8 @@ export const SessionApi = {
   read: (signal?: AbortSignal) => run(execute(HttpClientRequest.get('/api/session')), signal),
 
   mutate: (
-    path: '/api/item' | '/api/move' | '/api/batch' | '/api/start' | '/api/complete',
+    path: '/api/move' | '/api/batch' | '/api/start' | '/api/complete',
     body: Record<string, unknown>,
   ) =>
     HttpClientRequest.post(path).pipe(HttpClientRequest.bodyJsonUnsafe(body), execute, run),
-
-  saveFile: (body: { stage: Stage; markdown: string; revision: string }) =>
-    HttpClientRequest.put('/api/file').pipe(HttpClientRequest.bodyJsonUnsafe(body), execute, run),
 }
