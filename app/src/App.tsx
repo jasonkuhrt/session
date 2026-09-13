@@ -10,6 +10,7 @@ import { Button } from './components/ui/button'
 import { Skeleton } from './components/ui/skeleton'
 import { ApiError, SessionApi } from './lib/api'
 import { basePath } from './lib/base'
+import { parentPath } from './lib/format'
 
 function App() {
   const [session, setSession] = React.useState<Session | null>(null)
@@ -107,6 +108,8 @@ function App() {
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
+      {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
+      <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
       <header className="flex items-center gap-8 border-b px-6 py-5">
         {session?.worktree ? (
           <dl className="flex gap-8 text-sm">
@@ -114,9 +117,12 @@ function App() {
               <dt className="text-muted-foreground">Branch</dt>
               <dd className="font-medium">{session.worktree.branch ?? 'No branch'}</dd>
             </div>
-            <div title={session.worktree.path}>
+            <div>
               <dt className="text-muted-foreground">Worktree</dt>
-              <dd className="font-medium">{session.worktree.name}</dd>
+              <dd className="font-medium" title={session.worktree.path}>
+                {session.worktree.name}
+                <span className="ml-2 font-normal text-muted-foreground">{parentPath(session.worktree.path)}</span>
+              </dd>
             </div>
           </dl>
         ) : null}

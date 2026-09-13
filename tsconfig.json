@@ -167,6 +167,7 @@
             "include": [
               "app/server/layout.ts",
               "app/server/model.ts",
+              "app/src/lib/format.ts",
               "app/src/lib/workflow.ts",
               "app/stage-rules.ts"
             ],
@@ -214,11 +215,12 @@
             }
           },
           {
-            "include": ["app/src/worktree-index.tsx"],
+            "include": ["app/src/lib/format.ts", "app/src/worktree-index.tsx"],
             "options": {
               "diagnosticSeverity": {
-                // The index formats an ISO timestamp from the daemon for the
-                // viewer's locale; it models no time of its own.
+                // These formatters render the daemon's ISO timestamps in the
+                // viewer's locale, and the index reads the browser's clock
+                // once a minute to age them. Neither models a time of its own.
                 "globalDate": "off"
               }
             }

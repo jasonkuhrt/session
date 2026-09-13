@@ -2,6 +2,7 @@ import { CheckCircle2, Layers3 } from 'lucide-react'
 import * as React from 'react'
 
 import type { Item } from '../../contract'
+import { useLastPresent } from '../lib/overlay'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -29,6 +30,7 @@ export function BatchDialog({
   onQueue: (name: string) => void
 }) {
   const [name, setName] = React.useState('')
+  const nameId = React.useId()
 
   return (
     <Dialog
@@ -54,8 +56,9 @@ export function BatchDialog({
           }}
         >
           <div className="space-y-2">
-            <Label>Batch name</Label>
+            <Label htmlFor={nameId}>Batch name</Label>
             <Input
+              id={nameId}
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="What outcome unites this work?"
@@ -85,6 +88,10 @@ export function CompleteDialog({
   onOpenChange: (open: boolean) => void
   onComplete: () => void
 }) {
+  // The board clears the item as the dialog closes; the sentence below still
+  // has to name it on the way out.
+  const shown = useLastPresent(item)
+
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -92,7 +99,7 @@ export function CompleteDialog({
           <CheckCircle2 className="size-4 text-muted-foreground" />
           <DialogTitle>Complete this work?</DialogTitle>
           <DialogDescription>
-            <span className="text-foreground">{item?.title}</span> will leave Execute and be filed under{' '}
+            <span className="text-foreground">{shown?.title}</span> will leave Execute and be filed under{' '}
             <code className="font-mono">archive/</code> as done.
           </DialogDescription>
         </DialogHeader>
