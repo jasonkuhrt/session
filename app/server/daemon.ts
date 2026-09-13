@@ -262,6 +262,23 @@ type Tracked = {
 const runNode = <A, E>(effect: Effect.Effect<A, E, NodeServiceUnion>) =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)));
 
+/**
+ * Every task here spawns Git and reads a session, so the index must not fan out
+ * one task per tracked worktree: twenty at once exhausts the listener budget of
+ * the streams those child processes attach to.
+ */
+const worktreeConcurrency = 4;
+
+const mapWorktrees = <A, B>(
+  items: ReadonlyArray<A>,
+  run: (item: A) => Promise<B>,
+): Promise<B[]> =>
+  Effect.runPromise(
+    Effect.forEach(items, (item) => Effect.promise(() => run(item)), {
+      concurrency: worktreeConcurrency,
+    }),
+  );
+
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 
@@ -345,29 +362,29 @@ export const runDaemon = async () => {
     for (const path of new Set(paths.map((entry) => resolve(entry)))) {
       if (!tracked.has(path)) fresh.push(path);
     }
-    const checked = await Promise.all(
-      fresh.map(async (path) => ({ path, usable: await isDirectory(path) })),
-    );
+    const checked = await mapWorktrees(fresh, async (path) => ({
+      path,
+      usable: await isDirectory(path),
+    }));
     const usable: string[] = [];
     for (const entry of checked) if (entry.usable) usable.push(entry.path);
-    const described = await Promise.all(
-      usable.map(async (path) => ({ path, resolved: await runNode(resolveWorktreeSession(path)) })),
-    );
+    const described = await mapWorktrees(usable, async (path) => ({
+      path,
+      resolved: await runNode(resolveWorktreeSession(path)),
+    }));
     for (const entry of described) insert(entry.path, entry.resolved);
   };
 
   /** Git knows the siblings; a worktree joins the index once it has a session. */
   const discover = async () => {
     const known = [...tracked.values()];
-    const probed = await Promise.all(
-      known.map(async (entry) => {
-        const [exists, siblings] = await Promise.all([
-          pathExists(entry.path),
-          runNode(listGitWorktrees(entry.path).pipe(Effect.orElseSucceed(() => []))),
-        ]);
-        return { entry, exists, siblings };
-      }),
-    );
+    const probed = await mapWorktrees(known, async (entry) => {
+      const [exists, siblings] = await Promise.all([
+        pathExists(entry.path),
+        runNode(listGitWorktrees(entry.path).pipe(Effect.orElseSucceed(() => []))),
+      ]);
+      return { entry, exists, siblings };
+    });
     const candidates = new Set<string>();
     for (const item of probed) {
       if (!item.exists) {
@@ -376,9 +393,10 @@ export const runDaemon = async () => {
       }
       for (const sibling of item.siblings) candidates.add(sibling.path);
     }
-    const sessions = await Promise.all(
-      [...candidates].map(async (path) => ({ path, ready: await pathExists(join(path, '.session')) })),
-    );
+    const sessions = await mapWorktrees([...candidates], async (path) => ({
+      path,
+      ready: await pathExists(join(path, '.session')),
+    }));
     const ready: string[] = [];
     for (const candidate of sessions) if (candidate.ready) ready.push(candidate.path);
     await track(ready);
@@ -481,14 +499,14 @@ export const runDaemon = async () => {
         return json({ pid: process.pid, port: settings.port, startedAt, sourceStamp: stamp });
       }
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
-        return json(await Promise.all([...tracked.values()].map((entry) => summarize(entry))));
+        return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
       }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));
         const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;
         if (typeof path === 'string') await track([path]);
         await discover();
-        return json(await Promise.all([...tracked.values()].map((entry) => summarize(entry))));
+        return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
       }
       if (url.pathname === '/w' || url.pathname.startsWith('/w/')) return await board(request, url);
       return await staticFile(url, request.method);
