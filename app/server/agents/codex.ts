@@ -21,14 +21,19 @@ import { realPaths } from './paths.ts';
  * writer lock it holds, which any process can see, and that is all this claims.
  */
 
-/** Threads per tracked worktree path, and why the list may be empty. */
+/**
+ * Threads per tracked worktree path, and what could not be answered about
+ * them. Two things can fail independently: the listing itself, and the writer
+ * locks that say which threads are open, so the notices are a list.
+ */
 export type CodexListing = {
   readonly byWorktree: ReadonlyMap<string, ReadonlyArray<CodexThread>>;
-  readonly notice: string | null;
+  readonly notices: ReadonlyArray<string>;
 };
 
-const unavailable = 'Codex not available';
-const timedOut = 'Codex unavailable (timeout)';
+const unavailable = 'Codex is not installed, so its threads are not listed.';
+const timedOut = 'Codex did not answer in time, so its threads are not listed.';
+const locksUnreadable = "Codex's writer locks could not be read, so which threads are open is unknown.";
 
 /** Spawn, handshake and one query per worktree; measured at 75 ms for two. */
 const budget = '3 seconds';
@@ -131,12 +136,18 @@ export const codexThreads = (
     for (const [path, threads] of listing.byWorktree) {
       byWorktree.set(path, threads.map((thread) => describe(thread, loaded)));
     }
-    return { byWorktree, notice: listing.notice };
+    // A thread carries `loaded: null` when the locks could not be read. That is
+    // an answer the rows cannot give on their own, so the reason is said once
+    // here rather than left as an `unknown` nobody can account for.
+    const notices = [listing.notice, loaded === null ? locksUnreadable : null].filter(
+      (notice) => notice !== null,
+    );
+    return { byWorktree, notices };
   }).pipe(
     Effect.catchCause(() =>
       Effect.succeed({
         byWorktree: new Map<string, ReadonlyArray<CodexThread>>(),
-        notice: unavailable,
+        notices: [unavailable],
       }),
     ),
   );

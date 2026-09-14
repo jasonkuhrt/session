@@ -126,14 +126,27 @@ the `session` alias (once, again only if the port moves) and prints and opens
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one
 that exists and holds a `.session` directory; paths that have gone away are
-dropped. Nothing watches for new worktrees, so one created later appears on the
-next `open` or when someone presses Refresh on the index.
+dropped.
 
-The index at `/` lists the tracked worktrees: name, branch, the running batch and
-its size, the item counts per stage, and activity. Each board sits under
-`/w/<key>/`, where the key is the worktree name, `Heartbeat` or
-`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
-conflict: the later one is listed with the reason and is not served.
+The index keeps itself current between those rescans, which is why it carries no
+refresh button. A worktree joins it as soon as a session exists: every command
+but `check` converges the session it was pointed at, and when that scaffolds
+anything it registers the worktree with a daemon that is already running. It
+never starts one; `open` is the command that does that. A worktree leaves it as
+soon as its session is gone: each tracked worktree's own watcher re-asks whether
+the `.session` is still a real directory on every event and when the watch ends,
+and the first `no` drops the row, rewrites the state file and pushes a
+`worktrees` event to every open index. `POST /api/worktrees/refresh` remains as
+the route the CLI registers through.
+
+The index at `/` lists the tracked worktrees: name, branch, the agents at work
+in it, the item counts per stage, and activity. The batch in Execute is named
+beside that stage's count, which is the only place a batch is named, and a stage
+holding nothing renders an empty cell, so the five columns read as a pipeline by
+what is in them. Each board sits under `/w/<key>/`, where the key is the
+worktree name, `Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees
+whose names collide are a conflict: the later one is listed with the reason and
+is not served.
 
 ## Use the board
 
@@ -145,21 +158,24 @@ The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
 there is no way to type a body or create an item in it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
-reading width, shows the item's id and file path, and resolves Markdown links
-inside the body against the session directory; it is an ordinary link, so it
-opens in a tab like any other. The page carries the stage control, which moves
-an item in one click and leaves you on the page in its new stage; unavailable
-destinations explain what is needed first. "Complete work" is there for an item
-in Execute, and returns you to the board. Settle missing content with the agent
+reading width, shows the item's id and its path under the session, and resolves
+Markdown links inside the body against the session directory; the path copies
+the absolute file, which is what a terminal beside the page can open. It is an
+ordinary link, so it opens in a tab like any other. The page carries the stage
+control, which moves an item in one click and leaves you on the page in its new
+stage; unavailable destinations explain what is needed first. "Complete work" is
+there for an item in Execute, and returns you to the board. Settle missing content with the agent
 or in the editor.
 
-Select ready items in the Batch lane and use "Queue batch" to name them and
-append the batch to Queue. The Queue lane groups cards under their batch in file
-order and offers "Start next batch", disabled with its reason while Execute has
-items or Queue is empty. Execute is frozen: its cards can only be completed,
-which files them under `archive/`. Nothing drops into Queue or
-Execute; a Queue card can be reordered inside its own batch or dragged back to
-Batch, Design, or Triage.
+Select ready items in the Batch lane and use "Queue batch", which appears once
+something is selected, to name them and append the batch to Queue. The Queue
+lane groups cards under their batch in file order and offers "Start next
+batch" while there is a batch to start and Execute is empty. Neither button is
+ever drawn disabled with a reason: an empty selection and an occupied Execute
+are already visible in the lanes themselves. Execute is frozen: its cards can
+only be completed, which files them under `archive/`. Nothing drops into Queue
+or Execute; a Queue card can be reordered inside its own batch or dragged back
+to Batch, Design, or Triage.
 
 The board follows the files. The daemon watches that worktree's `.session` and
 pushes an event when anything under it changes, and the board refetches the
@@ -194,46 +210,90 @@ by recency, started from the Desktop, an editor, or the CLI. Archived threads,
 `exec` runs, and subagent threads are left out: they are runs, not sessions to
 go to.
 
-A Claude chip carries the session's status as the listing gives it, the
-session's name, and its actions. `waiting` is drawn in the accent colour with
-the reason it is waiting, because it is the one status that means the session is
-blocked on a person. A derived name is dimmed: it is a label, and `--resume`
-cannot find it. "Terminal" focuses the cmux tab holding the session's process,
-and appears only when the process is in one; when cmux refuses, the chip shows
-the line cmux returned. "claude.ai" appears only when a Remote Control link was
+The strip is ordered by one concept: live against resumable. A live session has
+a process behind it (`pid` is set) and a live thread is one an app holds open;
+only a live thing can need you now. A resumable session's process is gone and
+its `state` is the last thing Claude Code knew about it, which may be weeks old;
+a resumable thread is one no app holds. Live rows come first, resumable rows
+follow at reduced contrast, and each tier is named as soon as the second one has
+anything in it. Every row keeps its age, because for a resumable row the age is
+the one fact that says how stale its state is.
+
+A Claude chip carries one word for the session, its name, its age, and its
+actions. The word is the `status` of a live session, and for a resumable one the
+`state` Claude Code last knew it in:
+
+| word | what the listing means by it |
+| --- | --- |
+| `busy` | working on a turn |
+| `shell` | running a shell command |
+| `idle` | waiting for the next prompt |
+| `waiting` | needs you, with the reason beside it |
+| `working` | driving its own work: a turn, a loop iteration, or a wait on CI |
+| `blocked` | needs you: a question it asked, a permission or sandbox decision, an error only you can clear, or its first prompt |
+| `done` | its last turn finished; ready for the next prompt |
+| `failed` | ended with an error |
+| `stopped` | was stopped |
+
+Without `--all` the listing holds active sessions, so the last three are not
+expected; a word this build has never heard of is shown as it arrived and never
+folded into one it knows. The accent colour is spent on one thing only: a live
+session that is `waiting` or `blocked`, with the reason when the listing gives
+one, because that is a session stopped on a person right now. A resumable
+session's `blocked` is a memory, not a request, so it is never accented; it
+sorts last, and its word's tooltip says that its process is gone, what Claude
+Code last knew, and that `claude attach` picks it up.
+
+A live session's age is its time in status, `idle for 3 h`, because how long it
+has held is what decides whether to go to it; a resumable session's age is when
+it started. Both carry the exact moment.
+
+"Focus terminal" focuses the cmux tab holding the session's process, and appears
+only when the process is in one; when cmux refuses, the chip shows the line cmux
+returned. "Open on claude.ai" appears only when a Remote Control link was
 recorded for the session, and opens it. When there is no terminal to focus, the
-chip offers the session's resume command to copy instead, if it has one:
+chip offers "Copy resume command" instead, if the session has one:
 `claude --resume <session id>` for an interactive session, `claude attach <id>`
-for a background one.
+for a background one. "Copy session id" is there whenever the listing carries
+one. Names are never acted on, so nothing on the board says where a name came
+from.
 
 A Codex chip carries the thread's origin, its name or, failing that, its first
 line, and how long ago it was last active. "Open in Codex" opens
 `codex://threads/<id>` and is always available, because that id comes from the
-same listing being rendered. A dot marks a thread that is loaded, meaning a live
-process holds its writer lock. The resume command is offered only for a thread
-nothing holds, because Codex refuses to resume one that already has an active
-writer.
+same listing being rendered; "Copy thread id" is there beside it. The word is
+`open` when a live process holds the thread's writer lock, `not open` when the
+locks were read and this thread was not among them, and `unknown` when they
+could not be read at all. Only `not open` is resumable: it is the one answer
+that carries "Copy resume command", because Codex refuses to resume a thread
+that already has an active writer, and an `unknown` thread is never demoted as
+if nothing held it.
 
-The index carries the same reading in one column per worktree: the Claude
-sessions counted by status, waiting first, and how many Codex threads are
-loaded. A worktree with neither shows a dash, and notices are printed once under
-the header rather than on every row.
+The index carries one column per worktree, a pill per live session rather than a
+count: its dot, its word, and its name, ordered as the board orders its rows. A
+pill opens the menu of that session's actions, which is the board's own list
+rendered as a menu, under a line naming the session, its harness, what its word
+means, and its age. Copying keeps the menu open and says what happened; focusing
+a terminal closes it, or keeps it open showing the line cmux returned. Only live
+things are named here: a session whose process is gone and a thread nothing
+holds are handles, not work under way, and listing them would say something is
+happening where nothing is. They are on that worktree's own board, which is
+where a reader has already chosen the scope. A worktree with nothing live shows
+a dash, and notices are printed once under the header rather than on every row.
 
-Its Activity column answers when the worktree last did anything, from either
-side of the board. A worktree holding a session that is `busy` or in a shell
-reads `busy now`, in the present tense, and sorts to the top; otherwise the
-column names the newest moment left behind and what left it, `agent` for a
-Claude session's status change or a Codex thread, `records` for an item file,
-with the exact time on hover. A worktree where neither has happened reads a dash
-and falls into the last band. A status time is when that status last changed and
-nothing more: it dates activity, it is not a heartbeat, and an old one is an
-agent that has held still rather than an agent that has gone.
+Its Activity column answers when the worktree last did anything and who did it:
+`Claude Code` for a session's status change, `Codex` for a thread's update,
+`Items` for an item file written, each with the age beside it and the exact
+moment in the sentence behind it. What is happening now is the Agents column's
+answer, not this one's. A worktree where none of the three has happened reads a
+dash and falls into the last band. A status time is when that status last
+changed and nothing more: it dates activity, it is not a heartbeat, and an old
+one is an agent that has held still rather than an agent that has gone.
 
-The listing is recomputed when the index renders, when Refresh is pressed, and
-when the Claude session registry or the Codex writer-lock directory changes. A
-change pushes an `agents` event to the index and to every open board, and they
-refetch; a board request otherwise reuses the last listing until it is thirty
-seconds old.
+The listing is recomputed when the index renders and when the Claude session
+registry or the Codex writer-lock directory changes. A change pushes an `agents`
+event to the index and to every open board, and they refetch; a board request
+otherwise reuses the last listing until it is thirty seconds old.
 
 The overlay claims nothing its sources do not state. Nothing is concluded from a
 timestamp: a session that has written no status for days is not marked stale,
@@ -247,10 +307,12 @@ claude.ai link records that the session was bridged at some point, not that it
 is bridged now, so it may open a page that is disconnected. And not every
 session has a terminal to focus; that is ordinary, not a fault.
 
-A source that cannot be reached says so. "Claude Code not available" means its
-listing could not be run or did not answer in time. "Codex not available" means
-`codex` could not be started or refused the handshake, and "Codex unavailable
-(timeout)" that it started and did not answer inside its budget. Each notice
+A source that cannot be reached says so, in a sentence that carries the
+consequence. "Claude Code did not answer, so its sessions are not listed" means
+its listing could not be run or did not answer in time. "Codex is not installed,
+so its threads are not listed" means `codex` could not be started or refused the
+handshake, and "Codex did not answer in time, so its threads are not listed"
+that it started and did not answer inside its budget. Each notice
 stands for its own source, the other source and the rest of the board are
 unaffected, and an empty strip reads "No agent sessions here" with the notices
 beside it, so a failed listing never passes for an empty one. A machine running

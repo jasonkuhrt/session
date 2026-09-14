@@ -2,7 +2,7 @@ import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { DragDropProvider, KeyboardSensor, PointerSensor, useDroppable } from '@dnd-kit/react'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { Check, GripVertical } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { Item, Stage, StageFile } from '../../contract'
 import { isBatchedStage } from '../../contract'
 import { itemHref } from '../lib/base'
@@ -13,6 +13,7 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { Checkbox } from './ui/checkbox'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 /**
  * A card is dragged by its whole self, so nobody has to hit a grip. Without a
@@ -57,12 +58,6 @@ function batchGroups(items: Item[]) {
   return groups
 }
 
-function startReason(executeOccupied: boolean, queued: number) {
-  if (executeOccupied) return 'Execute already has a batch'
-  if (queued === 0) return 'No queued batches'
-  return null
-}
-
 export function Board(props: BoardProps) {
   const findItem = (id: unknown) => {
     for (const stage of props.stages) {
@@ -87,37 +82,39 @@ export function Board(props: BoardProps) {
   const executeOccupied = props.stages.some(stage => stage.stage === 'EXECUTE' && stage.items.length > 0)
 
   return (
-    <DragDropProvider
-      sensors={sensors}
-      onDragStart={() => props.onDraggingChange(true)}
-      onDragEnd={event => {
-        const { source, target } = event.operation
-        if (event.canceled || !isSortable(source) || !target) {
-          props.onDraggingChange(false)
-          return
-        }
-        const to = target.data['stage']
-        const batch = typeof target.data['batch'] === 'string' ? target.data['batch'] : null
-        const entry = findItem(source.id)
-        if (!entry || !isStage(to) || !accepts(source.id, { stage: to, batch })) {
-          props.onDraggingChange(false)
-          return
-        }
-        // dnd-kit supplies the final optimistic index within the target group.
-        // Persist a stable neighbor ID so the engine owns the actual move and
-        // resulting order; a queued card's neighbours are its own batch.
-        const destination = props.stages.find(stage => stage.stage === to)
-        const peers = destination?.items.filter(item => item.id !== entry.item.id && item.batch === batch) ?? []
-        const beforeId = target.type === 'lane' ? null : peers[source.index]?.id ?? null
-        void props.onMove(entry.item.id, to, beforeId).finally(() => props.onDraggingChange(false))
-      }}
-    >
-      <div className="grid min-w-300 grid-cols-5 items-start gap-4">
-        {props.stages.map(stage => (
-          <Lane key={stage.stage} {...props} stage={stage} accepts={accepts} executeOccupied={executeOccupied} />
-        ))}
-      </div>
-    </DragDropProvider>
+    <TooltipProvider>
+      <DragDropProvider
+        sensors={sensors}
+        onDragStart={() => props.onDraggingChange(true)}
+        onDragEnd={event => {
+          const { source, target } = event.operation
+          if (event.canceled || !isSortable(source) || !target) {
+            props.onDraggingChange(false)
+            return
+          }
+          const to = target.data['stage']
+          const batch = typeof target.data['batch'] === 'string' ? target.data['batch'] : null
+          const entry = findItem(source.id)
+          if (!entry || !isStage(to) || !accepts(source.id, { stage: to, batch })) {
+            props.onDraggingChange(false)
+            return
+          }
+          // dnd-kit supplies the final optimistic index within the target group.
+          // Persist a stable neighbor ID so the engine owns the actual move and
+          // resulting order; a queued card's neighbours are its own batch.
+          const destination = props.stages.find(stage => stage.stage === to)
+          const peers = destination?.items.filter(item => item.id !== entry.item.id && item.batch === batch) ?? []
+          const beforeId = target.type === 'lane' ? null : peers[source.index]?.id ?? null
+          void props.onMove(entry.item.id, to, beforeId).finally(() => props.onDraggingChange(false))
+        }}
+      >
+        <div className="grid min-w-300 grid-cols-5 items-start gap-4">
+          {props.stages.map(stage => (
+            <Lane key={stage.stage} {...props} stage={stage} accepts={accepts} executeOccupied={executeOccupied} />
+          ))}
+        </div>
+      </DragDropProvider>
+    </TooltipProvider>
   )
 }
 
@@ -137,34 +134,64 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
     disabled: props.pending,
   })
   const meta = stageMeta[stage.stage]
-  const blocked = startReason(executeOccupied, stage.items.length)
+  // A control appears when it can act. An empty selection and an occupied
+  // Execute are both visible in the lanes themselves, so a disabled button
+  // carrying the reason would say a second time what the board already shows.
+  const canQueue = stage.stage === 'BATCH' && props.selectedBatchIds.size > 0
+  const canStart = stage.stage === 'QUEUE' && stage.items.length > 0 && !executeOccupied
   return (
     <section ref={ref} className="min-w-0 space-y-3">
       <div className="flex items-center gap-2">
-        <h2 className="font-medium">{meta.label}</h2>
+        {/* What the stage is for is one hover away rather than a line under
+            every lane; the heading is what carries it. */}
+        <h2 className="font-medium">
+          <Tooltip>
+            <TooltipTrigger className="cursor-default rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+              {meta.label}
+            </TooltipTrigger>
+            <TooltipContent>{meta.hint}</TooltipContent>
+          </Tooltip>
+        </h2>
         <Badge
           variant={stage.items.length === 0 ? 'outline' : 'secondary'}
           className={cn(stage.items.length === 0 && 'text-muted-foreground')}
+          title="How many items are in this stage."
         >
           {stage.items.length}
         </Badge>
       </div>
-      <p className="text-sm text-muted-foreground">{meta.hint}</p>
-      {stage.stage === 'BATCH' ? (
-        <Button variant="outline" className="w-full" disabled={props.pending || props.selectedBatchIds.size === 0} onClick={props.onQueue}>
-          {props.selectedBatchIds.size === 0 ? 'Select items to queue' : `Queue batch (${props.selectedBatchIds.size})`}
-        </Button>
+      {canQueue ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="outline" className="w-full" disabled={props.pending} onClick={props.onQueue} />
+            }
+          >
+            Queue batch ({props.selectedBatchIds.size})
+          </TooltipTrigger>
+          <TooltipContent>Name the selected items as a batch and append it to Queue.</TooltipContent>
+        </Tooltip>
       ) : null}
-      {stage.stage === 'QUEUE' ? (
-        <Button variant="outline" className="w-full" disabled={props.pending || blocked !== null} onClick={props.onStart}>
-          {blocked ?? 'Start next batch'}
-        </Button>
+      {canStart ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="outline" className="w-full" disabled={props.pending} onClick={props.onStart} />}
+          >
+            Start next batch
+          </TooltipTrigger>
+          <TooltipContent>Move the first queued batch into Execute.</TooltipContent>
+        </Tooltip>
       ) : null}
       <div className={cn('min-h-32 space-y-3 rounded-lg', isDropTarget && 'outline-2 outline-primary outline-dashed')}>
         {isBatchedStage(stage.stage)
           ? batchGroups(stage.items).map(group => (
             <div key={`${group.batch}`} className="space-y-3">
-              <h3 className="text-xs font-medium tracking-wide text-foreground">{group.batch}</h3>
+              <h3
+                className="text-xs font-medium tracking-wide text-foreground"
+                title="The batch these items were queued in."
+              >
+                {group.batch}
+              </h3>
               {group.items.map((item, index) => (
                 <WorkflowCard key={item.id} item={item} index={index} stage={stage.stage} group={`${stage.stage}:${group.batch}`} accepts={accepts} {...props} />
               ))}
@@ -173,7 +200,6 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
           : stage.items.map((item, index) => (
             <WorkflowCard key={item.id} item={item} index={index} stage={stage.stage} group={stage.stage} accepts={accepts} {...props} />
           ))}
-        {stage.items.length === 0 ? <p className="p-6 text-center text-sm text-muted-foreground">No items</p> : null}
       </div>
     </section>
   )
@@ -225,8 +251,6 @@ function WorkflowCard({ item, index, stage, group, accepts, ...props }: BoardPro
             >
               {item.title}
             </a>
-            {/* The whole card drags, so this is a hint about the card and not a control of its own. */}
-            {frozen ? null : <GripVertical aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />}
           </div>
           {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

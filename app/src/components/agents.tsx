@@ -1,164 +1,67 @@
-import { Check, Copy, ExternalLink, Globe, SquareTerminal } from 'lucide-react'
 import * as React from 'react'
 
 import type { AgentsSummary, ClaudeSession, CodexThread, FocusResult } from '../../contract'
-import { missingStatus, waitingStatus } from '../lib/agents'
-import { absoluteTime, relativeTime } from '../lib/format'
+import {
+  actionsFor,
+  actionsForThread,
+  isLive,
+  isParkedThread,
+  loadedMeaning,
+  meaningOf,
+  needsYou,
+  sessionName,
+  sortSessions,
+  sortThreads,
+  tierMeaning,
+  wordOf,
+  wordOfThread,
+} from '../lib/agents'
+import { absoluteTime, relativeTime, since } from '../lib/format'
 import { cn } from '../lib/utils'
-import { useCopy } from './copyable'
+import { Actions } from './agent-actions'
+import { Dot, Explained } from './agent-marks'
 import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { TooltipProvider } from './ui/tooltip'
 
 /**
  * The agents at work in one worktree, as a row apiece under its board. Every
  * row is one session: its harness, how it is doing, what it is called, and the
- * buttons that act on that session and no other. Everything here is read from
- * what Claude Code and Codex answered when the daemon last asked them, and it
- * says only what those answers carry. A status word this build does not know
- * is rendered as it arrived rather than folded into one it does.
+ * buttons that act on that session and no other.
+ *
+ * The rows come in two tiers. A live row has a process behind it and can need
+ * you now; a resumable row is a handle and the state something last knew it
+ * in, and the only thing to do with one is pick it back up. Everything here is
+ * read from what Claude Code and Codex answered when the daemon last asked
+ * them, and a word this build does not know is rendered as it arrived rather
+ * than folded into one it does.
  */
-
-/** The one copy button both kinds of row use: a command, and what happened to it. */
-function CopyButton({ command, label }: { command: string; label: string }) {
-  const [state, copy] = useCopy()
-  return (
-    <Button
-      variant="outline"
-      size="xs"
-      title={command}
-      aria-label={`${label}: ${command}`}
-      onClick={() => void copy(command)}
-    >
-      {state === 'copied' ? <Check /> : <Copy />}
-      {state === 'idle' ? label : state === 'copied' ? 'Copied' : 'Copy failed'}
-    </Button>
-  )
-}
-
-/** A dot that carries one fact; the words for it are in the row's tooltip. */
-function Dot({ tone }: { tone: 'on' | 'attention' | 'off' | 'unknown' }) {
-  // Attention is the one tone with a hue: it marks a session blocked on a person.
-  const fill = tone === 'attention'
-    ? 'bg-amber-400'
-    : tone === 'on'
-    ? 'bg-primary'
-    : tone === 'unknown'
-    ? 'border border-muted-foreground/50'
-    : 'bg-muted-foreground/40'
-  return <span aria-hidden className={cn('size-2 shrink-0 rounded-full', fill)} />
-}
-
-/** What to call a session: its name, else whatever handle identifies it. */
-const sessionName = (session: ClaudeSession) =>
-  session.name ?? session.backgroundId ?? (session.pid === null ? 'Session' : `pid ${session.pid}`)
-
-/**
- * What Claude Code means by the word in the status column. A word this build
- * has never heard of is still shown, and says only where it came from.
- */
-const statusMeaning = (session: ClaudeSession) => {
-  switch (session.status) {
-    case 'busy': {
-      return 'Working on a turn'
-    }
-    case 'idle': {
-      return 'Waiting for the next prompt'
-    }
-    case waitingStatus: {
-      return `Needs you: ${session.waitingFor ?? 'no reason given'}`
-    }
-    case 'shell': {
-      return 'Running a shell command'
-    }
-    case null: {
-      return 'The listing reported no status'
-    }
-    default: {
-      return 'As reported by Claude Code'
-    }
-  }
-}
-
-/** What the Codex dot means. It is about an app holding the thread, never a turn. */
-const loadedMeaning = (loaded: boolean | null) =>
-  loaded === null ? 'Could not be read' : loaded ? 'Open in an app' : 'Not open in any app'
-
-/** A word with what it means behind it, reachable by pointer and by keyboard. */
-function Explained({ children, meaning, className }: {
-  children: React.ReactNode
-  meaning: string
-  className?: string
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        className={cn('flex cursor-default items-center gap-1.5 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 rounded-sm', className)}
-      >
-        {children}
-      </TooltipTrigger>
-      <TooltipContent>{meaning}</TooltipContent>
-    </Tooltip>
-  )
-}
 
 /** The columns every row lines up on, so an action belongs to one session. */
 const harnessColumn = 'w-32 shrink-0'
-const statusColumn = 'w-24 shrink-0'
+const statusColumn = 'w-32 shrink-0'
+const ageText = 'shrink-0 text-xs text-muted-foreground'
 
 /**
- * Where the session can be reached, and only where it actually can be: a tab
- * to focus, the Remote Control page it was once bridged to, or the command
- * that picks it up when there is no tab to go to.
+ * How long a live session has held the status it is in, when the registry says
+ * when that status changed. It belongs to the status word rather than beside
+ * it: `idle` and `idle for 3 h` in one row would be the same fact twice.
  */
-function ClaudeActions({ session, onFocus, onFailure }: {
-  session: ClaudeSession
-  onFocus: (pid: number) => Promise<FocusResult>
-  onFailure: (reason: string | null) => void
-}) {
-  const [pending, setPending] = React.useState(false)
-  const pid = session.pid
+const heldFor = (session: ClaudeSession, now: number) => {
+  const changed = session.statusChangedAt
+  return isLive(session) && changed !== null ? { at: changed, duration: since(changed, now) } : null
+}
 
-  const focus = async (target: number) => {
-    setPending(true)
-    try {
-      const result = await onFocus(target)
-      onFailure(result.ok ? null : result.reason)
-    } finally {
-      setPending(false)
-    }
-  }
-
+/**
+ * When a session started. It is the age of a row whose status carries no
+ * duration of its own: a resumable session, which has no status to be in, and
+ * a live one the registry has no moment for. For a resumable row it is the one
+ * fact that says how stale its state is, so it is never dropped.
+ */
+function StartedAge({ session, now }: { session: ClaudeSession; now: number }) {
   return (
-    <>
-      {session.terminal !== null && pid !== null
-        ? (
-          <Button variant="outline" size="xs" disabled={pending} onClick={() => void focus(pid)}>
-            <SquareTerminal /> Focus terminal
-          </Button>
-        )
-        : null}
-      {session.web === null ? null : (
-        <Button
-          variant="outline"
-          size="xs"
-          render={
-            <a
-              aria-label={`Open ${sessionName(session)} on claude.ai`}
-              href={session.web}
-              rel="noreferrer"
-              target="_blank"
-              title="Remote Control link recorded for this session; it may be disconnected"
-            />
-          }
-        >
-          <Globe /> Open on claude.ai
-        </Button>
-      )}
-      {session.terminal === null && session.resume !== null
-        ? <CopyButton command={session.resume} label="Copy resume" />
-        : null}
-    </>
+    <span className={ageText} title={`It started at ${absoluteTime(session.startedAt)}.`}>
+      started {relativeTime(session.startedAt, now)}
+    </span>
   )
 }
 
@@ -169,43 +72,48 @@ function ClaudeRow({ session, now, onFocus }: {
   onFocus: (pid: number) => Promise<FocusResult>
 }) {
   const [failure, setFailure] = React.useState<string | null>(null)
-  const waiting = session.status === waitingStatus
-  // A derived name is a label Claude Code made up, not a handle `--resume`
-  // knows, so it is named as one rather than merely dimmed.
-  const derived = session.nameSource === 'derived' || session.name === null
+  const live = isLive(session)
+  const attention = needsYou(session)
   const name = sessionName(session)
+  const word = wordOf(session)
+  const held = heldFor(session, now)
 
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 first:border-t-0">
+    <li
+      className={cn(
+        'flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 first:border-t-0',
+        live ? undefined : 'opacity-60',
+      )}
+    >
       <span className={harnessColumn}>
-        <Badge variant="outline">Claude Code</Badge>
+        <Badge variant="outline" title="A session of the Claude Code CLI.">Claude Code</Badge>
       </span>
-      <Explained meaning={statusMeaning(session)} className={statusColumn}>
-        <Dot tone={waiting ? 'attention' : 'off'} />
-        <span className={cn('text-xs', waiting ? 'font-medium text-amber-400' : 'text-muted-foreground')}>
-          {session.status ?? missingStatus}
+      <Explained
+        meaning={held === null
+          ? meaningOf(session)
+          : `${meaningOf(session)} It has been ${word} for ${held.duration} (since ${
+            absoluteTime(held.at)
+          }).`}
+        className={statusColumn}
+      >
+        <Dot tone={attention ? 'attention' : live ? 'on' : 'off'} />
+        <span className={cn('text-xs', attention ? 'font-medium text-amber-400' : 'text-muted-foreground')}>
+          {held === null ? word : `${word} · ${held.duration}`}
         </span>
       </Explained>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className={cn('truncate text-sm', derived ? 'text-muted-foreground' : 'font-medium')} title={name}>
-          {name}
-        </span>
-        {derived
-          ? (
-            <Explained meaning="Claude Code's generated name for an unnamed session; not a resume handle">
-              <span className="text-xs text-muted-foreground/70">auto-named</span>
-            </Explained>
-          )
-          : null}
-        {session.kind === 'interactive' ? null : <Badge variant="outline">{session.kind}</Badge>}
+        <span className="truncate text-sm font-medium" title={name}>{name}</span>
+        {session.kind === 'interactive' ? null : (
+          <Badge variant="outline" title="A background session: it runs without a terminal of its own.">
+            {session.kind}
+          </Badge>
+        )}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground" title={`Started ${absoluteTime(session.startedAt)}`}>
-        started {relativeTime(session.startedAt, now)}
-      </span>
+      {held === null ? <StartedAge session={session} now={now} /> : null}
       <span className="ml-auto flex shrink-0 items-center gap-2">
-        <ClaudeActions session={session} onFocus={onFocus} onFailure={setFailure} />
+        <Actions actions={actionsFor(session)} name={name} onFocus={onFocus} onFailure={setFailure} />
       </span>
-      {session.waitingFor === null
+      {session.waitingFor === null || !attention
         ? null
         : <p className="w-full text-xs text-amber-400 wrap-anywhere">{session.waitingFor}</p>}
       {failure === null ? null : <p className="w-full text-xs text-destructive wrap-anywhere">{failure}</p>}
@@ -214,39 +122,62 @@ function ClaudeRow({ session, now, onFocus }: {
 }
 
 /** One Codex thread, in the same columns, so the two harnesses read as one list. */
-function CodexRow({ thread, now }: { thread: CodexThread; now: number }) {
+function CodexRow({ thread, now, onFocus }: {
+  thread: CodexThread
+  now: number
+  onFocus: (pid: number) => Promise<FocusResult>
+}) {
+  const [failure, setFailure] = React.useState<string | null>(null)
   return (
-    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 first:border-t-0">
+    <li
+      className={cn(
+        'flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 first:border-t-0',
+        isParkedThread(thread) ? 'opacity-60' : undefined,
+      )}
+    >
       <span className={harnessColumn}>
-        <Badge variant="outline">Codex {thread.origin}</Badge>
+        <Badge variant="outline" title={`A Codex thread, started from ${thread.origin}.`}>
+          Codex {thread.origin}
+        </Badge>
       </span>
       <Explained meaning={loadedMeaning(thread.loaded)} className={statusColumn}>
         <Dot tone={thread.loaded === null ? 'unknown' : thread.loaded ? 'on' : 'off'} />
-        <span className="text-xs text-muted-foreground">
-          {thread.loaded === null ? 'unknown' : thread.loaded ? 'open' : 'not open'}
-        </span>
+        <span className="text-xs text-muted-foreground">{wordOfThread(thread)}</span>
       </Explained>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate text-sm" title={thread.name}>{thread.name}</span>
+        {/* An unnamed thread is named by its preview, which is a whole first
+            message; capped so one of them cannot own the row. */}
+        <span className="max-w-[60ch] truncate text-sm" title={thread.name}>{thread.name}</span>
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground" title={`Updated ${absoluteTime(thread.updatedAt)}`}>
+      <span className={ageText} title={`It was last updated at ${absoluteTime(thread.updatedAt)}.`}>
         updated {relativeTime(thread.updatedAt, now)}
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="xs" render={<a aria-label={`Open ${thread.name} in Codex`} href={thread.link} />}>
-          <ExternalLink /> Open in Codex
-        </Button>
-        {thread.resume === null ? null : <CopyButton command={thread.resume} label="Copy resume" />}
+        <Actions actions={actionsForThread(thread)} name={thread.name} onFocus={onFocus} onFailure={setFailure} />
       </span>
+      {failure === null ? null : <p className="w-full text-xs text-destructive wrap-anywhere">{failure}</p>}
+    </li>
+  )
+}
+
+/** A tier's name, with what belongs in it one hover away. */
+function TierHeading({ tier }: { tier: 'live' | 'resumable' }) {
+  return (
+    <li className="border-t pt-2 first:border-t-0">
+      <Explained meaning={tier === 'live' ? tierMeaning.live : tierMeaning.resumable}>
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
+          {tier === 'live' ? 'Live' : 'Resumable'}
+        </span>
+      </Explained>
     </li>
   )
 }
 
 /**
- * The strip under a board's header: one row per session, so what a row's
- * buttons act on is the session named beside them. A source that could not be
- * reached says so on its own line, because an empty strip means "nothing is
- * working here" and must never stand in for "nobody answered".
+ * The strip under a board's header: one row per session, live rows first, so
+ * what a row's buttons act on is the session named beside them. A source that
+ * could not be reached says so on its own line, because an empty strip means
+ * "nothing is working here" and must never stand in for "nobody answered".
  */
 export function AgentsStrip({ agents, error, now, onFocus }: {
   agents: AgentsSummary | null
@@ -256,24 +187,47 @@ export function AgentsStrip({ agents, error, now, onFocus }: {
 }) {
   if (agents === null && error === null) return null
   const notices = [...(agents?.notices ?? []), ...(error === null ? [] : [error])]
-  const empty = agents === null || (agents.claude.length === 0 && agents.codex.length === 0)
+  const sessions = agents === null ? [] : sortSessions(agents.claude)
+  const threads = agents === null ? [] : sortThreads(agents.codex)
+  // A thread whose lock could not be read keeps the live tier: it may well be
+  // held, and it carries no resume command for the other tier to promise.
+  const liveSessions = sessions.filter((session) => isLive(session))
+  const liveThreads = threads.filter((thread) => !isParkedThread(thread))
+  const parked = sessions.filter((session) => !isLive(session))
+  const parkedThreads = threads.filter((thread) => isParkedThread(thread))
+  // The tiers are named as soon as there is something in the second one; with
+  // only live rows the words and ages in them already say what they are.
+  const tiered = parked.length + parkedThreads.length > 0
+
+  const row = (session: ClaudeSession) => (
+    <ClaudeRow
+      key={session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`}
+      session={session}
+      now={now}
+      onFocus={onFocus}
+    />
+  )
+  const threadRow = (thread: CodexThread) => (
+    <CodexRow key={thread.id} thread={thread} now={now} onFocus={onFocus} />
+  )
 
   return (
     <TooltipProvider>
       <section aria-label="Agents" className="space-y-2 border-b px-6 py-2">
-        {empty ? <p className="py-1 text-sm text-muted-foreground">No agent sessions here</p> : (
-          <ul>
-            {agents.claude.map((session) => (
-              <ClaudeRow
-                key={session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`}
-                session={session}
-                now={now}
-                onFocus={onFocus}
-              />
-            ))}
-            {agents.codex.map((thread) => <CodexRow key={thread.id} thread={thread} now={now} />)}
-          </ul>
-        )}
+        {sessions.length === 0 && threads.length === 0
+          ? <p className="py-1 text-sm text-muted-foreground">No agent sessions here</p>
+          : (
+            <ul>
+              {tiered && liveSessions.length + liveThreads.length > 0
+                ? <TierHeading tier="live" />
+                : null}
+              {liveSessions.map((session) => row(session))}
+              {liveThreads.map((thread) => threadRow(thread))}
+              {tiered ? <TierHeading tier="resumable" /> : null}
+              {parked.map((session) => row(session))}
+              {parkedThreads.map((thread) => threadRow(thread))}
+            </ul>
+          )}
         {notices.length === 0
           ? null
           : <p className="text-xs text-muted-foreground">{notices.join(' · ')}</p>}

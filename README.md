@@ -43,11 +43,13 @@ command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root lists every worktree
-the daemon knows, with its branch, running batch, item counts per stage, and
-activity; each board sits under `/w/<worktree name>/`. Activity is when the
-worktree last did anything, from either side: a session working there right now
-reads `busy now`, otherwise the column names what left the newest moment
-behind, an agent or the records. The daemon also finds the
+the daemon knows, with its branch, the agents live in it, item counts per stage,
+and activity; each board sits under `/w/<worktree name>/`. Activity is when the
+worktree last did anything and who did it: `Claude Code` for a session's status
+change, `Codex` for a thread, `Items` for an item file, with the exact moment
+behind it. The index has no refresh button and needs none: any command that
+scaffolds a session registers it with a running daemon, and a worktree whose
+`.session` goes away drops off the index by itself. The daemon also finds the
 other worktrees of the same repository that already have a `.session`. When a [portless](https://github.com/vercel-labs/portless) proxy is running on
 the machine, `open` registers the daemon as its `session` alias and the board
 lives at `https://session.localhost/`; the raw port stays reachable.
@@ -73,13 +75,21 @@ under `archive/`, one file each, and are not loaded as active context.
 Each board also shows the coding agents at work in that worktree, as a read-only
 overlay: the Claude Code sessions that Claude Code's own listing reports,
 grouped by their working directory, and the newest three interactive Codex
-threads for that path, from the Desktop, an editor, or the CLI. A chip carries a
-session's status and name and takes you to it: focus its cmux tab, open the
-Remote Control link recorded for it, open the thread in Codex, or copy its
-resume command, and the index reduces the same reading to counts per worktree.
-The listing is recomputed when the index renders, when you press Refresh, and
-when the Claude session registry or the Codex writer locks change, and every
-open board is pushed the change.
+threads for that path, from the Desktop, an editor, or the CLI.
+
+The concept that orders all of it is live against resumable. A live thing has a
+process behind it: a Claude Code session with a pid, or a Codex thread an app
+holds open, and only a live thing can need you now. A resumable thing is a
+handle and the state something last knew it in; the only thing to do with one is
+pick it back up. The board's strip lists both, live rows first and resumable
+rows below them, each row carrying one word for how it is doing, its name, its
+age, and the ways to reach it: focus its cmux tab, open the Remote Control link
+recorded for it, open the thread in Codex, or copy its resume command or its id.
+The index names only what is live, a pill per session that opens that same list
+as a menu; a worktree whose agents are all resumable shows a dash, and its board
+is where they are. The listing is recomputed when the index renders and when the
+Claude session registry or the Codex writer locks change, and every open board
+is pushed the change.
 
 Everything shown is read from those listings at the moment it is shown, and the
 board claims nothing further: no liveness guessed from timestamps, no Codex turn

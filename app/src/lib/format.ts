@@ -11,6 +11,22 @@ export const hour = 60 * minute
 const day = 24 * hour
 const week = 7 * day
 
+/**
+ * How long something has held the way it is, as a bare duration: the row says
+ * what state it is in, and this says how long it has been in it. Days keep
+ * counting past a week, because `9 d` is the fact a reader needs where a date
+ * would make them do the subtraction.
+ */
+export function since(iso: string, now: number): string {
+  const at = Date.parse(iso)
+  if (Number.isNaN(at)) return iso
+  const age = Math.max(now - at, 0)
+  if (age < minute) return '<1 min'
+  if (age < hour) return `${Math.floor(age / minute)} min`
+  if (age < day) return `${Math.floor(age / hour)} h`
+  return `${Math.floor(age / day)} d`
+}
+
 const monthDay = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' })
 const monthDayYear = new Intl.DateTimeFormat(undefined, {
   day: 'numeric',

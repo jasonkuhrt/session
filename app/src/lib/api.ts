@@ -46,14 +46,6 @@ const send = <A, E>(
     return yield* decode(payload)
   })
 
-/** For a route whose success body is not part of the contract. */
-const sendStatus = (request: HttpClientRequest.HttpClientRequest) =>
-  Effect.gen(function* () {
-    const response = yield* HttpClient.execute(request)
-    if (response.status >= 200 && response.status < 300) return
-    return yield* new ApiError({ status: response.status, message: errorMessage(yield* response.json) })
-  })
-
 async function run<A, E>(program: Effect.Effect<A, E, HttpClient.HttpClient>, signal?: AbortSignal) {
   const result = await Effect.runPromise(
     program.pipe(Effect.provide(FetchHttpClient.layer), Effect.result),
@@ -102,5 +94,10 @@ export const SessionApi = {
 export const IndexApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get('/api/worktrees'), decodeWorktrees), signal),
 
-  refresh: () => HttpClientRequest.post('/api/worktrees/refresh').pipe(sendStatus, run),
+  /** The same ask a board makes, for a session in any worktree the index lists. */
+  focus: (pid: number) =>
+    run(send(
+      HttpClientRequest.post('/api/agents/focus').pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
+      decodeFocus,
+    )),
 }

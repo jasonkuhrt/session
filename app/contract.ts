@@ -84,8 +84,8 @@ export const DaemonInfoSchema = Schema.Struct({
 /**
  * One Claude Code session under a worktree, as Claude Code's own listing
  * (`claude agents --json`) reports it. Strings the harness may extend (`kind`,
- * `status`) are carried raw; the board renders what it is given and never maps
- * an unknown value into a known one.
+ * `status`, `state`) are carried raw; the board renders what it is given and
+ * never maps an unknown value into a known one.
  */
 export type ClaudeSession = {
   /** `interactive` or `background` today. */
@@ -96,11 +96,27 @@ export type ClaudeSession = {
   /** The listing's `id` of a background session; the handle for `claude attach`. */
   backgroundId: string | null;
   name: string | null;
-  /** From the registry: `derived` names (`heartbeat-9f`) are labels, not resume handles. */
-  nameSource: string | null;
   /** `busy`, `shell`, `idle`, `waiting`; null when the listing gives none. */
   status: string | null;
-  /** The reason while `status` is `waiting`, e.g. `permission prompt`. */
+  /**
+   * How a background session is doing, which is the fact the listing carries
+   * instead of a status; null for an interactive session.
+   *
+   * - `working`: driving its own work — a turn, a `/loop` iteration, or a wait on CI
+   * - `blocked`: waiting on you — a question it asked, a permission or sandbox decision, an error only you can clear, or its first prompt
+   * - `done`: the last turn finished; ready for the next prompt
+   * - `failed`: ended with an error
+   * - `stopped`: was stopped
+   *
+   * Without `--all` the listing holds active sessions, so the last three should
+   * not arrive. Whatever does arrive is rendered as it came.
+   */
+  state: string | null;
+  /**
+   * Why a session is waiting on a person: the reason while `status` is
+   * `waiting`, e.g. `permission prompt`, or the open prompt a `blocked`
+   * session's live process is holding.
+   */
   waitingFor: string | null;
   /** ISO 8601. */
   startedAt: string;
@@ -153,8 +169,8 @@ export const ClaudeSessionSchema = Schema.Struct({
   sessionId: Schema.NullOr(Schema.String),
   backgroundId: Schema.NullOr(Schema.String),
   name: Schema.NullOr(Schema.String),
-  nameSource: Schema.NullOr(Schema.String),
   status: Schema.NullOr(Schema.String),
+  state: Schema.NullOr(Schema.String),
   waitingFor: Schema.NullOr(Schema.String),
   startedAt: Schema.String,
   statusChangedAt: Schema.NullOr(Schema.String),
@@ -185,20 +201,19 @@ export const AgentsSummarySchema = Schema.Struct({
 });
 
 /**
- * When a worktree last did something, and what did it. `now` is a session
- * working as the listing was taken; `agent` is the newest moment an agent
- * changed status or touched a thread; `records` is the newest item file. An
- * `agent` moment dates activity and nothing more: no time here is a heartbeat,
- * and none of them says a session is still alive.
+ * When a worktree last did something, and what did it: `claude` is a Claude
+ * Code session's status change, `codex` a Codex thread's update, `items` an
+ * item file written. A moment dates activity and nothing more: no time here is
+ * a heartbeat, and none of them says a session is still alive.
  */
 export type Activity = {
   at: string;
-  kind: 'now' | 'agent' | 'records';
+  kind: 'claude' | 'codex' | 'items';
 };
 
 export const ActivitySchema = Schema.Struct({
   at: Schema.String,
-  kind: Schema.Literals(['now', 'agent', 'records']),
+  kind: Schema.Literals(['claude', 'codex', 'items']),
 });
 
 /** One row of the index: a tracked worktree and what its session holds. */
@@ -208,7 +223,8 @@ export type WorktreeSummary = {
   name: string;
   path: string;
   branch: string | null;
-  running: { batch: string; items: number } | null;
+  /** The batch in Execute, and null when Execute is empty. */
+  executing: string | null;
   counts: Record<Stage, number>;
   /** ISO 8601 of the newest item file, or null for an empty session. */
   lastChange: string | null;
@@ -224,7 +240,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
   branch: Schema.NullOr(Schema.String),
-  running: Schema.NullOr(Schema.Struct({ batch: Schema.String, items: Schema.Int })),
+  executing: Schema.NullOr(Schema.String),
   counts: Schema.Struct({
     TRIAGE: Schema.Int,
     DESIGN: Schema.Int,

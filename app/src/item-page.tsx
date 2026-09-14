@@ -15,11 +15,12 @@ import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
 
 const boardHref = `${basePath}/`
 
-/** Where an item is, and the item itself, from the one session read. */
+/** Where an item is, the item itself, and the root its path is relative to. */
 function locate(session: Session | null, id: string) {
-  for (const stage of session?.stages ?? []) {
+  if (session === null) return null
+  for (const stage of session.stages) {
     const item = stage.items.find((candidate) => candidate.id === id)
-    if (item) return { item, stage: stage.stage }
+    if (item) return { item, stage: stage.stage, directory: session.directory }
   }
   return null
 }
@@ -84,7 +85,13 @@ export function ItemPage({ id }: { id: string }) {
   // a refresh is the page saying it caught up, which reads differently.
   const problem = failure ?? loadError
   const back = (
-    <Button variant="ghost" size="sm" render={<a aria-label="Board" href={boardHref} />}>
+    <Button
+      variant="ghost"
+      size="sm"
+      nativeButton={false}
+      title="Back to this worktree's board."
+      render={<a aria-label="Board" href={boardHref} />}
+    >
       <Columns3 /> Board
     </Button>
   )
@@ -119,6 +126,7 @@ export function ItemPage({ id }: { id: string }) {
             <Detail
               item={found.item}
               stage={found.stage}
+              directory={found.directory}
               pending={pending}
               onMove={(to) => void mutate('/api/move', { id: found.item.id, to })}
               onComplete={() => setCompleting(found.item)}
@@ -145,12 +153,15 @@ export function ItemPage({ id }: { id: string }) {
 function Detail({
   item,
   stage,
+  directory,
   pending,
   onMove,
   onComplete,
 }: {
   item: Item
   stage: Stage
+  /** The session root the item's path hangs off; absolute. */
+  directory: string
   pending: boolean
   onMove: (to: Stage) => void
   onComplete: () => void
@@ -158,11 +169,22 @@ function Detail({
   return (
     <article className="max-w-[72ch] space-y-6">
       <div className="space-y-2">
-        {item.batch ? <p className="text-sm font-medium text-muted-foreground">{item.batch}</p> : null}
+        {/* A batch name on its own is a phrase nobody can place, so it is
+            labelled the way the header labels a branch. */}
+        {item.batch
+          ? (
+            <dl className="text-sm">
+              <dt className="text-muted-foreground" title="The batch this item was queued in.">Batch</dt>
+              <dd className="font-medium text-muted-foreground">{item.batch}</dd>
+            </dl>
+          )
+          : null}
         <h1 className="text-2xl font-medium">{item.title}</h1>
         <p className="flex flex-wrap items-baseline gap-3 font-mono text-xs text-muted-foreground">
-          <Copyable value={item.id}>{item.id}</Copyable>
-          <Copyable value={item.path}>
+          <Copyable value={item.id} label={`the item id ${item.id}`}>{item.id}</Copyable>
+          {/* The line places the item in the session; what it copies is the
+              file, which is what a terminal beside this page can open. */}
+          <Copyable value={`${directory}/${item.path}`} label={`the file ${directory}/${item.path}`}>
             <span className="break-all">{item.path}</span>
           </Copyable>
         </p>
@@ -171,7 +193,12 @@ function Detail({
       <StageControl item={item} stage={stage} pending={pending} onMove={onMove} />
 
       {stage === 'EXECUTE' ? (
-        <Button className="w-fit" onClick={onComplete} disabled={pending}>
+        <Button
+          className="w-fit"
+          onClick={onComplete}
+          disabled={pending}
+          title="Finish this item: it leaves Execute and is filed under archive/ as done."
+        >
           <CheckCircle2 /> Complete work
         </Button>
       ) : null}
