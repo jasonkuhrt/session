@@ -102,6 +102,14 @@
       }
     },
     {
+      "files": ["app/src/item-page.tsx"],
+      "rules": {
+        // The page mirrors one worktree's session, an external store; its
+        // first read can only land in an effect.
+        "react/set-state-in-effect": "off"
+      }
+    },
+    {
       "files": ["app/src/worktree-index.tsx"],
       "rules": {
         // The index mirrors the daemon's worktree registry, an external
@@ -123,7 +131,14 @@
         // context values and forward association props through composition.
         "jsx-a11y/label-has-associated-control": "off",
         "react/jsx-no-constructed-context-values": "off",
-        "unicorn/explicit-length-check": "off"
+        "unicorn/explicit-length-check": "off",
+        // The generated input group is a `role="group"` wrapper whose addon
+        // forwards a stray click to the input beside it. There is no semantic
+        // tag for that grouping, and the click is a convenience on top of a
+        // control that is already focusable and typable from the keyboard.
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/click-events-have-key-events": "off",
+        "jsx-a11y/no-noninteractive-element-interactions": "off"
       }
     }
   ],

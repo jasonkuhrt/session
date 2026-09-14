@@ -17,7 +17,7 @@ import * as Stream from 'effect/Stream';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type { AgentsSummary, DaemonInfo, Stage, WorktreeSummary } from '../contract.ts';
+import type { Activity, AgentsSummary, DaemonInfo, Stage, WorktreeSummary } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
@@ -365,6 +365,40 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
     Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
   );
 
+/**
+ * When this worktree last did something, and what did it.
+ *
+ * A session that is busy or in a shell is doing it as the listing is taken, so
+ * that reads `now` at the listing's own moment. Otherwise it is the newest
+ * moment anything left behind: an agent's status change or thread, else the
+ * newest item file. A status time says when a status last changed and nothing
+ * else, so it can date activity but never prove a session is alive, and an old
+ * one is an agent holding still rather than an agent gone. A tie goes to the
+ * agent, which is the more specific answer.
+ */
+const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity | null => {
+  const working = overlay.claude.some((session) =>
+    session.status === 'busy' || session.status === 'shell'
+  );
+  if (working) return { at: overlay.fetchedAt, kind: 'now' };
+
+  let best: Activity | null = null;
+  let bestMoment = Number.NEGATIVE_INFINITY;
+  const consider = (at: string | null, kind: 'agent' | 'records') => {
+    if (at === null) return;
+    const moment = Date.parse(at);
+    if (Number.isNaN(moment)) return;
+    if (moment < bestMoment) return;
+    if (moment === bestMoment && kind !== 'agent') return;
+    best = { at, kind };
+    bestMoment = moment;
+  };
+  for (const session of overlay.claude) consider(session.statusChangedAt, 'agent');
+  for (const thread of overlay.codex) consider(thread.updatedAt, 'agent');
+  consider(lastChange, 'records');
+  return best;
+};
+
 // eslint-disable-next-line max-lines-per-function -- The registry, its routes and its lifecycle are one object; the closures share the map.
 export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
@@ -562,6 +596,7 @@ export const runDaemon = async () => {
         running,
         counts,
         lastChange: loaded.lastChange,
+        activity: activityOf(overlay, loaded.lastChange),
         conflict: entry.conflict,
         agents: overlay,
       };
@@ -572,6 +607,7 @@ export const runDaemon = async () => {
         running: null,
         counts,
         lastChange: null,
+        activity: activityOf(overlay, null),
         conflict: entry.conflict ?? (error instanceof Error ? error.message : String(error)),
         agents: overlay,
       };

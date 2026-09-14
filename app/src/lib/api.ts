@@ -94,7 +94,11 @@ export const SessionApi = {
     )),
 }
 
-/** The index is only ever served at the root, so these need no prefix. */
+/**
+ * The registry of tracked worktrees, which lives at the root whichever page is
+ * asking: the index reads it as its own contents, and a board reads it for the
+ * other boards it can switch to. Absolute on purpose, never under `basePath`.
+ */
 export const IndexApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get('/api/worktrees'), decodeWorktrees), signal),
 
