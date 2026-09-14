@@ -1,7 +1,9 @@
 import { CheckCircle2 } from 'lucide-react'
+import * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
+import { useLastPresent } from '../lib/overlay'
 import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
 import { Button } from './ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from './ui/sheet'
@@ -28,33 +30,37 @@ export function DetailDialog({
   onMove: (to: Stage) => void
   onComplete: () => void
 }) {
-  if (!item || !stage) return null
+  // The board clears the selection as the sheet closes, so the sheet reads the
+  // last item it held and slides out with it rather than vanishing.
+  const subject = React.useMemo(() => (item && stage ? { item, stage } : null), [item, stage])
+  const held = useLastPresent(subject)
+  if (!held) return null
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-[42rem] max-w-[42rem] sm:max-w-[42rem]">
         <SheetHeader className="gap-4 border-b">
-          {item.batch ? <p className="text-sm font-medium text-muted-foreground">{item.batch}</p> : null}
+          {held.item.batch ? <p className="text-sm font-medium text-muted-foreground">{held.item.batch}</p> : null}
           <div className="flex items-baseline gap-2 pr-10">
-            <SheetTitle className="text-xl">{item.title}</SheetTitle>
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{item.id}</span>
+            <SheetTitle className="text-xl">{held.item.title}</SheetTitle>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">{held.item.id}</span>
           </div>
-          <p className="break-all font-mono text-xs text-muted-foreground">{item.path}</p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{held.item.path}</p>
 
           <TooltipProvider>
             <ToggleGroup
               className="grid w-full grid-cols-5"
               spacing={0}
               variant="outline"
-              value={[stage]}
+              value={[held.stage]}
               onValueChange={(value) => {
                 const target = value[0]
-                if (isStage(target) && moveAvailability(item, stage, target).enabled && !pending) onMove(target)
+                if (isStage(target) && moveAvailability(held.item, held.stage, target).enabled && !pending) onMove(target)
               }}
             >
               {stageNames.map((candidate) => {
-                const current = candidate === stage
-                const availability = moveAvailability(item, stage, candidate)
+                const current = candidate === held.stage
+                const availability = moveAvailability(held.item, held.stage, candidate)
                 const unavailable = pending || !availability.enabled
                 const explanation = pending
                   ? 'Another update is in progress'
@@ -83,7 +89,7 @@ export function DetailDialog({
             </ToggleGroup>
           </TooltipProvider>
 
-          {stage === 'EXECUTE' ? (
+          {held.stage === 'EXECUTE' ? (
             <Button className="w-fit" onClick={onComplete} disabled={pending}>
               <CheckCircle2 /> Complete work
             </Button>
@@ -93,7 +99,7 @@ export function DetailDialog({
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-          <Markdown collapseEvidence>{item.body || '_No detail has been written yet._'}</Markdown>
+          <Markdown collapseEvidence>{held.item.body || '_No detail has been written yet._'}</Markdown>
         </div>
       </SheetContent>
     </Sheet>

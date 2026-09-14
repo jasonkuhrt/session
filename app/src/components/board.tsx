@@ -38,7 +38,7 @@ function batchGroups(items: Item[]) {
 }
 
 function startReason(executeOccupied: boolean, queued: number) {
-  if (executeOccupied) return 'Execution occupied'
+  if (executeOccupied) return 'Execute already has a batch'
   if (queued === 0) return 'No queued batches'
   return null
 }
@@ -121,12 +121,17 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
     <section ref={ref} className="min-w-0 space-y-3">
       <div className="flex items-center gap-2">
         <h2 className="font-medium">{meta.label}</h2>
-        <Badge variant="secondary">{stage.items.length}</Badge>
+        <Badge
+          variant={stage.items.length === 0 ? 'outline' : 'secondary'}
+          className={cn(stage.items.length === 0 && 'text-muted-foreground')}
+        >
+          {stage.items.length}
+        </Badge>
       </div>
       <p className="text-sm text-muted-foreground">{meta.hint}</p>
       {stage.stage === 'BATCH' ? (
         <Button variant="outline" className="w-full" disabled={props.pending || props.selectedBatchIds.size === 0} onClick={props.onQueue}>
-          Queue batch ({props.selectedBatchIds.size})
+          {props.selectedBatchIds.size === 0 ? 'Select items to queue' : `Queue batch (${props.selectedBatchIds.size})`}
         </Button>
       ) : null}
       {stage.stage === 'QUEUE' ? (
@@ -138,7 +143,7 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
         {stage.stage === 'QUEUE'
           ? batchGroups(stage.items).map(group => (
             <div key={`${group.batch}`} className="space-y-3">
-              <h3 className="text-sm font-medium text-muted-foreground">{group.batch}</h3>
+              <h3 className="text-xs font-medium tracking-wide text-foreground">{group.batch}</h3>
               {group.items.map((item, index) => (
                 <WorkflowCard key={item.id} item={item} index={index} stage={stage.stage} group={`QUEUE:${group.batch}`} accepts={accepts} {...props} />
               ))}
@@ -178,14 +183,20 @@ function WorkflowCard({ item, index, stage, group, accepts, ...props }: BoardPro
         <CardContent className="space-y-3">
           <div className="flex items-start gap-2">
             {stage === 'BATCH' ? <Checkbox checked={props.selectedBatchIds.has(item.id)} onCheckedChange={selected => props.onSelect(item.id, selected)} aria-label={`Select ${item.title}`} /> : null}
-            <button type="button" className="min-w-0 flex-1 text-left font-medium" onClick={() => props.onOpen(item.id)}>{item.title}</button>
-            {frozen ? null : <Button ref={handleRef} variant="ghost" size="icon-xs" aria-label={`Drag ${item.title}`}><GripVertical /></Button>}
+            <button
+              type="button"
+              className="min-w-0 flex-1 rounded-sm text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              onClick={() => props.onOpen(item.id)}
+            >
+              {item.title}
+            </button>
+            {frozen ? null : <Button ref={handleRef} variant="ghost" size="icon-xs" title={`Drag ${item.title}`} aria-label={`Drag ${item.title}`}><GripVertical /></Button>}
           </div>
           {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{item.id}</span>
             {item.batch && stage !== 'QUEUE' ? <Badge variant="outline">{item.batch}</Badge> : null}
-            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => props.onComplete(item)} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
+            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => props.onComplete(item)} title={`Complete ${item.title}`} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
           </div>
         </CardContent>
       </Card>
