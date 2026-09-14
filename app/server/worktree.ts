@@ -1,8 +1,7 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
-import * as Stream from 'effect/Stream';
-import * as ChildProcess from 'effect/unstable/process/ChildProcess';
+import { capture } from './command.ts';
 import { makeRepository } from './repository.ts';
 
 export type WorktreeMetadata = {
@@ -27,20 +26,7 @@ type GitWorktree = {
 };
 
 const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const handle = yield* ChildProcess.make('git', [...args], { cwd: workingDirectory });
-      const [stdout, stderr, exitCode] = yield* Effect.all(
-        [
-          handle.stdout.pipe(Stream.decodeText(), Stream.mkString),
-          handle.stderr.pipe(Stream.decodeText(), Stream.mkString),
-          handle.exitCode,
-        ],
-        { concurrency: 'unbounded' },
-      );
-      return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode: Number(exitCode) };
-    }),
-  ).pipe(
+  capture({ command: 'git', args, cwd: workingDirectory }).pipe(
     Effect.mapError(
       (cause) => new WorktreeError({ message: 'Could not inspect the Git worktree.', cause }),
     ),

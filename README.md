@@ -62,6 +62,28 @@ for a session live in `RULES.md` at the session root and are read first;
 supporting evidence belongs under `context/`; finished and abandoned items live
 under `archive/`, one file each, and are not loaded as active context.
 
+## Agents on the board
+
+Each board also shows the coding agents at work in that worktree, as a read-only
+overlay: the Claude Code sessions that Claude Code's own listing reports,
+grouped by their working directory, and the newest three interactive Codex
+threads for that path, from the Desktop, an editor, or the CLI. A chip carries a
+session's status and name and takes you to it: focus its cmux tab, open the
+Remote Control link recorded for it, open the thread in Codex, or copy its
+resume command, and the index reduces the same reading to counts per worktree.
+The listing is recomputed when the index renders, when you press Refresh, and
+when the Claude session registry or the Codex writer locks change, and every
+open board is pushed the change.
+
+Everything shown is read from those listings at the moment it is shown, and the
+board claims nothing further: no liveness guessed from timestamps, no Codex turn
+status, and no count that means all of your agents, because teammates,
+in-process subagents, bare and cloud sessions never register. A source that
+cannot be reached names itself instead of showing an empty list. The files stay
+the work; this is only a way to reach the agents working on them. The
+[operations reference](src/session/references/operations.md#agents-on-the-board)
+has what each chip shows and what each action does.
+
 ## Editors
 
 `.session` is a real directory at the worktree root, not a symlink, and it

@@ -116,7 +116,10 @@ The board is a viewer with workflow actions. It shows the five lanes and it
 moves, queues, starts, and completes items; it never writes an item's content.
 One daemon serves the board of every worktree it knows, along with an index of
 them, and each board follows the files as they change. Run `session open` only
-when the user asks for the board. For the app and its file operations, read
+when the user asks for the board. It also lists, read-only, the Claude Code
+sessions and Codex threads under that worktree, which the operations reference
+describes along with what that listing deliberately does not claim. For the app
+and its file operations, read
 [references/operations.md](references/operations.md). The UI owns no second copy
 of work state. Do not recreate a per-task viewer, content module, or task
 database.

@@ -215,18 +215,26 @@
             }
           },
           {
-            "include": ["app/src/lib/format.ts", "app/src/worktree-index.tsx"],
+            "include": [
+              "app/src/lib/clock.ts",
+              "app/src/lib/format.ts",
+              "app/src/worktree-index.tsx"
+            ],
             "options": {
               "diagnosticSeverity": {
                 // These formatters render the daemon's ISO timestamps in the
-                // viewer's locale, and the index reads the browser's clock
-                // once a minute to age them. Neither models a time of its own.
+                // viewer's locale, and the page clock reads the browser's once
+                // a minute to age them. Neither models a time of its own.
                 "globalDate": "off"
               }
             }
           },
           {
             "include": [
+              "app/server/agents/app-server.ts",
+              "app/server/agents/claude.ts",
+              "app/server/agents/cmux.ts",
+              "app/server/agents/codex.ts",
               "app/server/daemon.ts",
               "app/server/http.ts",
               "app/server/repository.ts",

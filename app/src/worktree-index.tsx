@@ -3,11 +3,13 @@ import * as React from 'react'
 
 import type { WorktreeSummary } from '../contract'
 import { stageNames } from '../contract'
+import { AgentsCell } from './components/agents'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Skeleton } from './components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
-import { IndexApi } from './lib/api'
+import { eventsUrl, IndexApi } from './lib/api'
+import { useNow } from './lib/clock'
 import { absoluteTime, hour, parentPath, relativeTime } from './lib/format'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
@@ -35,21 +37,11 @@ function bandRows(rows: readonly WorktreeSummary[], now: number) {
   return buckets.filter(bucket => bucket.rows.length > 0)
 }
 
-/**
- * One clock for the page, moved once a minute. The ages in the rows and the
- * bands they are grouped under are read off the same value, so they can never
- * disagree about which side of a boundary a row is on.
- */
-function useNow() {
-  const [now, setNow] = React.useState(() => Date.now())
-  React.useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-  return now
-}
-
 const skeletonRows = [1, 2, 3, 4, 5]
+
+/** One line for the whole page: a source that failed, failed for every row. */
+const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
+  [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
 
 export function WorktreeIndex() {
   const [rows, setRows] = React.useState<readonly WorktreeSummary[] | null>(null)
@@ -74,6 +66,26 @@ export function WorktreeIndex() {
     return () => controller.abort()
   }, [load])
 
+  // The daemon pushes `worktrees` when the set of tracked worktrees changes and
+  // `agents` when a Claude session registry or Codex writer lock does; neither
+  // carries a payload, so the index reads the rows again. A stream that dropped
+  // and came back refetches too, since changes land while it is down and the
+  // index otherwise never polls.
+  React.useEffect(() => {
+    const source = new EventSource(eventsUrl)
+    const dropped = { value: false }
+    const refetch = () => void load()
+    source.addEventListener('agents', refetch)
+    source.addEventListener('worktrees', refetch)
+    source.addEventListener('error', () => { dropped.value = true })
+    source.addEventListener('open', () => {
+      if (!dropped.value) return
+      dropped.value = false
+      refetch()
+    })
+    return () => source.close()
+  }, [load])
+
   const refresh = async () => {
     setPending(true)
     setNotice(null)
@@ -87,6 +99,8 @@ export function WorktreeIndex() {
     }
   }
 
+  const sourceNotices = agentNotices(rows)
+
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <title>Sessions</title>
@@ -99,6 +113,9 @@ export function WorktreeIndex() {
       {notice ? (
         <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">{notice}</p>
       ) : null}
+      {sourceNotices.length === 0
+        ? null
+        : <p className="mx-6 mt-4 text-sm text-muted-foreground">{sourceNotices.join(' · ')}</p>}
       <main className="p-6">
         {rows === null ? <LoadingRows /> : rows.length === 0 ? <EmptyState /> : (
           <Table>
@@ -107,6 +124,7 @@ export function WorktreeIndex() {
                 <TableHead>Worktree</TableHead>
                 <TableHead>Branch</TableHead>
                 <TableHead>Running</TableHead>
+                <TableHead>Agents</TableHead>
                 {stageNames.map(stage => (
                   <TableHead key={stage} className="text-right">{stageMeta[stage].label}</TableHead>
                 ))}
@@ -117,7 +135,7 @@ export function WorktreeIndex() {
               {bandRows(rows, now).map(entry => (
                 <React.Fragment key={entry.band.label}>
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={9} className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <TableCell colSpan={10} className="bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {entry.band.label}
                       <span className="ml-2 tabular-nums tracking-normal text-muted-foreground/60">{entry.rows.length}</span>
                     </TableCell>
@@ -158,7 +176,7 @@ function Row({ row, now }: { row: WorktreeSummary; now: number }) {
     return (
       <TableRow>
         <NameCell row={row} />
-        <TableCell colSpan={8} className="whitespace-normal wrap-anywhere">
+        <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
             <Badge variant="destructive">Not served</Badge>
             <span className="text-muted-foreground">{row.conflict}</span>
@@ -182,6 +200,7 @@ function Row({ row, now }: { row: WorktreeSummary; now: number }) {
           </span>
         )}
       </TableCell>
+      <TableCell><AgentsCell agents={row.agents} /></TableCell>
       {stageNames.map(stage => (
         <TableCell
           key={stage}
