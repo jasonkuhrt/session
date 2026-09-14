@@ -52,16 +52,22 @@ const RowSchema = Schema.Struct({
 type Row = typeof RowSchema.Type;
 const ListingJson = RowSchema.pipe(Schema.Array, Schema.fromJsonString);
 
-/** The registry holds a session's whole state; the board reads two fields. */
+/** The registry holds a session's whole state; the board reads four fields. */
 const RegistryJson = Schema.Struct({
   bridgeSessionId: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
   nameSource: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
+  statusUpdatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
+  updatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
 }).pipe(Schema.fromJsonString);
 
 /** What a row is enriched with once its registry file has been read. */
-type Enrichment = { readonly web: string | null; readonly nameSource: string | null };
+type Enrichment = {
+  readonly web: string | null;
+  readonly nameSource: string | null;
+  readonly statusChangedAt: string | null;
+};
 
-const nothingKnown: Enrichment = { web: null, nameSource: null };
+const nothingKnown: Enrichment = { web: null, nameSource: null, statusChangedAt: null };
 
 /**
  * `~/.claude/sessions`, or the same directory under `CLAUDE_CONFIG_DIR`. The
@@ -101,9 +107,11 @@ const ownerOf = (roots: ReadonlyMap<string, string>, cwd: string): string | null
   return owner;
 };
 
-/** Epoch milliseconds as the listing gives them; a value no date can hold is not a row. */
-const startedAt = (value: number): string | null =>
-  DateTime.make(value).pipe(Option.map((moment) => DateTime.formatIso(moment)), Option.getOrNull);
+/** Epoch milliseconds as the listing and the registry give them; a value no date can hold is no moment. */
+const isoFrom = (value: number | null | undefined): string | null =>
+  typeof value === 'number'
+    ? DateTime.make(value).pipe(Option.map((moment) => DateTime.formatIso(moment)), Option.getOrNull)
+    : null;
 
 /**
  * A recorded Remote Control id proves the session was bridged once, never that
@@ -133,6 +141,10 @@ const enrichmentFor = (directory: string | null, pid: number) =>
     return {
       web: webLink(record.bridgeSessionId),
       nameSource: record.nameSource ?? null,
+      // When the status last changed. `updatedAt` is the wider stamp the
+      // registry always carries, so it stands in when the narrower one is
+      // absent; neither is a heartbeat.
+      statusChangedAt: isoFrom(record.statusUpdatedAt) ?? isoFrom(record.updatedAt),
     } satisfies Enrichment;
   }).pipe(Effect.orElseSucceed(() => nothingKnown));
 
@@ -151,6 +163,7 @@ const describe = (
   status: row.status ?? null,
   waitingFor: row.waitingFor ?? null,
   startedAt: moment,
+  statusChangedAt: enrichment.statusChangedAt,
   web: enrichment.web,
   terminal: terminal ?? null,
   resume: resumeCommand(row),
@@ -174,7 +187,7 @@ export const claudeSessions = (
     const owned: Array<{ readonly owner: string; readonly row: Row; readonly startedAt: string }> = [];
     for (const row of rows) {
       const owner = ownerOf(roots, cwds.get(row.cwd) ?? row.cwd);
-      const moment = startedAt(row.startedAt);
+      const moment = isoFrom(row.startedAt);
       if (owner !== null && moment !== null) owned.push({ owner, row, startedAt: moment });
     }
 

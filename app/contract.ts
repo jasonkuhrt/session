@@ -104,6 +104,12 @@ export type ClaudeSession = {
   waitingFor: string | null;
   /** ISO 8601. */
   startedAt: string;
+  /**
+   * ISO 8601 of when the status last changed, from the registry. It is an
+   * event time, not a heartbeat: an old one means the session has held the
+   * same status for a while, never that it is stale or gone.
+   */
+  statusChangedAt: string | null;
   /** `https://claude.ai/code/<id>` when a Remote Control id was recorded; it proves the session was bridged, not that it is now. */
   web: string | null;
   /** The cmux refs holding this pid, or null when it runs in no cmux tab (a normal state). */
@@ -151,6 +157,7 @@ export const ClaudeSessionSchema = Schema.Struct({
   status: Schema.NullOr(Schema.String),
   waitingFor: Schema.NullOr(Schema.String),
   startedAt: Schema.String,
+  statusChangedAt: Schema.NullOr(Schema.String),
   web: Schema.NullOr(Schema.String),
   terminal: Schema.NullOr(Schema.Struct({
     surface: Schema.String,
@@ -177,6 +184,23 @@ export const AgentsSummarySchema = Schema.Struct({
   fetchedAt: Schema.String,
 });
 
+/**
+ * When a worktree last did something, and what did it. `now` is a session
+ * working as the listing was taken; `agent` is the newest moment an agent
+ * changed status or touched a thread; `records` is the newest item file. An
+ * `agent` moment dates activity and nothing more: no time here is a heartbeat,
+ * and none of them says a session is still alive.
+ */
+export type Activity = {
+  at: string;
+  kind: 'now' | 'agent' | 'records';
+};
+
+export const ActivitySchema = Schema.Struct({
+  at: Schema.String,
+  kind: Schema.Literals(['now', 'agent', 'records']),
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -188,6 +212,8 @@ export type WorktreeSummary = {
   counts: Record<Stage, number>;
   /** ISO 8601 of the newest item file, or null for an empty session. */
   lastChange: string | null;
+  /** The newest of the agents' moments and `lastChange`; null when there is none. */
+  activity: Activity | null;
   /** Set when another tracked worktree already owns this key; the row is not served. */
   conflict: string | null;
   agents: AgentsSummary;
@@ -207,6 +233,7 @@ export const WorktreeSummarySchema = Schema.Struct({
     EXECUTE: Schema.Int,
   }),
   lastChange: Schema.NullOr(Schema.String),
+  activity: Schema.NullOr(ActivitySchema),
   conflict: Schema.NullOr(Schema.String),
   agents: AgentsSummarySchema,
 });

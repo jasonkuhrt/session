@@ -43,15 +43,21 @@ command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root lists every worktree
-the daemon knows, with its branch, running batch, item counts per stage, and last
-change; each board sits under `/w/<worktree name>/`. The daemon also finds the
+the daemon knows, with its branch, running batch, item counts per stage, and
+activity; each board sits under `/w/<worktree name>/`. Activity is when the
+worktree last did anything, from either side: a session working there right now
+reads `busy now`, otherwise the column names what left the newest moment
+behind, an agent or the records. The daemon also finds the
 other worktrees of the same repository that already have a `.session`. When a [portless](https://github.com/vercel-labs/portless) proxy is running on
 the machine, `open` registers the daemon as its `session` alias and the board
 lives at `https://session.localhost/`; the raw port stays reachable.
 
-A board reads that worktree's five stage directories and shows a Kanban board and
-Markdown reader. It is a viewer with workflow actions: move an item, compose a
-batch, start the queued batch, complete an item. It follows the files as they
+A board reads that worktree's five stage directories and shows a Kanban board.
+Each card is a link to its item's own page at `/w/<worktree name>/item/<ID>`,
+which reads the Markdown at a reading width and carries the same workflow
+actions, so a long item is a page you can link someone to rather than a panel.
+The board is a viewer with workflow actions: move an item, compose a batch,
+start the queued batch, complete an item. It follows the files as they
 change, over a stream the daemon pushes, and pauses while a card is being
 dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.

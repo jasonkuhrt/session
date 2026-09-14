@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { NodeServices } from '@effect/platform-node';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
@@ -242,6 +242,13 @@ export const createRequestHandler = async (options: {
       let staticFile = file(staticPath);
       if (!(await staticFile.exists()) && !requestedPath.includes('.')) {
         staticFile = file(join(distDirectory, 'index.html'));
+      }
+      // A page nested under the board (`item/<ID>`) resolves `./app.js` against
+      // its own directory. The bundle is one flat set of files at the root of
+      // dist, so a nested asset is that same file; `basename` is what keeps
+      // this from reaching anywhere else.
+      if (!(await staticFile.exists()) && requestedPath.includes('/')) {
+        staticFile = file(join(distDirectory, basename(requestedPath)));
       }
       if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
       return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);

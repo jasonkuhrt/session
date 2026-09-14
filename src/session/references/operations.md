@@ -130,7 +130,7 @@ dropped. Nothing watches for new worktrees, so one created later appears on the
 next `open` or when someone presses Refresh on the index.
 
 The index at `/` lists the tracked worktrees: name, branch, the running batch and
-its size, the item counts per stage, and the last change. Each board sits under
+its size, the item counts per stage, and activity. Each board sits under
 `/w/<key>/`, where the key is the worktree name, `Heartbeat` or
 `email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
 conflict: the later one is listed with the reason and is not served.
@@ -143,11 +143,15 @@ branch.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
-there is no way to type a body or create an item in it. Cards open an embedded
-Markdown reader that shows the item's file path, and Markdown links inside a body
-resolve against the session directory. The stage control moves an item in one
-click; unavailable destinations explain what is needed first. Settle missing
-content with the agent or in the editor.
+there is no way to type a body or create an item in it. A card's title is a link
+to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
+reading width, shows the item's id and file path, and resolves Markdown links
+inside the body against the session directory; it is an ordinary link, so it
+opens in a tab like any other. The page carries the stage control, which moves
+an item in one click and leaves you on the page in its new stage; unavailable
+destinations explain what is needed first. "Complete work" is there for an item
+in Execute, and returns you to the board. Settle missing content with the agent
+or in the editor.
 
 Select ready items in the Batch lane and use "Queue batch" to name them and
 append the batch to Queue. The Queue lane groups cards under their batch in file
@@ -214,6 +218,16 @@ The index carries the same reading in one column per worktree: the Claude
 sessions counted by status, waiting first, and how many Codex threads are
 loaded. A worktree with neither shows a dash, and notices are printed once under
 the header rather than on every row.
+
+Its Activity column answers when the worktree last did anything, from either
+side of the board. A worktree holding a session that is `busy` or in a shell
+reads `busy now`, in the present tense, and sorts to the top; otherwise the
+column names the newest moment left behind and what left it, `agent` for a
+Claude session's status change or a Codex thread, `records` for an item file,
+with the exact time on hover. A worktree where neither has happened reads a dash
+and falls into the last band. A status time is when that status last changed and
+nothing more: it dates activity, it is not a heartbeat, and an old one is an
+agent that has held still rather than an agent that has gone.
 
 The listing is recomputed when the index renders, when Refresh is pressed, and
 when the Claude session registry or the Codex writer-lock directory changes. A
