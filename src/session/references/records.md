@@ -121,8 +121,9 @@ claude session_0135i3KrKC2ekfxKBAPee12d
 
 `codex <thread-id>` is the same convention for a Codex thread. Other agents,
 including mixed-model teams, address the item's owner through it. It is a
-convention only: the engine does not read or write it, `session start` does not
-add it, and the executing agent writes it when it picks the item up.
+convention only: neither the engine nor the board reads or writes it, `session
+start` does not add it, and the executing agent writes it when it picks the item
+up.
 
 ## Directory layout
 

@@ -4,7 +4,7 @@ import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
-import type { Session } from '../contract.ts';
+import type { AgentsSummary, FocusResult, Session } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { makeRepository, RepositoryError } from './repository.ts';
@@ -28,6 +28,9 @@ const StartBatch = Schema.Struct({
 const CompleteItem = Schema.Struct({
   id: Schema.String,
   revision: Schema.String,
+});
+const FocusSession = Schema.Struct({
+  pid: Schema.Int,
 });
 
 const json = (value: unknown, init?: ResponseInit) =>
@@ -84,19 +87,27 @@ const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(e
  *  by default, so a quiet session must still say something. */
 const keepAliveMilliseconds = 5_000;
 
+/** One named event on a stream, and the source that fires it. */
+export type EventChannel = {
+  readonly name: string;
+  readonly events: SessionEvents | undefined;
+};
+
 /**
- * One server-sent event per notification from the daemon's watcher, which owns
- * the debounce. A board served without a change source keeps a silent stream
- * rather than a 404, so the client connects once instead of retrying forever.
+ * One server-sent event per notification from the daemon's watchers, which own
+ * the debounce. Each channel names the event it writes, so one stream carries
+ * everything a page listens for and the page decides what to refetch. A surface
+ * served without any source keeps a silent stream rather than a 404, so the
+ * client connects once instead of retrying forever.
  */
-const eventStream = (events: SessionEvents | undefined): Response => {
+export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => {
   const encoder = new TextEncoder();
-  let unsubscribe: (() => void) | undefined;
+  let unsubscribes: Array<() => void> = [];
   let keepAlive: ReturnType<typeof setInterval> | undefined;
 
   const stop = () => {
-    unsubscribe?.();
-    unsubscribe = undefined;
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    unsubscribes = [];
     if (keepAlive !== undefined) clearInterval(keepAlive);
     keepAlive = undefined;
   };
@@ -111,7 +122,12 @@ const eventStream = (events: SessionEvents | undefined): Response => {
         }
       };
       write(': open\n\n');
-      unsubscribe = events?.subscribe(() => write('event: changed\ndata: {}\n\n'));
+      for (const channel of channels) {
+        const unsubscribe = channel.events?.subscribe(() =>
+          write(`event: ${channel.name}\ndata: {}\n\n`),
+        );
+        if (unsubscribe !== undefined) unsubscribes.push(unsubscribe);
+      }
       keepAlive = setInterval(() => write(': keep-alive\n\n'), keepAliveMilliseconds);
     },
     cancel: stop,
@@ -133,6 +149,15 @@ export const createRequestHandler = async (options: {
   readonly worktree?: WorktreeMetadata | undefined;
   readonly refreshWorktree?: boolean | undefined;
   readonly events?: SessionEvents | undefined;
+  /**
+   * The agents overlay for this worktree. The daemon owns the listing, its
+   * cache and the window manager; the board's routes only hand them on.
+   */
+  readonly agents: {
+    readonly read: () => Promise<AgentsSummary>;
+    readonly focus: (pid: number) => Promise<FocusResult>;
+    readonly events: SessionEvents;
+  };
 }) => {
   const repository = await Effect.runPromise(
     makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
@@ -160,8 +185,15 @@ export const createRequestHandler = async (options: {
         return json(await attachWorktree(await runRepository(repository.load)));
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/agents') {
+        return json(await options.agents.read());
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/events') {
-        return eventStream(options.events);
+        return eventStream([
+          { name: 'changed', events: options.events },
+          { name: 'agents', events: options.agents.events },
+        ]);
       }
 
       if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
@@ -188,6 +220,10 @@ export const createRequestHandler = async (options: {
       if (request.method === 'POST' && url.pathname === '/api/start') {
         const input = await runRepository(decodeBody(request, StartBatch));
         return json(await attachWorktree(await runRepository(repository.startBatch(input))));
+      }
+      if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
+        const input = await runRepository(decodeBody(request, FocusSession));
+        return json(await options.agents.focus(input.pid));
       }
       if (request.method === 'POST' && url.pathname === '/api/complete') {
         const input = await runRepository(decodeBody(request, CompleteItem));

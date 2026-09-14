@@ -64,6 +64,16 @@
       }
     },
     {
+      "files": ["app/server/agents/**/*.ts"],
+      "rules": {
+        // Every Effect namespace counts as one dependency, so a source that
+        // spawns a process, reads files, decodes a schema and formats a time
+        // reaches the limit on the framework alone. These modules are one
+        // mechanism each; splitting them further would scatter that mechanism.
+        "import/max-dependencies": "off"
+      }
+    },
+    {
       "files": ["src/session/scripts/session.ts"],
       "rules": {
         // The CLI is one argv table plus one small function per command.

@@ -81,6 +81,102 @@ export const DaemonInfoSchema = Schema.Struct({
   sourceStamp: Schema.String,
 });
 
+/**
+ * One Claude Code session under a worktree, as Claude Code's own listing
+ * (`claude agents --json`) reports it. Strings the harness may extend (`kind`,
+ * `status`) are carried raw; the board renders what it is given and never maps
+ * an unknown value into a known one.
+ */
+export type ClaudeSession = {
+  /** `interactive` or `background` today. */
+  kind: string;
+  /** Null for a background session whose process is not running. */
+  pid: number | null;
+  sessionId: string | null;
+  /** The listing's `id` of a background session; the handle for `claude attach`. */
+  backgroundId: string | null;
+  name: string | null;
+  /** From the registry: `derived` names (`heartbeat-9f`) are labels, not resume handles. */
+  nameSource: string | null;
+  /** `busy`, `shell`, `idle`, `waiting`; null when the listing gives none. */
+  status: string | null;
+  /** The reason while `status` is `waiting`, e.g. `permission prompt`. */
+  waitingFor: string | null;
+  /** ISO 8601. */
+  startedAt: string;
+  /** `https://claude.ai/code/<id>` when a Remote Control id was recorded; it proves the session was bridged, not that it is now. */
+  web: string | null;
+  /** The cmux refs holding this pid, or null when it runs in no cmux tab (a normal state). */
+  terminal: { surface: string; workspace: string; window: string } | null;
+  /** `claude --resume <sessionId>` or `claude attach <id>`; null when neither handle exists. */
+  resume: string | null;
+};
+
+/** One Codex thread under a worktree, from `thread/list`; newest first. */
+export type CodexThread = {
+  /** UUID from the listing; the only id ever placed in a link. */
+  id: string;
+  /** The thread's name, else its preview. */
+  name: string;
+  /** `Desktop`, `CLI` or `app-server`. */
+  origin: string;
+  /** ISO 8601 of the thread's recency. */
+  updatedAt: string;
+  /** True when a live process holds the thread's writer lock; null when that could not be read. Never turn status. */
+  loaded: boolean | null;
+  /** `codex://threads/<id>`. */
+  link: string;
+  /** `codex resume <id>`, offered only while the thread is not loaded elsewhere. */
+  resume: string | null;
+};
+
+/** The agents overlay for one worktree: read-only, recomputed on demand, never persisted. */
+export type AgentsSummary = {
+  claude: readonly ClaudeSession[];
+  /** At most the newest three. */
+  codex: readonly CodexThread[];
+  /** Why a source is missing, e.g. `Codex not available`; one line each, empty when all sources answered. */
+  notices: readonly string[];
+  /** ISO 8601 of the listing. */
+  fetchedAt: string;
+};
+
+export const ClaudeSessionSchema = Schema.Struct({
+  kind: Schema.String,
+  pid: Schema.NullOr(Schema.Int),
+  sessionId: Schema.NullOr(Schema.String),
+  backgroundId: Schema.NullOr(Schema.String),
+  name: Schema.NullOr(Schema.String),
+  nameSource: Schema.NullOr(Schema.String),
+  status: Schema.NullOr(Schema.String),
+  waitingFor: Schema.NullOr(Schema.String),
+  startedAt: Schema.String,
+  web: Schema.NullOr(Schema.String),
+  terminal: Schema.NullOr(Schema.Struct({
+    surface: Schema.String,
+    workspace: Schema.String,
+    window: Schema.String,
+  })),
+  resume: Schema.NullOr(Schema.String),
+});
+
+export const CodexThreadSchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  origin: Schema.String,
+  updatedAt: Schema.String,
+  loaded: Schema.NullOr(Schema.Boolean),
+  link: Schema.String,
+  resume: Schema.NullOr(Schema.String),
+});
+
+export const AgentsSummarySchema = Schema.Struct({
+  claude: Schema.Array(ClaudeSessionSchema),
+  codex: Schema.Array(CodexThreadSchema),
+  notices: Schema.Array(Schema.String),
+  fetchedAt: Schema.String,
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -94,6 +190,7 @@ export type WorktreeSummary = {
   lastChange: string | null;
   /** Set when another tracked worktree already owns this key; the row is not served. */
   conflict: string | null;
+  agents: AgentsSummary;
 };
 
 export const WorktreeSummarySchema = Schema.Struct({
@@ -111,4 +208,8 @@ export const WorktreeSummarySchema = Schema.Struct({
   }),
   lastChange: Schema.NullOr(Schema.String),
   conflict: Schema.NullOr(Schema.String),
+  agents: AgentsSummarySchema,
 });
+
+/** The result of asking the daemon to focus a session's terminal. */
+export type FocusResult = { ok: true } | { ok: false; reason: string };

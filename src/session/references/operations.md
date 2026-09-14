@@ -170,6 +170,82 @@ places, which `check` reports as a duplicate ID.
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
 
+## Agents on the board
+
+The board also shows the coding agents at work in that worktree. It is a
+read-only overlay: it never moves, writes, or names an item, and the files stay
+the work. Every fact in it is read from the agents' own listings at the moment
+it is shown; nothing is kept between listings and nothing is inferred from what
+a listing does not say. No CLI command lists agents, and the daemon starts no
+session and sends nothing into one.
+
+The Claude Code rows are the sessions Claude Code's own listing reports. That
+listing does its own liveness filtering and the daemon adds none of its own,
+so a row exists because Claude Code says it does. They are grouped to worktrees
+by working directory: a session belongs to the worktree whose path is its
+directory or a parent of it, and the longest match wins, so a worktree nested
+inside another keeps its own sessions. Interactive and background sessions both
+appear. The Codex rows are that worktree's interactive threads, the newest three
+by recency, started from the Desktop, an editor, or the CLI. Archived threads,
+`exec` runs, and subagent threads are left out: they are runs, not sessions to
+go to.
+
+A Claude chip carries the session's status as the listing gives it, the
+session's name, and its actions. `waiting` is drawn in the accent colour with
+the reason it is waiting, because it is the one status that means the session is
+blocked on a person. A derived name is dimmed: it is a label, and `--resume`
+cannot find it. "Terminal" focuses the cmux tab holding the session's process,
+and appears only when the process is in one; when cmux refuses, the chip shows
+the line cmux returned. "claude.ai" appears only when a Remote Control link was
+recorded for the session, and opens it. When there is no terminal to focus, the
+chip offers the session's resume command to copy instead, if it has one:
+`claude --resume <session id>` for an interactive session, `claude attach <id>`
+for a background one.
+
+A Codex chip carries the thread's origin, its name or, failing that, its first
+line, and how long ago it was last active. "Open in Codex" opens
+`codex://threads/<id>` and is always available, because that id comes from the
+same listing being rendered. A dot marks a thread that is loaded, meaning a live
+process holds its writer lock. The resume command is offered only for a thread
+nothing holds, because Codex refuses to resume one that already has an active
+writer.
+
+The index carries the same reading in one column per worktree: the Claude
+sessions counted by status, waiting first, and how many Codex threads are
+loaded. A worktree with neither shows a dash, and notices are printed once under
+the header rather than on every row.
+
+The listing is recomputed when the index renders, when Refresh is pressed, and
+when the Claude session registry or the Codex writer-lock directory changes. A
+change pushes an `agents` event to the index and to every open board, and they
+refetch; a board request otherwise reuses the last listing until it is thirty
+seconds old.
+
+The overlay claims nothing its sources do not state. Nothing is concluded from a
+timestamp: a session that has written no status for days is not marked stale,
+hung, or dead, and `idle` is not read as "ready for you". There is no Codex turn
+status; a thread is loaded in an app or it is not, and whether it is mid-turn is
+knowable only inside the process that owns it. No count is a count of all your
+agents: agent-team teammates, in-process subagents, bare sessions, and cloud
+sessions never register, so what you see is what registered under this worktree.
+A name is never a resume handle, which is why the command is there to copy. The
+claude.ai link records that the session was bridged at some point, not that it
+is bridged now, so it may open a page that is disconnected. And not every
+session has a terminal to focus; that is ordinary, not a fault.
+
+A source that cannot be reached says so. "Claude Code not available" means its
+listing could not be run or did not answer in time. "Codex not available" means
+`codex` could not be started or refused the handshake, and "Codex unavailable
+(timeout)" that it started and did not answer inside its budget. Each notice
+stands for its own source, the other source and the rest of the board are
+unaffected, and an empty strip reads "No agent sessions here" with the notices
+beside it, so a failed listing never passes for an empty one. A machine running
+no cmux is not a failure: those rows simply carry no "Terminal" action.
+
+The `### Agent` line an executing agent writes into its item file, in
+[records.md](records.md), stays a convention between agents. The board does not
+read it, does not match it against the sessions it lists, and never writes it.
+
 ## Edit in your editor
 
 The item files are ordinary Markdown, and the editor is where their content is

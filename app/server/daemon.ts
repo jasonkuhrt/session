@@ -3,6 +3,7 @@ import { NodeServices } from '@effect/platform-node';
 import type { NodeServices as NodeServiceUnion } from '@effect/platform-node/NodeServices';
 import { file, serve, spawn } from 'bun';
 import * as Cause from 'effect/Cause';
+import * as Clock from 'effect/Clock';
 import * as Config from 'effect/Config';
 import * as Data from 'effect/Data';
 import * as DateTime from 'effect/DateTime';
@@ -16,10 +17,11 @@ import * as Stream from 'effect/Stream';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type { DaemonInfo, Stage, WorktreeSummary } from '../contract.ts';
+import type { AgentsSummary, DaemonInfo, Stage, WorktreeSummary } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
+import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { createRequestHandler } from './http.ts';
+import { createRequestHandler, eventStream } from './http.ts';
 import { makeRepository } from './repository.ts';
 import {
   encodeWorktreeKey,
@@ -342,7 +344,17 @@ const mapWorktrees = <A, B>(
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 
-const watchSession = (directory: string, events: SessionEventSource) =>
+/** How old an overlay a board may be served before the daemon lists again. */
+const agentsFreshnessMilliseconds = 30_000;
+
+/**
+ * Claude Code writes a session's file on every status change, so a busy machine
+ * touches the registry constantly. The watcher's own settle collapses one
+ * burst; this holds the recompute back until the machine goes quiet.
+ */
+const agentsDebounceMilliseconds = 1_000;
+
+const watchDirectory = (directory: string, events: SessionEventSource) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.watch(directory, { recursive: true }).pipe(
@@ -358,6 +370,63 @@ export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
   const startedAt = DateTime.formatIso(await Effect.runPromise(DateTime.now));
   const tracked = new Map<string, Tracked>();
+
+  // The agents overlay is derived, never owned: one listing for every tracked
+  // worktree, kept only so a board and the index can read the same answer.
+  let agents: { at: number; byPath: ReadonlyMap<string, AgentsSummary> } = { at: 0, byPath: new Map() };
+  const agentsEvents = makeSessionEvents(0);
+  const worktreeEvents = makeSessionEvents(0);
+
+  /**
+   * Stamped with the moment it started, so a slow listing that lands after a
+   * newer one cannot put older rows back on the board.
+   */
+  const listAgents = async () => {
+    const at = await runNode(Clock.currentTimeMillis);
+    try {
+      const byPath = await runNode(agentsFor([...tracked.keys()]));
+      if (at >= agents.at) agents = { at, byPath };
+    } catch (error) {
+      console.error(`The agent listing failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  /**
+   * Lists again only once the cached overlay is old. The watcher lists before
+   * it announces a change, so the refetch that announcement causes is served
+   * from the cache rather than spawning the listings a second time.
+   */
+  const freshenAgents = async () => {
+    const now = await runNode(Clock.currentTimeMillis);
+    if (now - agents.at > agentsFreshnessMilliseconds) await listAgents();
+  };
+
+  /** What a board is served: the cached overlay, listed again once it is old. */
+  const overlayFor = async (path: string): Promise<AgentsSummary> => {
+    await freshenAgents();
+    return agents.byPath.get(path) ?? await runNode(notListed);
+  };
+
+  /**
+   * One watcher for both agent sources. Claude Code's registry and Codex's
+   * writer locks are the two places a change to the overlay shows up, and a
+   * change to either re-lists everything once: the sources answer for the whole
+   * machine in one spawn, so there is nothing finer to recompute.
+   */
+  const watchAgents = async () => {
+    const directories = await runNode(watchedDirectories);
+    if (directories.length === 0) return;
+    const changes = makeSessionEvents();
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    changes.subscribe(() => {
+      if (pending !== undefined) clearTimeout(pending);
+      pending = setTimeout(() => {
+        pending = undefined;
+        void listAgents().then(() => agentsEvents.changed());
+      }, agentsDebounceMilliseconds);
+    });
+    for (const directory of directories) Effect.runFork(watchDirectory(directory, changes));
+  };
 
   const persist = () =>
     runNode(
@@ -462,6 +531,9 @@ export const runDaemon = async () => {
 
   const summarize = async (entry: Tracked): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { TRIAGE: 0, DESIGN: 0, BATCH: 0, QUEUE: 0, EXECUTE: 0 };
+    // The overlay comes from the listing the route just ran, so every row on
+    // one index answer describes the same moment.
+    const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
     const base = {
       key: entry.key,
       name: entry.metadata.name,
@@ -491,6 +563,7 @@ export const runDaemon = async () => {
         counts,
         lastChange: loaded.lastChange,
         conflict: entry.conflict,
+        agents: overlay,
       };
     } catch (error) {
       // A row that cannot be read is a row that cannot be served; say why.
@@ -500,6 +573,7 @@ export const runDaemon = async () => {
         counts,
         lastChange: null,
         conflict: entry.conflict ?? (error instanceof Error ? error.message : String(error)),
+        agents: overlay,
       };
     }
   };
@@ -510,13 +584,18 @@ export const runDaemon = async () => {
     await runNode(ensureSession(resolved));
     const events = makeSessionEvents();
     entry.events = events;
-    entry.watcher = Effect.runFork(watchSession(resolved.directory, events));
+    entry.watcher = Effect.runFork(watchDirectory(resolved.directory, events));
     entry.handler = await createRequestHandler({
       directory: resolved.directory,
       distDirectory,
       worktree: resolved.worktree,
       refreshWorktree: true,
       events,
+      agents: {
+        read: () => overlayFor(entry.path),
+        focus: (pid) => runNode(focus(pid)),
+        events: agentsEvents,
+      },
     });
     return entry.handler;
   };
@@ -556,7 +635,14 @@ export const runDaemon = async () => {
       if (request.method === 'GET' && url.pathname === '/api/daemon') {
         return json({ pid: process.pid, port: settings.port, startedAt, sourceStamp: stamp });
       }
+      if (request.method === 'GET' && url.pathname === '/api/events') {
+        return eventStream([
+          { name: 'agents', events: agentsEvents },
+          { name: 'worktrees', events: worktreeEvents },
+        ]);
+      }
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
+        await freshenAgents();
         return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
       }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
@@ -564,7 +650,10 @@ export const runDaemon = async () => {
         const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;
         if (typeof path === 'string') await track([path]);
         await discover();
-        return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
+        await listAgents();
+        const rows = await mapWorktrees([...tracked.values()], (entry) => summarize(entry));
+        worktreeEvents.changed();
+        return json(rows);
       }
       if (url.pathname === '/w' || url.pathname.startsWith('/w/')) return await board(request, url);
       return await staticFile(url, request.method);
@@ -575,6 +664,7 @@ export const runDaemon = async () => {
 
   const previous = await runNode(readState(settings));
   await track(previous?.worktrees ?? []);
+  await watchAgents();
 
   // SSE streams are quiet between events; Bun would close them after ten seconds.
   const server = serve({ hostname: '127.0.0.1', port: settings.port, idleTimeout: 0, fetch: handle });
