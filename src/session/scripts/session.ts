@@ -9,6 +9,7 @@ import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import {
+  daemonOnPort,
   ensureDaemon,
   openInBrowser,
   publicOrigin,
@@ -294,11 +295,25 @@ const check = (repository: SessionRepository) =>
     yield* Console.log(`OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`);
   });
 
+/**
+ * A command that just scaffolded a session tells a daemon that is already
+ * running about it, so a new worktree reaches the index without anyone opening
+ * a board. It never starts one: `open` is the command that does that, and a
+ * daemon that refuses is not this command's failure.
+ */
+const registerSession = (resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const { settings, probe } = yield* daemonOnPort;
+    if (probe.kind !== 'ours') return;
+    yield* trackWorktree({ settings, path: resolved.worktree.path });
+  }).pipe(Effect.ignore);
+
 const runCommand = (options: Options) =>
   Effect.gen(function*() {
     const resolved = yield* resolveWorktreeSession(options.directory);
     // Everything but the validator converges the session before it runs.
     const ensured = options.command === 'check' ? [] : yield* ensureSession(resolved);
+    if (ensured.length > 0) yield* registerSession(resolved);
     const repository = yield* makeRepository(resolved.directory);
     switch (options.command) {
       case 'init': { yield* report(ensured); break; }

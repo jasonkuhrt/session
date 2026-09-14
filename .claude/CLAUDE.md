@@ -18,10 +18,22 @@ The board carries a read-only agents overlay beside the records: the Claude Code
 sessions Claude Code's own listing reports, grouped to worktrees by working
 directory, and each worktree's newest interactive Codex threads, with chips that
 focus a terminal, open a recorded claude.ai link, open a thread in Codex, or
-offer a resume command to copy. Every fact traces to a listing run at render
-time. Nothing is inferred from a timestamp, no Codex turn status is shown, no
-count is presented as all of a user's agents, and a source that fails shows a
-named notice instead of an empty list. The overlay adds no state and no verb:
+offer a resume command or an id to copy. One list of actions serves both
+surfaces, the board's strip as buttons and the index's pills as menus, so
+neither can offer what the other does not. The overlay is ordered by one
+concept: live things have a process behind them and can need you now; resumable
+things are handles, they are never drawn as urgent, and the index leaves them to
+the board. Every fact traces to a listing run at render time, including the word
+for a session: the `status` of a live one, the `state` something last knew a
+resumable one in, never a word mapped into another. Nothing is inferred from a
+timestamp, no Codex turn status is shown, no count is presented as all of a
+user's agents, and a source that fails shows a named notice instead of an empty
+list.
+
+Every rendered thing says what it means from where it is: a word carries its
+sentence in a tooltip or a `title`, a control says what it will do, and no
+surface needs a document to read. A control that cannot act is not drawn
+disabled with a reason; it is not drawn. The overlay adds no state and no verb:
 the files remain the work, the CLI is unchanged, and the `### Agent` convention
 in the records stays a convention the board does not interpret.
 

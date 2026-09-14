@@ -6,9 +6,17 @@ import { cn } from '../lib/utils'
 /** How long a copied confirmation stays up before the control says its name again. */
 const copiedMilliseconds = 1_500
 
+/** What a copy control has to report, if anything. */
+export type CopyState = 'idle' | 'copied' | 'failed'
+
+/** What a copy control calls itself while it reports what happened. */
+export function copyLabel({ label, state }: { label: string; state: CopyState }) {
+  return state === 'idle' ? label : state === 'copied' ? 'Copied' : 'Copy failed'
+}
+
 /** Copy feedback that reverts, and that says so when the browser refused. */
 export function useCopy() {
-  const [state, setState] = React.useState<'idle' | 'copied' | 'failed'>('idle')
+  const [state, setState] = React.useState<CopyState>('idle')
   // No timer has id 0, so it is the one value that stands for "none pending".
   const timer = React.useRef(0)
   React.useEffect(() => () => window.clearTimeout(timer.current), [])
@@ -64,7 +72,7 @@ export function Copyable({
  * landed and one the clipboard refused both have to survive the pointer
  * leaving.
  */
-const iconClass = (state: 'idle' | 'copied' | 'failed') =>
+const iconClass = (state: CopyState) =>
   cn(
     'mt-0.5 size-3 shrink-0 text-muted-foreground transition-opacity',
     state === 'idle'

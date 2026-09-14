@@ -28,7 +28,7 @@ export type ClaudeListing = {
   readonly notice: string | null;
 };
 
-const unavailable = 'Claude Code not available';
+const unavailable = 'Claude Code did not answer, so its sessions are not listed.';
 
 /** One spawn of a 200 MB executable; slower than this is a machine in trouble. */
 const budget = '5 seconds';
@@ -47,15 +47,15 @@ const RowSchema = Schema.Struct({
   sessionId: Schema.String.pipe(Schema.optionalKey),
   name: Schema.String.pipe(Schema.optionalKey),
   status: Schema.String.pipe(Schema.optionalKey),
+  state: Schema.String.pipe(Schema.optionalKey),
   waitingFor: Schema.String.pipe(Schema.optionalKey),
 });
 type Row = typeof RowSchema.Type;
 const ListingJson = RowSchema.pipe(Schema.Array, Schema.fromJsonString);
 
-/** The registry holds a session's whole state; the board reads four fields. */
+/** The registry holds a session's whole state; the board reads three fields. */
 const RegistryJson = Schema.Struct({
   bridgeSessionId: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
-  nameSource: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
   statusUpdatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
   updatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
 }).pipe(Schema.fromJsonString);
@@ -63,11 +63,10 @@ const RegistryJson = Schema.Struct({
 /** What a row is enriched with once its registry file has been read. */
 type Enrichment = {
   readonly web: string | null;
-  readonly nameSource: string | null;
   readonly statusChangedAt: string | null;
 };
 
-const nothingKnown: Enrichment = { web: null, nameSource: null, statusChangedAt: null };
+const nothingKnown: Enrichment = { web: null, statusChangedAt: null };
 
 /**
  * `~/.claude/sessions`, or the same directory under `CLAUDE_CONFIG_DIR`. The
@@ -140,7 +139,6 @@ const enrichmentFor = (directory: string | null, pid: number) =>
     );
     return {
       web: webLink(record.bridgeSessionId),
-      nameSource: record.nameSource ?? null,
       // When the status last changed. `updatedAt` is the wider stamp the
       // registry always carries, so it stands in when the narrower one is
       // absent; neither is a heartbeat.
@@ -159,8 +157,8 @@ const describe = (
   sessionId: row.sessionId ?? null,
   backgroundId: row.id ?? null,
   name: row.name ?? null,
-  nameSource: enrichment.nameSource,
   status: row.status ?? null,
+  state: row.state ?? null,
   waitingFor: row.waitingFor ?? null,
   startedAt: moment,
   statusChangedAt: enrichment.statusChangedAt,

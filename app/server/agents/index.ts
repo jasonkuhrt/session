@@ -45,7 +45,7 @@ export const agentsFor = (
       { concurrency: 2 },
     );
     const fetchedAt = DateTime.formatIso(yield* DateTime.now);
-    const notices = [claude.notice, codex.notice].filter((notice) => notice !== null);
+    const notices = [claude.notice, ...codex.notices].filter((notice) => notice !== null);
     const summaries = new Map<string, AgentsSummary>();
     for (const path of worktrees) {
       summaries.set(path, {

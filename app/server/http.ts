@@ -83,6 +83,29 @@ const writeIsSameOrigin = (request: Request): boolean => {
 
 const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
+/**
+ * Focusing a session's terminal, as both routers serve it: a board's under its
+ * own prefix, and the index's at the root, where there is no board to scope it
+ * to. One handler, so the two can never take different bodies or answer a
+ * refusal differently; the daemon owns the window manager behind it.
+ */
+export async function focusResponse(
+  { request, focus }: {
+    readonly request: Request;
+    readonly focus: (pid: number) => Promise<FocusResult>;
+  },
+): Promise<Response> {
+  if (!writeIsSameOrigin(request)) {
+    return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
+  }
+  try {
+    const input = await runRepository(decodeBody(request, FocusSession));
+    return json(await focus(input.pid));
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
 /** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
  *  by default, so a quiet session must still say something. */
 const keepAliveMilliseconds = 5_000;
@@ -222,8 +245,7 @@ export const createRequestHandler = async (options: {
         return json(await attachWorktree(await runRepository(repository.startBatch(input))));
       }
       if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
-        const input = await runRepository(decodeBody(request, FocusSession));
-        return json(await options.agents.focus(input.pid));
+        return await focusResponse({ request, focus: options.agents.focus });
       }
       if (request.method === 'POST' && url.pathname === '/api/complete') {
         const input = await runRepository(decodeBody(request, CompleteItem));

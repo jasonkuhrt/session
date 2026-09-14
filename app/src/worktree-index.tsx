@@ -1,17 +1,18 @@
-import { RefreshCw } from 'lucide-react'
 import * as React from 'react'
 
-import type { Activity, WorktreeSummary } from '../contract'
+import type { Stage, WorktreeSummary } from '../contract'
 import { stageNames } from '../contract'
+import { ActivityCell } from './components/activity-cell'
+import { Explained } from './components/agent-marks'
 import { AgentsCell } from './components/agents-cell'
 import { Copyable } from './components/copyable'
 import { Badge } from './components/ui/badge'
-import { Button } from './components/ui/button'
 import { Skeleton } from './components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
+import { TooltipProvider } from './components/ui/tooltip'
 import { eventsUrl, IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
-import { absoluteTime, hour, parentPath, relativeTime } from './lib/format'
+import { hour, parentPath } from './lib/format'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
 
@@ -56,10 +57,21 @@ const skeletonRows = [1, 2, 3, 4, 5]
 const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
   [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
 
+/** What each column holds, said where its name is. */
+const columnMeaning = {
+  worktree: 'A Git worktree the daemon is tracking, and the directory it sits in; its name opens that worktree’s board.',
+  branch: 'The Git branch checked out in that worktree.',
+  agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
+  activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
+}
+
+/** A stage column says what the stage is for and what an empty cell means. */
+const stageMeaning = (stage: Stage) =>
+  `${stageMeta[stage].hint} An empty cell means there is nothing in it.`
+
 export function WorktreeIndex() {
   const [rows, setRows] = React.useState<readonly WorktreeSummary[] | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
-  const [pending, setPending] = React.useState(false)
   const now = useNow()
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
@@ -99,74 +111,67 @@ export function WorktreeIndex() {
     return () => source.close()
   }, [load])
 
-  const refresh = async () => {
-    setPending(true)
-    setNotice(null)
-    try {
-      await IndexApi.refresh()
-      await load()
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The refresh failed')
-    } finally {
-      setPending(false)
-    }
-  }
-
   const sourceNotices = agentNotices(rows)
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <title>Sessions</title>
-      <header className="flex items-center gap-8 border-b px-6 py-5">
-        <h1 className="font-medium">Sessions</h1>
-        <Button variant="outline" size="sm" className="ml-auto" disabled={pending} onClick={refresh}>
-          <RefreshCw className={cn(pending && 'animate-spin')} /> {pending ? 'Refreshing…' : 'Refresh'}
-        </Button>
-      </header>
-      {notice ? (
-        <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">{notice}</p>
-      ) : null}
-      {sourceNotices.length === 0
-        ? null
-        : <p className="mx-6 mt-4 text-sm text-muted-foreground">{sourceNotices.join(' · ')}</p>}
-      <main className="p-6">
-        {rows === null ? <LoadingRows /> : rows.length === 0 ? <EmptyState /> : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Worktree</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead>Running</TableHead>
-                <TableHead>Agents</TableHead>
-                {stageNames.map(stage => (
-                  <TableHead key={stage} className="text-right">{stageMeta[stage].label}</TableHead>
+    <TooltipProvider>
+      <div className="min-h-dvh bg-background text-foreground">
+        <title>Sessions</title>
+        <header className="flex items-center gap-8 border-b px-6 py-5">
+          <h1 className="font-medium">
+            <Explained meaning="Every worktree the daemon is tracking, and what its session holds. A worktree joins this list when a session is created in it and leaves when that session is gone.">
+              Sessions
+            </Explained>
+          </h1>
+        </header>
+        {notice ? (
+          <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">{notice}</p>
+        ) : null}
+        {sourceNotices.length === 0
+          ? null
+          : <p className="mx-6 mt-4 text-sm text-muted-foreground">{sourceNotices.join(' · ')}</p>}
+        <main className="p-6">
+          {rows === null ? <LoadingRows /> : rows.length === 0 ? <EmptyState /> : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead><Explained meaning={columnMeaning.worktree}>Worktree</Explained></TableHead>
+                  <TableHead><Explained meaning={columnMeaning.branch}>Branch</Explained></TableHead>
+                  <TableHead><Explained meaning={columnMeaning.agents}>Agents</Explained></TableHead>
+                  {stageNames.map(stage => (
+                    <TableHead key={stage} className="text-right">
+                      <Explained meaning={stageMeaning(stage)} className="inline-flex">
+                        {stageMeta[stage].label}
+                      </Explained>
+                    </TableHead>
+                  ))}
+                  <TableHead><Explained meaning={columnMeaning.activity}>Activity</Explained></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bandRows(rows, now).map(entry => (
+                  <React.Fragment key={entry.band.label}>
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell
+                        colSpan={9}
+                        className={cn(
+                          'bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground',
+                          entry.band.muted && 'opacity-60',
+                        )}
+                      >
+                        {entry.band.label}
+                        <span className="ml-2 tabular-nums tracking-normal text-muted-foreground/60">{entry.rows.length}</span>
+                      </TableCell>
+                    </TableRow>
+                    {entry.rows.map(row => <Row key={row.path} row={row} now={now} muted={entry.band.muted} />)}
+                  </React.Fragment>
                 ))}
-                <TableHead>Activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {bandRows(rows, now).map(entry => (
-                <React.Fragment key={entry.band.label}>
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell
-                      colSpan={10}
-                      className={cn(
-                        'bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground',
-                        entry.band.muted && 'opacity-60',
-                      )}
-                    >
-                      {entry.band.label}
-                      <span className="ml-2 tabular-nums tracking-normal text-muted-foreground/60">{entry.rows.length}</span>
-                    </TableCell>
-                  </TableRow>
-                  {entry.rows.map(row => <Row key={row.path} row={row} now={now} muted={entry.band.muted} />)}
-                </React.Fragment>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </main>
-    </div>
+              </TableBody>
+            </Table>
+          )}
+        </main>
+      </div>
+    </TooltipProvider>
   )
 }
 
@@ -205,9 +210,11 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
     return (
       <TableRow className={dim}>
         <NameCell row={row} />
-        <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
+        <TableCell colSpan={8} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
-            <Badge variant="destructive">Not served</Badge>
+            <Badge variant="destructive" title="Two tracked worktrees want the same address, so this one has no board.">
+              Not served
+            </Badge>
             <span className="text-muted-foreground">{row.conflict}</span>
           </span>
         </TableCell>
@@ -219,26 +226,13 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
     <TableRow className={dim}>
       <NameCell row={row} />
       <TableCell className="text-muted-foreground">
-        {row.branch === null ? 'No branch' : <Copyable value={row.branch}>{row.branch}</Copyable>}
+        {row.branch === null
+          ? <span title="This folder is not a Git worktree, so it has no branch.">No branch</span>
+          : <Copyable value={row.branch}>{row.branch}</Copyable>}
       </TableCell>
-      <TableCell>
-        {row.running === null ? <span className="text-muted-foreground">—</span> : (
-          <span className="flex items-center gap-2">
-            <Badge variant="secondary">{row.running.batch}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {row.running.items} {row.running.items === 1 ? 'item' : 'items'}
-            </span>
-          </span>
-        )}
-      </TableCell>
-      <TableCell><AgentsCell agents={row.agents} /></TableCell>
+      <TableCell><AgentsCell agents={row.agents} now={now} /></TableCell>
       {stageNames.map(stage => (
-        <TableCell
-          key={stage}
-          className={cn('text-right tabular-nums', row.counts[stage] === 0 ? 'text-muted-foreground/40' : 'text-foreground')}
-        >
-          {row.counts[stage]}
-        </TableCell>
+        <CountCell key={stage} stage={stage} count={row.counts[stage]} executing={row.executing} />
       ))}
       <TableCell className="text-muted-foreground">
         <ActivityCell activity={row.activity} now={now} />
@@ -248,19 +242,23 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
 }
 
 /**
- * What happened here last. A worktree with a session working in it says so in
- * the present tense; everything else is named by what left the moment behind,
- * so `agent` and `records` are never read as the same thing.
+ * How much is in one stage, and, in Execute, which batch it is. A count of zero
+ * renders nothing at all: a column of zeroes is a column of nothing to do, and
+ * the five of them read as a pipeline by what is actually in them.
  */
-function ActivityCell({ activity, now }: { activity: Activity | null; now: number }) {
-  if (activity === null) return <>—</>
-  if (activity.kind === 'now') {
-    return <span className="font-medium text-foreground" title={absoluteTime(activity.at)}>busy now</span>
-  }
+function CountCell({ stage, count, executing }: { stage: Stage; count: number; executing: string | null }) {
+  const batch = stage === 'EXECUTE' ? executing : null
   return (
-    <span title={absoluteTime(activity.at)}>
-      {activity.kind} · {relativeTime(activity.at, now)}
-    </span>
+    <TableCell className="text-right">
+      <span className="flex items-center justify-end gap-2">
+        {batch === null ? null : (
+          <Explained meaning="The batch in Execute.">
+            <Badge variant="secondary">{batch}</Badge>
+          </Explained>
+        )}
+        {count === 0 ? null : <span className="tabular-nums text-foreground">{count}</span>}
+      </span>
+    </TableCell>
   )
 }
 

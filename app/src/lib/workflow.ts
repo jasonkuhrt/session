@@ -2,12 +2,18 @@ import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
 import { requiredSections, sectionHasContent } from '../../stage-rules'
 
+/**
+ * What each stage is called and what it holds. The hint is a sentence because
+ * it is the only explanation either surface gives: the board hangs it off the
+ * lane's heading, the index off its column, and the item page off the move it
+ * would make.
+ */
 export const stageMeta: Record<Stage, { label: string; hint: string }> = {
-  TRIAGE: { label: 'Triage', hint: 'Decide what to pursue' },
-  DESIGN: { label: 'Design', hint: 'Resolve open questions' },
-  BATCH: { label: 'Batch', hint: 'Settled work ready to queue' },
-  QUEUE: { label: 'Queue', hint: 'Batches waiting to start' },
-  EXECUTE: { label: 'Execute', hint: 'Current batch' },
+  TRIAGE: { label: 'Triage', hint: 'Candidates not yet accepted for work; decide here what to pursue.' },
+  DESIGN: { label: 'Design', hint: 'Accepted work with open design questions; settle them here before it can be batched.' },
+  BATCH: { label: 'Batch', hint: 'Settled work, ready to be grouped into a batch.' },
+  QUEUE: { label: 'Queue', hint: 'Batches waiting to start.' },
+  EXECUTE: { label: 'Execute', hint: 'The batch under way; its items leave only by being completed.' },
 }
 
 export function isStage(value: unknown): value is Stage {

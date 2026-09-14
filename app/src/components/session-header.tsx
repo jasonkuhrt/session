@@ -25,7 +25,7 @@ export function SessionHeader({
       {worktree ? (
         <dl className="flex gap-8 text-sm">
           <div>
-            <dt className="text-muted-foreground">Branch</dt>
+            <dt className="text-muted-foreground" title="The Git branch checked out in this worktree.">Branch</dt>
             <dd className="font-medium">
               {worktree.branch === null
                 ? 'No branch'
@@ -33,14 +33,21 @@ export function SessionHeader({
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Worktree</dt>
+            <dt className="text-muted-foreground" title="The worktree whose session this board shows; switch to another below.">Worktree</dt>
             <dd>
               <WorktreePicker current={worktree} />
             </dd>
           </div>
         </dl>
       ) : null}
-      <Button variant="ghost" size="sm" className="ml-auto" render={<a aria-label="All sessions" href="/" />}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="ml-auto"
+        nativeButton={false}
+        title="Every worktree the daemon is tracking."
+        render={<a aria-label="All sessions" href="/" />}
+      >
         <LayoutGrid /> All sessions
       </Button>
     </header>

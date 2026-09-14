@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { NodeServices } from '@effect/platform-node';
 import type { NodeServices as NodeServiceUnion } from '@effect/platform-node/NodeServices';
 import { file, serve, spawn } from 'bun';
@@ -21,7 +21,7 @@ import type { Activity, AgentsSummary, DaemonInfo, Stage, WorktreeSummary } from
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { createRequestHandler, eventStream } from './http.ts';
+import { createRequestHandler, eventStream, focusResponse } from './http.ts';
 import { makeRepository } from './repository.ts';
 import {
   encodeWorktreeKey,
@@ -205,10 +205,20 @@ const waitForDaemon = (settings: DaemonSettings, stamp: string) =>
  * Reuse a healthy daemon built from these sources; replace a stale one; refuse
  * a port somebody else holds.
  */
-export const ensureDaemon = Effect.gen(function*() {
+/**
+ * What holds the daemon's port right now, beside the settings that name it.
+ * `open` decides from this whether to spawn one; every other command uses it to
+ * tell a running daemon about a session it has just scaffolded, and to leave
+ * the port alone when nothing of ours is on it.
+ */
+export const daemonOnPort = Effect.gen(function*() {
   const settings = yield* daemonSettings;
+  return { settings, probe: yield* probeDaemon(settings.port) };
+});
+
+export const ensureDaemon = Effect.gen(function*() {
+  const { settings, probe } = yield* daemonOnPort;
   const stamp = yield* sourceStamp;
-  const probe = yield* probeDaemon(settings.port);
   if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return settings;
   if (probe.kind === 'foreign') {
     return yield* new DaemonError({
@@ -317,8 +327,11 @@ type Tracked = {
   readonly metadata: WorktreeMetadata;
   conflict: string | null;
   handler: ((request: Request) => Promise<Response>) | undefined;
-  events: SessionEventSource | undefined;
-  watcher: Fiber.Fiber<void, never> | undefined;
+  /** Every tracked worktree has these from the moment it is tracked: the
+   *  watcher is what notices its session changing and what notices it leave,
+   *  which is not something a board being open can be a condition of. */
+  readonly events: SessionEventSource;
+  readonly watcher: Fiber.Fiber<void, never>;
 };
 
 const runNode = <A, E>(effect: Effect.Effect<A, E, NodeServiceUnion>) =>
@@ -354,6 +367,7 @@ const agentsFreshnessMilliseconds = 30_000;
  */
 const agentsDebounceMilliseconds = 1_000;
 
+/** What a board follows as its files change, and what the agent sources fire. */
 const watchDirectory = (directory: string, events: SessionEventSource) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
@@ -366,36 +380,28 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
   );
 
 /**
- * When this worktree last did something, and what did it.
- *
- * A session that is busy or in a shell is doing it as the listing is taken, so
- * that reads `now` at the listing's own moment. Otherwise it is the newest
- * moment anything left behind: an agent's status change or thread, else the
- * newest item file. A status time says when a status last changed and nothing
- * else, so it can date activity but never prove a session is alive, and an old
- * one is an agent holding still rather than an agent gone. A tie goes to the
- * agent, which is the more specific answer.
+ * When this worktree last did something, and what did it: the newest of a
+ * Claude Code session's status change, a Codex thread's update, and the newest
+ * item file. A status time says when a status last changed and nothing else,
+ * so it can date activity but never prove a session is alive, and an old one
+ * is an agent holding still rather than an agent gone. A tie goes to an agent,
+ * which is the more specific answer.
  */
 const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity | null => {
-  const working = overlay.claude.some((session) =>
-    session.status === 'busy' || session.status === 'shell'
-  );
-  if (working) return { at: overlay.fetchedAt, kind: 'now' };
-
   let best: Activity | null = null;
   let bestMoment = Number.NEGATIVE_INFINITY;
-  const consider = (at: string | null, kind: 'agent' | 'records') => {
+  const consider = (at: string | null, kind: Activity['kind']) => {
     if (at === null) return;
     const moment = Date.parse(at);
     if (Number.isNaN(moment)) return;
     if (moment < bestMoment) return;
-    if (moment === bestMoment && kind !== 'agent') return;
+    if (moment === bestMoment && kind === 'items') return;
     best = { at, kind };
     bestMoment = moment;
   };
-  for (const session of overlay.claude) consider(session.statusChangedAt, 'agent');
-  for (const thread of overlay.codex) consider(thread.updatedAt, 'agent');
-  consider(lastChange, 'records');
+  for (const session of overlay.claude) consider(session.statusChangedAt, 'claude');
+  for (const thread of overlay.codex) consider(thread.updatedAt, 'codex');
+  consider(lastChange, 'items');
   return best;
 };
 
@@ -476,9 +482,11 @@ export const runDaemon = async () => {
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
-    if (entry.watcher !== undefined) Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
-    entry.events?.close();
+    // Out of the map first: the watcher's own finalizer asks whether this path
+    // is still tracked, and the answer by then has to be no.
     tracked.delete(path);
+    Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
+    entry.events.close();
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -488,14 +496,15 @@ export const runDaemon = async () => {
     const owner = [...tracked.values()].find((entry) => entry.key === key);
     const conflict = owner === undefined ? null : `The key ${key} already belongs to ${owner.path}.`;
     if (conflict !== null) console.error(`${path}: ${conflict}`);
+    const events = makeSessionEvents();
     tracked.set(path, {
       path,
       key,
       metadata: resolved.worktree,
       conflict,
       handler: undefined,
-      events: undefined,
-      watcher: undefined,
+      events,
+      watcher: Effect.runFork(watchDirectory(resolved.directory, events)),
     });
   };
 
@@ -514,6 +523,79 @@ export const runDaemon = async () => {
         return (yield* fs.stat(session)).type === 'Directory';
       }).pipe(Effect.orElseSucceed(() => false)),
     );
+
+  /**
+   * A tracked worktree whose session has gone leaves the index by itself: no
+   * button, no next `open`. The check is the same one that let it in.
+   */
+  const dropIfGone = async (path: string) => {
+    if (!tracked.has(path)) return;
+    if (await isTrackable(path)) return;
+    untrack(path);
+    await persist();
+    worktreeEvents.changed();
+  };
+
+  /**
+   * A directory cannot watch itself out of existence: on macOS a watch on a
+   * directory that is removed delivers nothing at all, not even the removal of
+   * the files inside it, so the signal has to come from one level up. One
+   * non-recursive watch per directory that holds tracked worktrees, which is a
+   * handful for twenty worktrees, and any change in one re-asks whether the
+   * worktrees under it are still there.
+   */
+  const parentWatchers = new Map<string, Fiber.Fiber<void, never>>();
+
+  const dropGoneUnder = async (parent: string) => {
+    const under = [...tracked.keys()].filter((path) => dirname(path) === parent);
+    await Promise.all(under.map((path) => dropIfGone(path)));
+  };
+
+  const watchParent = (parent: string) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.watch(parent, { recursive: false }).pipe(
+        Stream.runForEach(() => Effect.promise(() => dropGoneUnder(parent))),
+      );
+    }).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${parent}`, cause)),
+    );
+
+  /**
+   * Watch the directories that hold tracked worktrees, and only those. It runs
+   * where worktrees are taken on, never where one is dropped: a watcher must
+   * not be interrupted from inside its own callback.
+   */
+  const syncParentWatchers = () => {
+    const parents = new Set([...tracked.keys()].map((path) => dirname(path)));
+    for (const [parent, fiber] of parentWatchers) {
+      if (parents.has(parent)) continue;
+      Effect.runFork(fiber.pipe(Fiber.interrupt));
+      parentWatchers.delete(parent);
+    }
+    for (const parent of parents) {
+      if (parentWatchers.has(parent)) continue;
+      parentWatchers.set(parent, Effect.runFork(watchParent(parent)));
+    }
+  };
+
+  /**
+   * Every tracked worktree, re-asked at once. The watchers above push the
+   * common case; this is what makes the answer right whatever happened, and
+   * the index is the one read that would otherwise show a row that is gone.
+   */
+  const sweepTracked = async () => {
+    const checked = await mapWorktrees([...tracked.keys()], async (path) => ({
+      path,
+      gone: !(await isTrackable(path)),
+    }));
+    const gone = checked.filter((entry) => entry.gone);
+    if (gone.length === 0) return;
+    for (const entry of gone) untrack(entry.path);
+    await persist();
+    worktreeEvents.changed();
+  };
 
   /**
    * Resolve every new path at once, then take them in order. A path arrives
@@ -535,6 +617,7 @@ export const runDaemon = async () => {
       resolved: await runNode(resolveWorktreeSession(path)),
     }));
     for (const entry of described) insert(entry.path, entry.resolved);
+    syncParentWatchers();
   };
 
   /** Git knows the siblings; a worktree joins the index once it has a session. */
@@ -586,14 +669,14 @@ export const runDaemon = async () => {
         }),
       );
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
+      // The batch in Execute names the work under way; a batch with no name is
+      // nothing to render, so it reads as an empty Execute rather than a blank.
       const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
-      const running = execute === undefined || execute.items.length === 0
-        ? null
-        : { batch: execute.items[0]!.batch ?? '', items: execute.items.length };
+      const batch = execute?.items[0]?.batch ?? null;
       return {
         ...base,
         branch: metadata.branch,
-        running,
+        executing: batch === null || batch === '' ? null : batch,
         counts,
         lastChange: loaded.lastChange,
         activity: activityOf(overlay, loaded.lastChange),
@@ -604,7 +687,7 @@ export const runDaemon = async () => {
       // A row that cannot be read is a row that cannot be served; say why.
       return {
         ...base,
-        running: null,
+        executing: null,
         counts,
         lastChange: null,
         activity: activityOf(overlay, null),
@@ -618,15 +701,12 @@ export const runDaemon = async () => {
     if (entry.handler !== undefined) return entry.handler;
     const resolved = await runNode(resolveWorktreeSession(entry.path));
     await runNode(ensureSession(resolved));
-    const events = makeSessionEvents();
-    entry.events = events;
-    entry.watcher = Effect.runFork(watchDirectory(resolved.directory, events));
     entry.handler = await createRequestHandler({
       directory: resolved.directory,
       distDirectory,
       worktree: resolved.worktree,
       refreshWorktree: true,
-      events,
+      events: entry.events,
       agents: {
         read: () => overlayFor(entry.path),
         focus: (pid) => runNode(focus(pid)),
@@ -678,8 +758,14 @@ export const runDaemon = async () => {
         ]);
       }
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
+        await sweepTracked();
         await freshenAgents();
         return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
+      }
+      // The index has no board to scope this to, and the session it acts on may
+      // be in any worktree it lists, so the root serves the board's own route.
+      if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
+        return await focusResponse({ request, focus: (pid) => runNode(focus(pid)) });
       }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));
