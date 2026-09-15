@@ -50,9 +50,16 @@ change, `Codex` for a thread, `Items` for an item file, with the exact moment
 behind it. The index has no refresh button and needs none: any command that
 scaffolds a session registers it with a running daemon, and a worktree whose
 `.session` goes away drops off the index by itself. The daemon also finds the
-other worktrees of the same repository that already have a `.session`. When a [portless](https://github.com/vercel-labs/portless) proxy is running on
-the machine, `open` registers the daemon as its `session` alias and the board
-lives at `https://session.localhost/`; the raw port stays reachable.
+other worktrees of the same repository that already have a `.session`.
+
+If [portless](https://github.com/vercel-labs/portless) is on the machine, `open`
+registers the daemon as its `session` alias, and while a portless proxy is
+running the board is reached by name at `https://session.localhost/` rather than
+by port. The address is read from portless's own state: its scheme is the one
+the running proxy marked, and it carries a port unless that is the scheme's
+default. When the alias cannot be used, `open` prints the daemon's own port and
+says in one line why that is the address, so a proxy that has stopped is never
+mistaken for one that is working. The port stays reachable either way.
 
 A board reads that worktree's five stage directories and shows a Kanban board.
 Each card is a link to its item's own page at `/w/<worktree name>/item/<ID>`,

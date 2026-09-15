@@ -119,9 +119,20 @@ beside that file, in `daemon.log`. `open` reuses a healthy daemon whose stamp
 still matches the sources on disk. It replaces one that is unhealthy or built
 from older sources, killing the old process first, so a rebuilt board reaches
 every worktree at the next `open`. A foreign process holding the port is an error
-naming it; there is no fallback port. When a portless proxy is alive on the machine, `open` registers the daemon as
-the `session` alias (once, again only if the port moves) and prints and opens
-`https://session.localhost/w/<key>/` instead of the raw port.
+naming it; there is no fallback port.
+
+`open` also gives the board a name to answer to. Whenever portless has a state
+directory on this machine it registers the daemon as the `session` alias, once,
+and again only if the port moves; the alias is a line in portless's route table,
+so registering it while no proxy runs is what makes the board reachable by name
+the moment one starts. What it then prints comes from that directory and nothing
+else: the hostname from the route, the scheme from the marker a running proxy
+writes for TLS, and a port unless it is that scheme's default, which is how
+portless writes its own URLs. If the alias cannot be used, `open` prints
+`http://127.0.0.1:53045/w/<key>/` and one line on stderr saying why, naming the
+proxy that is not running or the alias that could not be registered. Nothing
+about the address is guessed, because a printed address that does not reach the
+board is worse than a plain one.
 
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one
