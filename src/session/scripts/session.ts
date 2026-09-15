@@ -12,9 +12,9 @@ import {
   daemonOnPort,
   ensureDaemon,
   openInBrowser,
-  publicOrigin,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
+import { publicOrigin } from '../../../app/server/portless.ts';
 import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
@@ -183,9 +183,13 @@ const openBoard = (resolved: WorktreeSession) =>
   Effect.gen(function*() {
     const settings = yield* ensureDaemon;
     yield* trackWorktree({ settings, path: resolved.worktree.path });
-    const origin = yield* publicOrigin(settings);
-    const url = `${origin}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
+    const address = yield* publicOrigin(settings.port);
+    const url = `${address.origin}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
     yield* Console.log(url);
+    // The URL is the whole of this command's answer, so it keeps stdout to
+    // itself; why it is this address and not the nicer one is a remark beside
+    // it, and it is never left unsaid.
+    if (address.notice !== null) yield* Console.error(address.notice);
     yield* openInBrowser(url);
   });
 
