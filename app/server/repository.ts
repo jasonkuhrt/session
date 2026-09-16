@@ -11,6 +11,7 @@ import {
   archiveDay,
   archiveDirectory,
   archiveFilePath,
+  archivedItemId,
   parseStageDirectory,
   renderStageDirectory,
   type StageFileEntry,
@@ -670,6 +671,8 @@ export const makeRepository = (directory: string) =>
       readonly state: string;
       readonly loaded: Loaded;
       readonly from: Stage;
+      /** Appended to the archived record: why it was filed, when that is not obvious. */
+      readonly note?: string;
     }) =>
       Effect.gen(function*() {
         const state = stageOf(input.loaded, input.from);
@@ -697,7 +700,10 @@ export const makeRepository = (directory: string) =>
         const changes = yield* attempt(() =>
           stageChanges(state, state.items.filter((candidate) => candidate.id !== input.id)),
         );
-        return [{ path, content: held.content }, ...changes];
+        const content = input.note === undefined
+          ? held.content
+          : `${held.content.trimEnd()}\n\n${input.note}\n`;
+        return [{ path, content }, ...changes];
       });
 
     const completeItem = (input: { readonly id: string; readonly revision: string }) =>
@@ -713,6 +719,55 @@ export const makeRepository = (directory: string) =>
           return yield* fileAway({ id: input.id, state: 'done', loaded, from: 'EXECUTE' });
         }),
       );
+
+    /**
+     * File an item as done because a commit says it is, from whichever stage
+     * it is in: the commit is the evidence of completion, so the route through
+     * Execute that `completeItem` insists on does not apply. The record gains
+     * the commit, which is what says afterwards why the item left.
+     */
+    const closeItem = (input: {
+      readonly id: string;
+      readonly revision: string;
+      readonly commit: { readonly hash: string; readonly subject: string };
+    }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
+          return yield* fileAway({
+            id: input.id,
+            state: 'done',
+            loaded,
+            from: found.stage,
+            note: `### Closed by commit\n\n\`${input.commit.hash}\` ${input.commit.subject}`,
+          });
+        }),
+      );
+
+    /** The archived records, by the item each belongs to; unreadable names are skipped. */
+    const archivedRecords = Effect.gen(function*() {
+      const archive = absolute(archiveDirectory);
+      if ((yield* pathType(archive)) !== 'Directory') return [];
+      const records: Array<{ readonly id: string; readonly path: string }> = [];
+      for (const name of yield* fs.readDirectory(archive)) {
+        const id = archivedItemId(name);
+        if (id !== null) records.push({ id, path: join(archiveDirectory, name) });
+      }
+      return records;
+    }).pipe(Effect.mapError(asRepositoryError));
+
+    /** Whether some archived record of this item names this commit. */
+    const archivedByCommit = (input: { readonly id: string; readonly hash: string }) =>
+      Effect.gen(function*() {
+        for (const record of yield* archivedRecords) {
+          if (record.id !== input.id) continue;
+          const content = yield* fs.readFileString(absolute(record.path)).pipe(
+            Effect.mapError(asRepositoryError),
+          );
+          if (content.includes(input.hash)) return true;
+        }
+        return false;
+      });
 
     /** Any stage, including EXECUTE, where it means the batch gave the item up. */
     const archiveItem = (input: { readonly id: string; readonly revision: string }) =>
@@ -846,7 +901,10 @@ export const makeRepository = (directory: string) =>
       queueBatch,
       startBatch,
       completeItem,
+      closeItem,
       archiveItem,
+      archivedRecords,
+      archivedByCommit,
       inventory,
       lastChange,
       readMarkdownFile,

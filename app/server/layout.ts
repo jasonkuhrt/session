@@ -59,6 +59,13 @@ export const archiveFilePath = (input: {
 }): string =>
   `${archiveDirectory}/${input.day} ${input.id} — ${input.title.replaceAll('/', '-')} (${input.state}).md`;
 
+/**
+ * The item an archived record belongs to, read back from its name; null for a
+ * file that was not named by `archiveFilePath`.
+ */
+export const archivedItemId = (name: string): string | null =>
+  /^\d{4}-\d{2}-\d{2} ([A-Za-z0-9][A-Za-z0-9._-]*) — /u.exec(name)?.[1] ?? null;
+
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {
   const match: RegExpExecArray = entryName.exec(name) ??
     fail(`${parent}/${name}: entries start with a numeric prefix; rename it to 010-${name}.`);

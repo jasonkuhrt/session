@@ -13,6 +13,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { eventsUrl, IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
 import { hour, parentPath } from './lib/format'
+import { problemCount, problemSentence, trailerMeaning } from './lib/trailers'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
 
@@ -178,16 +179,29 @@ export function WorktreeIndex() {
 /** The name, over the directory it sits in; the whole path stays on hover. */
 function NameCell({ row }: { row: WorktreeSummary }) {
   const parent = parentPath(row.path)
+  const problems = row.trailerProblems
   return (
     <TableCell title={row.path}>
-      {row.conflict === null ? (
-        <a
-          className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-          href={`/w/${row.key}/`}
-        >
-          {row.name}
-        </a>
-      ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
+      <span className="flex flex-wrap items-center gap-2">
+        {row.conflict === null ? (
+          <a
+            className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            href={`/w/${row.key}/`}
+          >
+            {row.name}
+          </a>
+        ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
+        {/* A commit here says something its session cannot honour; the board
+            says which, and this says there is something to read there. */}
+        {problems.length === 0 ? null : (
+          <Badge
+            variant="destructive"
+            title={[trailerMeaning, ...problems.map((problem) => problemSentence(problem))].join('\n\n')}
+          >
+            {problemCount(problems.length)}
+          </Badge>
+        )}
+      </span>
       {parent === '' ? null : (
         <span className="block">
           {/* The line is elided; what it copies is the whole path. */}

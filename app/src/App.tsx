@@ -1,11 +1,12 @@
 import * as React from 'react'
 
-import type { AgentsSummary, FocusResult, Item, Session } from '../contract'
+import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '../contract'
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
 import { BatchDialog, CompleteDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
+import { TrailerProblems } from './components/trailer-problems'
 import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
 import { useNow } from './lib/clock'
@@ -18,6 +19,7 @@ function App() {
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [agents, setAgents] = React.useState<AgentsSummary | null>(null)
   const [agentsError, setAgentsError] = React.useState<string | null>(null)
+  const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
   const [batching, setBatching] = React.useState(false)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [batchSelection, setSelectedBatchIds] = React.useState<Set<string>>(new Set())
@@ -62,6 +64,17 @@ function App() {
     }
   }, [])
 
+  // The trailers answer is the daemon's, derived from the branch and the files;
+  // a failed read keeps what the board last showed rather than clearing it.
+  const loadTrailers = React.useCallback(async (signal?: AbortSignal) => {
+    try {
+      const next = await SessionApi.trailers(signal)
+      if (!signal?.aborted) setTrailers(next)
+    } catch {
+      // The session read beside it reports an unreachable daemon.
+    }
+  }, [])
+
   const focusAgent = React.useCallback(async (pid: number): Promise<FocusResult> => {
     try {
       return await SessionApi.focus(pid)
@@ -74,8 +87,9 @@ function App() {
     const controller = new AbortController()
     void load(controller.signal)
     void loadAgents(controller.signal)
+    void loadTrailers(controller.signal)
     return () => controller.abort()
-  }, [load, loadAgents])
+  }, [load, loadAgents, loadTrailers])
 
   // The daemon pushes one `changed` event per debounced write under `.session`;
   // the board never polls. A refetch waits while a mutation is in flight or a
@@ -96,9 +110,12 @@ function App() {
         void load()
       }
     }
-    // The agents overlay is not the files, so it is never held back by a drag.
+    // The agents overlay is not the files, so it is never held back by a drag;
+    // nor are the trailers, which the daemon announces on the same stream.
     const refetchAgents = () => void loadAgents()
+    const refetchTrailers = () => void loadTrailers()
     source.addEventListener('changed', refetch)
+    source.addEventListener('changed', refetchTrailers)
     source.addEventListener('agents', refetchAgents)
     source.addEventListener('error', () => { droppedRef.current = true })
     source.addEventListener('open', () => {
@@ -106,9 +123,10 @@ function App() {
       droppedRef.current = false
       refetch()
       refetchAgents()
+      refetchTrailers()
     })
     return () => source.close()
-  }, [load, loadAgents, settle])
+  }, [load, loadAgents, loadTrailers, settle])
 
   React.useEffect(() => {
     busyRef.current = busy
@@ -130,6 +148,7 @@ function App() {
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
       <SessionHeader worktree={session?.worktree} />
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
+      <TrailerProblems problems={trailers} />
       {problem === null ? null : (
         <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">
           {problem}

@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import { AgentsSummarySchema, SessionSchema, WorktreeSummarySchema } from '../../contract'
+import { AgentsSummarySchema, SessionSchema, TrailerProblemSchema, WorktreeSummarySchema } from '../../contract'
 import { basePath } from './base'
 
 export class ApiError extends Data.TaggedError('ApiError')<{
@@ -20,6 +20,7 @@ function errorMessage(payload: unknown) {
 const decodeSession = Schema.decodeUnknownEffect(SessionSchema)
 const decodeWorktrees = Schema.decodeUnknownEffect(Schema.Array(WorktreeSummarySchema))
 const decodeAgents = Schema.decodeUnknownEffect(AgentsSummarySchema)
+const decodeTrailers = Schema.decodeUnknownEffect(Schema.Array(TrailerProblemSchema))
 
 /**
  * `FocusResult` is the one contract shape with no Schema beside it, because it
@@ -68,6 +69,10 @@ export const SessionApi = {
   /** The agents overlay for this board's worktree, recomputed by the daemon. */
   agents: (signal?: AbortSignal) =>
     run(send(HttpClientRequest.get(`${basePath}/api/agents`), decodeAgents), signal),
+
+  /** The `Session-Done` trailers on this worktree's unpushed commits that could not be acted on. */
+  trailers: (signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${basePath}/api/trailers`), decodeTrailers), signal),
 
   /** Asks the daemon to bring this session's terminal forward. */
   focus: (pid: number) =>

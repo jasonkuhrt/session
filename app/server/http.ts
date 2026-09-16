@@ -1,10 +1,10 @@
 import { basename, join, resolve } from 'node:path';
-import { NodeServices } from '@effect/platform-node';
+import type { NodeServices } from '@effect/platform-node/NodeServices';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
-import type { AgentsSummary, FocusResult, Session } from '../contract.ts';
+import type { AgentsSummary, FocusResult, Session, TrailerProblem } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { makeRepository, RepositoryError } from './repository.ts';
@@ -167,6 +167,11 @@ export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => 
 
 /* eslint-disable max-lines-per-function -- The HTTP boundary is a small linear route table; splitting each route would add indirection without isolating behavior. */
 export const createRequestHandler = async (options: {
+  /**
+   * Runs an effect on the daemon's one set of Node services. The board does
+   * not build its own: a layer built per request hooks stdin each time.
+   */
+  readonly run: <A, E>(effect: Effect.Effect<A, E, NodeServices>) => Promise<A>;
   readonly directory: string;
   readonly distDirectory?: string | undefined;
   readonly worktree?: WorktreeMetadata | undefined;
@@ -181,17 +186,18 @@ export const createRequestHandler = async (options: {
     readonly focus: (pid: number) => Promise<FocusResult>;
     readonly events: SessionEvents;
   };
+  /**
+   * The `Session-Done` trailers on this worktree's unpushed commits that could
+   * not be acted on. The daemon reconciles them; the board only reads them.
+   */
+  readonly trailers: () => ReadonlyArray<TrailerProblem>;
 }) => {
-  const repository = await Effect.runPromise(
-    makeRepository(options.directory).pipe(Effect.provide(NodeServices.layer)),
-  );
+  const repository = await options.run(makeRepository(options.directory));
   const distDirectory = resolve(options.distDirectory ?? join(import.meta.dir, '../dist'));
   const attachWorktree = async (session: Session): Promise<Session> => {
     if (options.worktree === undefined) return session;
     const worktree = options.refreshWorktree === true
-      ? await Effect.runPromise(
-          refreshWorktreeMetadata(options.worktree).pipe(Effect.provide(NodeServices.layer)),
-        )
+      ? await options.run(refreshWorktreeMetadata(options.worktree))
       : options.worktree;
     return { ...session, worktree };
   };
@@ -210,6 +216,10 @@ export const createRequestHandler = async (options: {
 
       if (request.method === 'GET' && url.pathname === '/api/agents') {
         return json(await options.agents.read());
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/trailers') {
+        return json(options.trailers());
       }
 
       if (request.method === 'GET' && url.pathname === '/api/events') {

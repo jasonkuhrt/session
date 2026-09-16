@@ -64,6 +64,47 @@ work that never ran and `(triage)` a rejected candidate.
 stays out of agent context: a refresh skips it, the board does not serve files
 from it, and it is never loaded as a stage.
 
+### Close an item from a commit
+
+A commit can finish items itself. End its message with a `Session-Done` trailer
+naming them, in the final paragraph where Git keeps trailers:
+
+```text
+feat(email): one tenant-scoped reader
+
+Session-Done: BE-12
+Session-Done: BE-13, BE-14
+```
+
+The daemon follows every tracked worktree's reflog, so it sees the commit the
+moment it is made, and files each named item as done from whatever stage it is
+in: the commit is the evidence of completion, so the route through Execute that
+`done` insists on does not apply. The archived record gains a `### Closed by
+commit` section with the commit's hash and subject, which is what says later why
+the item left. Git's own trailer parser reads the message, and the key matches
+without regard to case, as Git's does.
+
+Only this branch's commits that no remote has yet are read, first parent only,
+so a merged branch contributes none of its own claims. That range is also the
+catch-up: a commit made while the daemon was down is honoured when it starts.
+Every pass is derived from the history and the files as they are. An item that
+a commit filed away and a person then brought back is left alone, because its
+archived record already names that commit.
+
+A trailer that cannot be acted on is reported on that worktree's board, in one
+sentence per commit, and as a count beside its name on the index:
+
+- the id is not in the session, open or archived;
+- the `Session-Done:` line is outside the last paragraph, so Git does not read
+  it as a trailer and nothing was closed;
+- filing the item away failed, for instance because a record of that name
+  already exists that day; this is tried again whenever the session or the
+  branch changes.
+
+The fix for the first two is to amend the commit. A report lasts while the
+commit is unpushed and goes once it is fixed or pushed, when it can no longer be
+amended without rewriting published history.
+
 ## Set up
 
 Nothing has to be set up. A command that touches the records creates the session

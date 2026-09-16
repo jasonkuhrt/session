@@ -216,6 +216,42 @@ export const ActivitySchema = Schema.Struct({
   kind: Schema.Literals(['claude', 'codex', 'items']),
 });
 
+/** The trailer a commit carries to say it finished an item. */
+export const doneTrailer = 'Session-Done';
+
+/**
+ * A `Session-Done` trailer the daemon could not act on.
+ *
+ * A commit that finishes an item ends its message with `Session-Done: <ID>`,
+ * and the daemon files that item as done when the commit lands. Only commits
+ * no remote has yet are read, because those are the ones a trailer can still
+ * be fixed on; a problem stops being reported once its commit is pushed.
+ *
+ * - `unknown`: no item in the session has this id, live or archived
+ * - `outside-trailers`: the message has a `Session-Done:` line that is not in
+ *   its final paragraph, so Git does not read it as a trailer at all
+ * - `close-failed`: the item exists and filing it away failed; `detail` says why
+ */
+export type TrailerProblem = {
+  /** Full hash of the commit carrying the trailer. */
+  commit: string;
+  /** The commit's subject line. */
+  subject: string;
+  /** The id the line named. */
+  id: string;
+  kind: 'unknown' | 'outside-trailers' | 'close-failed';
+  /** What the engine said, for `close-failed`; null otherwise. */
+  detail: string | null;
+};
+
+export const TrailerProblemSchema = Schema.Struct({
+  commit: Schema.String,
+  subject: Schema.String,
+  id: Schema.String,
+  kind: Schema.Literals(['unknown', 'outside-trailers', 'close-failed']),
+  detail: Schema.NullOr(Schema.String),
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -233,6 +269,8 @@ export type WorktreeSummary = {
   /** Set when another tracked worktree already owns this key; the row is not served. */
   conflict: string | null;
   agents: AgentsSummary;
+  /** Trailers on this worktree's unpushed commits that could not be acted on. */
+  trailerProblems: readonly TrailerProblem[];
 };
 
 export const WorktreeSummarySchema = Schema.Struct({
@@ -252,6 +290,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   activity: Schema.NullOr(ActivitySchema),
   conflict: Schema.NullOr(Schema.String),
   agents: AgentsSummarySchema,
+  trailerProblems: Schema.Array(TrailerProblemSchema),
 });
 
 /** The result of asking the daemon to focus a session's terminal. */
