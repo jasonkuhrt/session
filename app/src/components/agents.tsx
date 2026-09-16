@@ -97,7 +97,7 @@ function ClaudeRow({ session, now, onFocus }: {
         className={statusColumn}
       >
         <Dot tone={attention ? 'attention' : live ? 'on' : 'off'} />
-        <span className={cn('text-xs', attention ? 'font-medium text-amber-400' : 'text-muted-foreground')}>
+        <span className={cn('text-xs', attention ? 'font-medium text-attention' : 'text-muted-foreground')}>
           {held === null ? word : `${word} · ${held.duration}`}
         </span>
       </Explained>
@@ -115,7 +115,7 @@ function ClaudeRow({ session, now, onFocus }: {
       </span>
       {session.waitingFor === null || !attention
         ? null
-        : <p className="w-full text-xs text-amber-400 wrap-anywhere">{session.waitingFor}</p>}
+        : <p className="w-full text-xs text-attention wrap-anywhere">{session.waitingFor}</p>}
       {failure === null ? null : <p className="w-full text-xs text-destructive wrap-anywhere">{failure}</p>}
     </li>
   )

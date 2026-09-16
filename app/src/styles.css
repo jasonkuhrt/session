@@ -4,7 +4,7 @@
 @source "./**/*.{ts,tsx}";
 @custom-variant dark (&:is(.dark *));
 
-/* Stock shadcn base-nova neutral preset. */
+/* Stock shadcn base-nova preset, coloured with Tokyo Night (night) below. */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -21,6 +21,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-attention: var(--attention);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -63,6 +64,7 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  --attention: #8c6c3e;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -81,38 +83,61 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
+/*
+ * Tokyo Night, night variant: folke/tokyonight.nvim, values from its
+ * `extras/tailwindv4/tokyonight_night.css`. The roles follow the same plugin's
+ * web port (`extras/discord`): content on `bg`, raised and floating surfaces on
+ * `bg_dark`, lines and hover on `bg_highlight`, secondary text in `fg_dark`
+ * (the palette's dimmer greys fall below readable contrast on `bg`), links and
+ * the brand in `blue`, danger in `red`, and a person being waited on in the
+ * palette's warning colour, `yellow`.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --tn-bg: #1a1b26;
+  --tn-bg-dark: #16161e;
+  --tn-bg-highlight: #292e42;
+  --tn-fg: #c0caf5;
+  --tn-fg-dark: #a9b1d6;
+  --tn-fg-gutter: #3b4261;
+  --tn-blue: #7aa2f7;
+  --tn-red: #f7768e;
+  --tn-yellow: #e0af68;
+  --tn-green: #9ece6a;
+  --tn-teal: #1abc9c;
+  --tn-magenta: #bb9af7;
+
+  --background: var(--tn-bg);
+  --foreground: var(--tn-fg);
+  --card: var(--tn-bg-dark);
+  --card-foreground: var(--tn-fg);
+  --popover: var(--tn-bg-dark);
+  --popover-foreground: var(--tn-fg);
+  --primary: var(--tn-blue);
+  --primary-foreground: var(--tn-bg);
+  --secondary: var(--tn-bg-highlight);
+  --secondary-foreground: var(--tn-fg);
+  --muted: var(--tn-bg-highlight);
+  --muted-foreground: var(--tn-fg-dark);
+  --accent: var(--tn-bg-highlight);
+  --accent-foreground: var(--tn-fg);
+  --destructive: var(--tn-red);
+  --attention: var(--tn-yellow);
+  --border: var(--tn-bg-highlight);
+  --input: var(--tn-fg-gutter);
+  --ring: var(--tn-blue);
+  --chart-1: var(--tn-blue);
+  --chart-2: var(--tn-yellow);
+  --chart-3: var(--tn-green);
+  --chart-4: var(--tn-teal);
+  --chart-5: var(--tn-magenta);
+  --sidebar: var(--tn-bg-dark);
+  --sidebar-foreground: var(--tn-fg-dark);
+  --sidebar-primary: var(--tn-blue);
+  --sidebar-primary-foreground: var(--tn-bg);
+  --sidebar-accent: var(--tn-bg-highlight);
+  --sidebar-accent-foreground: var(--tn-fg);
+  --sidebar-border: var(--tn-bg-highlight);
+  --sidebar-ring: var(--tn-blue);
 }
 @layer base {
   * { @apply border-border outline-ring/50; }
@@ -151,6 +176,7 @@
 /* A link is part of the sentence it sits in, so its underline stays out of the
    way until the pointer is on it. */
 .markdown-reader a {
+  color: var(--primary);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: .25em;
