@@ -77,6 +77,14 @@ for a session live in `RULES.md` at the session root and are read first;
 supporting evidence belongs under `context/`; finished and abandoned items live
 under `archive/`, one file each, and are not loaded as active context.
 
+A commit can close items itself: end its message with a `Session-Done: <ID>`
+trailer and the daemon files that item as done the moment the commit is made,
+from whichever stage it is in, and writes the commit into the archived record.
+Only commits no remote has yet are read, so a trailer that names a missing item,
+or sits where Git does not read it as a trailer, is reported on that worktree's
+board and index row while it can still be amended, and goes once it is fixed or
+pushed.
+
 ## Agents on the board
 
 Each board also shows the coding agents at work in that worktree, as a read-only

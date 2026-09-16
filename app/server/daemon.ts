@@ -1,3 +1,4 @@
+import { closeSync, openSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { NodeServices } from '@effect/platform-node';
 import type { NodeServices as NodeServiceUnion } from '@effect/platform-node/NodeServices';
@@ -10,6 +11,7 @@ import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as Fiber from 'effect/Fiber';
 import * as FileSystem from 'effect/FileSystem';
+import * as ManagedRuntime from 'effect/ManagedRuntime';
 import * as Option from 'effect/Option';
 import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
@@ -17,12 +19,13 @@ import * as Stream from 'effect/Stream';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type { Activity, AgentsSummary, DaemonInfo, Stage, WorktreeSummary } from '../contract.ts';
+import type { Activity, AgentsSummary, DaemonInfo, Stage, TrailerProblem, WorktreeSummary } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { createRequestHandler, eventStream, focusResponse } from './http.ts';
 import { makeRepository } from './repository.ts';
+import { problemsKey, reconcileTrailers } from './trailers.ts';
 import {
   encodeWorktreeKey,
   ensureSession,
@@ -163,17 +166,30 @@ const spawnDaemon = (settings: DaemonSettings) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.makeDirectory(settings.directory, { recursive: true });
-    yield* Effect.sync(() => {
-      // Detached with its stdio on the log file: the daemon outlives this CLI.
-      // The same runtime that is running this CLI, whatever PATH says.
-      const child = spawn([process.execPath, daemonEntry], {
-        cwd: repositoryRoot,
-        stdin: 'ignore',
-        stdout: file(settings.logPath),
-        stderr: file(settings.logPath),
-        detached: true,
-      });
-      child.unref();
+    yield* Effect.try({
+      try: () => {
+        // One descriptor for both streams, opened once and emptied. Two opens of
+        // the file each kept an offset of their own and wrote over each other,
+        // and neither emptied it, so a restarted daemon's log still showed the
+        // previous daemon's lines after its own.
+        const log = openSync(settings.logPath, 'w');
+        try {
+          // Detached with its stdio on the log file: the daemon outlives this CLI.
+          // The same runtime that is running this CLI, whatever PATH says.
+          const child = spawn([process.execPath, daemonEntry], {
+            cwd: repositoryRoot,
+            stdin: 'ignore',
+            stdout: log,
+            stderr: log,
+            detached: true,
+          });
+          child.unref();
+        } finally {
+          // The child holds its own copy of the descriptor.
+          closeSync(log);
+        }
+      },
+      catch: (cause) => new DaemonError({ message: `Could not start the daemon; see ${settings.logPath}.`, cause }),
     });
   });
 
@@ -272,10 +288,26 @@ type Tracked = {
    *  which is not something a board being open can be a condition of. */
   readonly events: SessionEventSource;
   readonly watcher: Fiber.Fiber<void, never>;
+  /** Follows the worktree's reflog, which Git appends to on every commit. */
+  readonly commits: SessionEventSource;
+  readonly commitWatcher: Fiber.Fiber<void, never>;
+  /** The last reconcile's answer; derived, and replaced by every pass. */
+  trailerProblems: readonly TrailerProblem[];
 };
 
-const runNode = <A, E>(effect: Effect.Effect<A, E, NodeServiceUnion>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)));
+/**
+ * One set of Node services for the daemon's whole life. Providing the layer on
+ * every call built each service again, and the terminal service hooks stdin
+ * each time it is built, so a daemon holding a watcher per worktree ran past
+ * Node's listener limit. Built on first use, so a CLI that only imports this
+ * module never builds it.
+ */
+const nodeRuntime = ManagedRuntime.make(NodeServices.layer);
+
+const runNode = <A, E>(effect: Effect.Effect<A, E, NodeServiceUnion>) => nodeRuntime.runPromise(effect);
+
+/** A long-lived fiber on the daemon's services: a watcher, which ends only when interrupted. */
+const forkNode = (effect: Effect.Effect<void, never, NodeServiceUnion>) => nodeRuntime.runFork(effect);
 
 /**
  * Every task here spawns Git and reads a session, so the index must not fan out
@@ -315,9 +347,47 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
       Stream.runForEach(() => Effect.sync(() => events.changed())),
     );
   }).pipe(
-    Effect.provide(NodeServices.layer),
     Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
   );
+
+/**
+ * A worktree's own git dir, read the way Git reads it: `.git` is that
+ * directory in a main worktree, and in a linked one a file whose `gitdir:` line
+ * points into the main repository, relative to the worktree when it is not
+ * absolute. Reading it costs no process, which matters because every tracked
+ * worktree asks at once when the daemon starts.
+ */
+const gitDirectoryOf = (worktree: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const dotGit = join(worktree, '.git');
+    if (!(yield* fs.exists(dotGit))) return null;
+    if ((yield* fs.stat(dotGit)).type === 'Directory') return dotGit;
+    const pointer = /^gitdir: (.+)$/mu.exec(yield* fs.readFileString(dotGit))?.[1];
+    return pointer === undefined ? null : resolve(worktree, pointer.trim());
+  });
+
+/**
+ * A commit lands as one append to the worktree's reflog, `<git dir>/logs/HEAD`.
+ * Watching the directory rather than the file is what keeps the watch alive
+ * across Git rewriting it. A worktree with no reflog has no commits to follow.
+ */
+const watchCommits = (worktree: string, events: SessionEventSource) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const gitDirectory = yield* gitDirectoryOf(worktree);
+    if (gitDirectory === null) return;
+    const logs = join(gitDirectory, 'logs');
+    if (!(yield* fs.exists(logs))) return;
+    yield* fs.watch(logs, { recursive: false }).pipe(
+      Stream.runForEach(() => Effect.sync(() => events.changed())),
+    );
+  }).pipe(
+    Effect.catchCause((cause) => Effect.logError(`Commit watch stopped for ${worktree}`, cause)),
+  );
+
+/** A commit, an amend or a rebase writes the reflog in a burst. */
+const commitSettleMilliseconds = 500;
 
 /**
  * When this worktree last did something, and what did it: the newest of a
@@ -405,7 +475,7 @@ export const runDaemon = async () => {
         void listAgents().then(() => agentsEvents.changed());
       }, agentsDebounceMilliseconds);
     });
-    for (const directory of directories) Effect.runFork(watchDirectory(directory, changes));
+    for (const directory of directories) forkNode(watchDirectory(directory, changes));
   };
 
   const persist = () =>
@@ -419,14 +489,62 @@ export const runDaemon = async () => {
       }),
     );
 
+  /**
+   * Trailers are reconciled one worktree at a time: each pass spawns Git and
+   * may write a session, and twenty at once at startup is the fan-out the
+   * index already refuses. A worktree asked for again while it is queued runs
+   * once; asked for while it runs, it runs once more after.
+   */
+  const queuedReconciles = new Set<string>();
+  let draining = false;
+
+  const reconcileOne = async (entry: Tracked) => {
+    try {
+      const problems = await runNode(
+        reconcileTrailers({ worktree: entry.path, directory: join(entry.path, '.session') }),
+      );
+      if (problemsKey(problems) === problemsKey(entry.trailerProblems)) return;
+      entry.trailerProblems = problems;
+      entry.events.changed();
+      worktreeEvents.changed();
+    } catch (error) {
+      // The session could not be read; its board already says so. The last
+      // answer stands until a pass can be made.
+      console.error(`${entry.path}: trailers not reconciled: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  /** One at a time, each after the last: the queue may grow while one runs. */
+  const drainReconciles = async (): Promise<void> => {
+    const path: string | undefined = queuedReconciles.values().next().value;
+    if (path === undefined) {
+      draining = false;
+      return;
+    }
+    queuedReconciles.delete(path);
+    const entry = tracked.get(path);
+    if (entry !== undefined) await reconcileOne(entry);
+    return drainReconciles();
+  };
+
+  const requestReconcile = (path: string) => {
+    queuedReconciles.add(path);
+    if (draining) return;
+    draining = true;
+    void drainReconciles();
+  };
+
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
     // Out of the map first: the watcher's own finalizer asks whether this path
     // is still tracked, and the answer by then has to be no.
     tracked.delete(path);
+    queuedReconciles.delete(path);
     Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
+    Effect.runFork(entry.commitWatcher.pipe(Fiber.interrupt));
     entry.events.close();
+    entry.commits.close();
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -437,6 +555,7 @@ export const runDaemon = async () => {
     const conflict = owner === undefined ? null : `The key ${key} already belongs to ${owner.path}.`;
     if (conflict !== null) console.error(`${path}: ${conflict}`);
     const events = makeSessionEvents();
+    const commits = makeSessionEvents(commitSettleMilliseconds);
     tracked.set(path, {
       path,
       key,
@@ -444,8 +563,17 @@ export const runDaemon = async () => {
       conflict,
       handler: undefined,
       events,
-      watcher: Effect.runFork(watchDirectory(resolved.directory, events)),
+      watcher: forkNode(watchDirectory(resolved.directory, events)),
+      commits,
+      commitWatcher: forkNode(watchCommits(path, commits)),
+      trailerProblems: [],
     });
+    // A new commit is the obvious moment; a changed session is the other one,
+    // since it can make a named item exist or bring one back. The first pass is
+    // the catch-up for whatever landed while nothing was watching.
+    commits.subscribe(() => requestReconcile(path));
+    events.subscribe(() => requestReconcile(path));
+    requestReconcile(path);
   };
 
   /**
@@ -498,7 +626,6 @@ export const runDaemon = async () => {
         Stream.runForEach(() => Effect.promise(() => dropGoneUnder(parent))),
       );
     }).pipe(
-      Effect.provide(NodeServices.layer),
       Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${parent}`, cause)),
     );
 
@@ -516,7 +643,7 @@ export const runDaemon = async () => {
     }
     for (const parent of parents) {
       if (parentWatchers.has(parent)) continue;
-      parentWatchers.set(parent, Effect.runFork(watchParent(parent)));
+      parentWatchers.set(parent, forkNode(watchParent(parent)));
     }
   };
 
@@ -596,6 +723,8 @@ export const runDaemon = async () => {
       name: entry.metadata.name,
       path: entry.path,
       branch: entry.metadata.branch,
+      agents: overlay,
+      trailerProblems: entry.trailerProblems,
     };
     try {
       const metadata = await runNode(refreshWorktreeMetadata(entry.metadata));
@@ -621,7 +750,6 @@ export const runDaemon = async () => {
         lastChange: loaded.lastChange,
         activity: activityOf(overlay, loaded.lastChange),
         conflict: entry.conflict,
-        agents: overlay,
       };
     } catch (error) {
       // A row that cannot be read is a row that cannot be served; say why.
@@ -632,7 +760,6 @@ export const runDaemon = async () => {
         lastChange: null,
         activity: activityOf(overlay, null),
         conflict: entry.conflict ?? (error instanceof Error ? error.message : String(error)),
-        agents: overlay,
       };
     }
   };
@@ -642,6 +769,7 @@ export const runDaemon = async () => {
     const resolved = await runNode(resolveWorktreeSession(entry.path));
     await runNode(ensureSession(resolved));
     entry.handler = await createRequestHandler({
+      run: runNode,
       directory: resolved.directory,
       distDirectory,
       worktree: resolved.worktree,
@@ -652,6 +780,7 @@ export const runDaemon = async () => {
         focus: (pid) => runNode(focus(pid)),
         events: agentsEvents,
       },
+      trailers: () => entry.trailerProblems,
     });
     return entry.handler;
   };

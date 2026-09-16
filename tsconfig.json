@@ -244,7 +244,9 @@
             "options": {
               "diagnosticSeverity": {
                 // These imports provide pure path manipulation. Filesystem,
-                // subprocess, and HTTP effects remain behind Effect services.
+                // subprocess, and HTTP effects remain behind Effect services,
+                // except the daemon's one log descriptor, which Effect's file
+                // handle does not expose and a detached spawn needs.
                 "nodeBuiltinImport": "off"
               }
             }

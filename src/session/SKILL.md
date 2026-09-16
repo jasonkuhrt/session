@@ -110,6 +110,15 @@ stage the same way and records the stage it left, so a rejected candidate or an
 abandoned one stays on the record. An empty stage is an empty directory, and
 `session check` reports a session with no items left as empty.
 
+When a commit finishes an item, say so in the commit instead: end the message
+with a `Session-Done: <ID>` trailer, in the last paragraph with any other
+trailers, one per line or several ids separated by commas. The running daemon
+files the item as done when the commit is made, from whatever stage it is in,
+and writes the commit into the archived record. It reads only commits that no
+remote has yet, so a trailer the board reports as not applied is fixed by
+amending the commit before it is pushed. A commit that only moves an item along
+carries no trailer.
+
 ## Board and validation
 
 The board is a viewer with workflow actions. It shows the five lanes and it
