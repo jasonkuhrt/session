@@ -1,5 +1,4 @@
 import { LayoutGrid } from 'lucide-react'
-import type * as React from 'react'
 
 import type { Session } from '../../contract'
 import { Copyable } from './copyable'
@@ -7,21 +6,15 @@ import { Button } from './ui/button'
 import { WorktreePicker } from './worktree-picker'
 
 /**
- * The one header every worktree surface wears: which worktree and branch you
- * are looking at, a way to switch worktrees, and the way back out. A page
- * deeper than the board passes what leads back to it.
+ * The board's header: which worktree and branch you are looking at, a way to
+ * switch worktrees, and the way back to every session. A page deeper than the
+ * board carries its own trail instead, because by then where you are is a
+ * position rather than a pair of fields.
  */
-export function SessionHeader({
-  worktree,
-  back,
-}: {
-  worktree: Session['worktree'] | undefined
-  back?: React.ReactNode
-}) {
+export function SessionHeader({ worktree }: { worktree: Session['worktree'] | undefined }) {
   return (
     // The header wraps rather than pushing the page wider than the window.
     <header className="flex flex-wrap items-center gap-8 border-b px-6 py-5">
-      {back}
       {worktree ? (
         <dl className="flex gap-8 text-sm">
           <div>

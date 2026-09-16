@@ -14,6 +14,14 @@
         "rules": ["react-doctor/jsx-no-constructed-context-values"]
       },
       {
+        // The stock shadcn breadcrumb marks its current page with a span that
+        // carries `role="link"` and `aria-current`, because the page is not a
+        // destination to navigate to. The generated primitives are kept as
+        // generated.
+        "files": ["app/src/components/ui/breadcrumb.tsx"],
+        "rules": ["react-doctor/prefer-tag-over-role"]
+      },
+      {
         // `session open` posts its own worktree path to its own daemon over
         // loopback. The daemon tracks a path only after seeing that it is a
         // directory, and serves nothing beyond the boards it already owns.
