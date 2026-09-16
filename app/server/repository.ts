@@ -12,6 +12,8 @@ import {
   archiveDirectory,
   archiveFilePath,
   archivedItemId,
+  closedByCommitNote,
+  commitsThatClosed,
   parseStageDirectory,
   renderStageDirectory,
   type StageFileEntry,
@@ -36,6 +38,23 @@ const gitignorePath = '.gitignore';
 const gitignoreContent = '*\n';
 
 export type FileInventory = Record<string, string>;
+
+/** What one commit says it finished. */
+export type CommitClaim = {
+  readonly hash: string;
+  readonly subject: string;
+  readonly ids: ReadonlyArray<string>;
+};
+
+/**
+ * What became of one id a commit named. `honoured` covers an item filed now, an
+ * item already filed, and an item a person brought back after this commit
+ * filed it; none of those is anything to report.
+ */
+export type CommitOutcome =
+  | { readonly kind: 'honoured' }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'failed'; readonly message: string };
 
 export class RepositoryError extends Data.TaggedError('RepositoryError')<{
   readonly kind: 'conflict' | 'io' | 'not-found' | 'validation';
@@ -720,31 +739,7 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    /**
-     * File an item as done because a commit says it is, from whichever stage
-     * it is in: the commit is the evidence of completion, so the route through
-     * Execute that `completeItem` insists on does not apply. The record gains
-     * the commit, which is what says afterwards why the item left.
-     */
-    const closeItem = (input: {
-      readonly id: string;
-      readonly revision: string;
-      readonly commit: { readonly hash: string; readonly subject: string };
-    }) =>
-      mutate(input.revision, (loaded) =>
-        Effect.gen(function*() {
-          const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
-          return yield* fileAway({
-            id: input.id,
-            state: 'done',
-            loaded,
-            from: found.stage,
-            note: `### Closed by commit\n\n\`${input.commit.hash}\` ${input.commit.subject}`,
-          });
-        }),
-      );
-
-    /** The archived records, by the item each belongs to; unreadable names are skipped. */
+    /** The archived records, by the item each belongs to; names that were not filed here are skipped. */
     const archivedRecords = Effect.gen(function*() {
       const archive = absolute(archiveDirectory);
       if ((yield* pathType(archive)) !== 'Directory') return [];
@@ -756,18 +751,69 @@ export const makeRepository = (directory: string) =>
       return records;
     }).pipe(Effect.mapError(asRepositoryError));
 
-    /** Whether some archived record of this item names this commit. */
-    const archivedByCommit = (input: { readonly id: string; readonly hash: string }) =>
+    /** The commits the archived records of one item say closed it. */
+    const archivedClosings = (
+      records: ReadonlyArray<{ readonly id: string; readonly path: string }>,
+      id: string,
+    ) =>
       Effect.gen(function*() {
-        for (const record of yield* archivedRecords) {
-          if (record.id !== input.id) continue;
-          const content = yield* fs.readFileString(absolute(record.path)).pipe(
-            Effect.mapError(asRepositoryError),
-          );
-          if (content.includes(input.hash)) return true;
+        const hashes = new Set<string>();
+        for (const record of records) {
+          if (record.id !== id) continue;
+          const content = yield* fs.readFileString(absolute(record.path));
+          for (const hash of commitsThatClosed(content)) hashes.add(hash);
         }
-        return false;
-      });
+        return hashes;
+      }).pipe(Effect.mapError(asRepositoryError));
+
+    /**
+     * Honour what commits say they finished, oldest commit first, deciding
+     * each one on what the files say under the session's own lock. An open item
+     * is filed as done from whichever stage it is in, because the commit is the
+     * evidence of completion and the route through Execute that `completeItem`
+     * insists on does not apply; the item's text gains the commit's note, which
+     * is what says afterwards why it left. An item whose text or archived
+     * record already carries that note was filed by this commit before and has
+     * been brought back by a person, so it is left where it is.
+     *
+     * One read serves a pass that closes nothing, which is almost every pass.
+     */
+    const closeFromCommits = (claims: ReadonlyArray<CommitClaim>) =>
+      semaphore.withPermit(
+        Effect.gen(function*() {
+          let loaded = yield* loadUnlocked;
+          let archived = yield* archivedRecords;
+          const outcomes: Array<{ readonly claim: CommitClaim; readonly id: string; readonly outcome: CommitOutcome }> =
+            [];
+          const decide = (claim: CommitClaim, id: string) =>
+            Effect.gen(function*() {
+              const found = yield* attempt(() => findRequiredItem(loaded.stages, id)).pipe(Effect.option);
+              if (Option.isNone(found)) {
+                return archived.some((record) => record.id === id)
+                  ? ({ kind: 'honoured' } as const)
+                  : ({ kind: 'unknown' } as const);
+              }
+              const { item, stage } = found.value;
+              if (commitsThatClosed(item.body).has(claim.hash)) return { kind: 'honoured' } as const;
+              if ((yield* archivedClosings(archived, id)).has(claim.hash)) return { kind: 'honoured' } as const;
+              const outcome = yield* fileAway({ id, state: 'done', loaded, from: stage, note: closedByCommitNote(claim) })
+                .pipe(
+                  Effect.flatMap((changes) => applyChanges(changes).pipe(Effect.mapError(asRepositoryError))),
+                  Effect.match({
+                    onFailure: (error): CommitOutcome => ({ kind: 'failed', message: error.message }),
+                    onSuccess: (): CommitOutcome => ({ kind: 'honoured' }),
+                  }),
+                );
+              loaded = yield* loadUnlocked;
+              archived = yield* archivedRecords;
+              return outcome;
+            });
+          for (const claim of claims) {
+            for (const id of claim.ids) outcomes.push({ claim, id, outcome: yield* decide(claim, id) });
+          }
+          return outcomes;
+        }),
+      );
 
     /** Any stage, including EXECUTE, where it means the batch gave the item up. */
     const archiveItem = (input: { readonly id: string; readonly revision: string }) =>
@@ -901,10 +947,8 @@ export const makeRepository = (directory: string) =>
       queueBatch,
       startBatch,
       completeItem,
-      closeItem,
       archiveItem,
-      archivedRecords,
-      archivedByCommit,
+      closeFromCommits,
       inventory,
       lastChange,
       readMarkdownFile,

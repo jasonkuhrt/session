@@ -7,6 +7,7 @@ import { Board } from './components/board'
 import { BatchDialog, CompleteDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
 import { TrailerProblems } from './components/trailer-problems'
+import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
 import { useNow } from './lib/clock'
@@ -110,13 +111,13 @@ function App() {
         void load()
       }
     }
-    // The agents overlay is not the files, so it is never held back by a drag;
-    // nor are the trailers, which the daemon announces on the same stream.
+    // The agents overlay and the trailers are not the files, so neither is held
+    // back by a drag, and each is read only when its own answer changed.
     const refetchAgents = () => void loadAgents()
     const refetchTrailers = () => void loadTrailers()
     source.addEventListener('changed', refetch)
-    source.addEventListener('changed', refetchTrailers)
     source.addEventListener('agents', refetchAgents)
+    source.addEventListener('trailers', refetchTrailers)
     source.addEventListener('error', () => { droppedRef.current = true })
     source.addEventListener('open', () => {
       if (!droppedRef.current) return
@@ -150,9 +151,9 @@ function App() {
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
       <TrailerProblems problems={trailers} />
       {problem === null ? null : (
-        <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">
-          {problem}
-        </p>
+        <Alert variant="destructive" className="mx-6 mt-4 w-auto">
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
       {refreshed ? <p className="mx-6 mt-4 text-sm text-muted-foreground">{refreshedNotice}</p> : null}
       <main className="overflow-x-auto p-6">

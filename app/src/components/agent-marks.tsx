@@ -43,7 +43,8 @@ export function ActionIcon({ action, copied }: { action: Action; copied: boolean
  */
 export function Explained({ children, meaning, className }: {
   children: React.ReactNode
-  meaning: string
+  /** A sentence, or several as blocks of their own. */
+  meaning: React.ReactNode
   className?: string
 }) {
   return (

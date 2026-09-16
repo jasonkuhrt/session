@@ -12,7 +12,11 @@ export class SessionError extends Data.TaggedError('SessionError')<{
 /** An item before its file has a place: the path follows from the stage's order. */
 export type ItemDraft = Omit<Item, 'path'>;
 
-const itemHeading = /^## ([A-Za-z0-9][A-Za-z0-9._-]*) — (\S(?:.*\S)?)$/u;
+/** What an item id may be, as a pattern source for every reader that finds one in text. */
+export const itemIdSource = '[A-Za-z0-9][A-Za-z0-9._-]*';
+
+const itemHeading = new RegExp(`^## (${itemIdSource}) — (\\S(?:.*\\S)?)$`, 'u');
+const itemIdExactly = new RegExp(`^${itemIdSource}$`, 'u');
 const batchHeading = /^# (\S(?:.*\S)?)$/u;
 const fenceMarker = /^\s*(`{3,}|~{3,})/u;
 
@@ -47,7 +51,7 @@ export const validateBatchName = (stage: Stage, name: string): string => {
 
 /** Structure: what every reader of the files must be able to rely on. */
 export const validateItem = (stage: Stage, item: ItemDraft): void => {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(item.id)) {
+  if (!itemIdExactly.test(item.id)) {
     fail(`${stage}: invalid item ID ${quote(item.id)}.`);
   }
   if (item.title.trim() === '') fail(`${stage}/${item.id}: title is empty.`);

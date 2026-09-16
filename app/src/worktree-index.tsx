@@ -6,6 +6,8 @@ import { ActivityCell } from './components/activity-cell'
 import { Explained } from './components/agent-marks'
 import { AgentsCell } from './components/agents-cell'
 import { Copyable } from './components/copyable'
+import { TrailerCount } from './components/trailer-problems'
+import { Alert, AlertDescription } from './components/ui/alert'
 import { Badge } from './components/ui/badge'
 import { Skeleton } from './components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
@@ -13,7 +15,6 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { eventsUrl, IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
 import { hour, parentPath } from './lib/format'
-import { problemCount, problemSentence, trailerMeaning } from './lib/trailers'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
 
@@ -126,7 +127,9 @@ export function WorktreeIndex() {
           </h1>
         </header>
         {notice ? (
-          <p role="alert" className="mx-6 mt-4 rounded-lg border border-destructive bg-muted p-3 text-sm">{notice}</p>
+          <Alert variant="destructive" className="mx-6 mt-4 w-auto">
+            <AlertDescription>{notice}</AlertDescription>
+          </Alert>
         ) : null}
         {sourceNotices.length === 0
           ? null
@@ -179,7 +182,6 @@ export function WorktreeIndex() {
 /** The name, over the directory it sits in; the whole path stays on hover. */
 function NameCell({ row }: { row: WorktreeSummary }) {
   const parent = parentPath(row.path)
-  const problems = row.trailerProblems
   return (
     <TableCell title={row.path}>
       <span className="flex flex-wrap items-center gap-2">
@@ -191,16 +193,7 @@ function NameCell({ row }: { row: WorktreeSummary }) {
             {row.name}
           </a>
         ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
-        {/* A commit here says something its session cannot honour; the board
-            says which, and this says there is something to read there. */}
-        {problems.length === 0 ? null : (
-          <Badge
-            variant="destructive"
-            title={[trailerMeaning, ...problems.map((problem) => problemSentence(problem))].join('\n\n')}
-          >
-            {problemCount(problems.length)}
-          </Badge>
-        )}
+        <TrailerCount problems={row.trailerProblems} />
       </span>
       {parent === '' ? null : (
         <span className="block">
