@@ -16,7 +16,7 @@ export function Dot({ tone }: { tone: 'on' | 'attention' | 'off' | 'unknown' }) 
   // Attention is the one tone with a hue: it marks a live session waiting on a
   // person. `on` is live and working, `off` is a handle, `unknown` is unread.
   const fill = tone === 'attention'
-    ? 'bg-amber-400'
+    ? 'bg-attention'
     : tone === 'on'
     ? 'bg-primary'
     : tone === 'unknown'

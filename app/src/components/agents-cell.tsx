@@ -177,7 +177,7 @@ function SessionPill({ pill }: { pill: Pill }) {
         nativeButton={false}
         render={<Badge variant="outline" />}
         title={summarize(pill)}
-        className={cn('max-w-full cursor-pointer', pill.attention && 'font-medium text-amber-400')}
+        className={cn('max-w-full cursor-pointer', pill.attention && 'font-medium text-attention')}
       >
         <Dot tone={pill.tone} />
         <span className={pill.attention ? undefined : 'text-muted-foreground'}>{pill.word}</span>
@@ -195,7 +195,7 @@ function SessionPill({ pill }: { pill: Pill }) {
             </span>
             {pill.waitingFor === null
               ? null
-              : <span className="block text-amber-400 wrap-anywhere">{pill.waitingFor}</span>}
+              : <span className="block text-attention wrap-anywhere">{pill.waitingFor}</span>}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {pill.actions.map((action) =>
