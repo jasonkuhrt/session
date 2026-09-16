@@ -1,7 +1,9 @@
 import { closeSync, openSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { NodeServices } from '@effect/platform-node';
-import type { NodeServices as NodeServiceUnion } from '@effect/platform-node/NodeServices';
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as NodePath from '@effect/platform-node/NodePath';
 import { file, serve, spawn } from 'bun';
 import * as Cause from 'effect/Cause';
 import * as Clock from 'effect/Clock';
@@ -9,10 +11,13 @@ import * as Config from 'effect/Config';
 import * as Data from 'effect/Data';
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
+import * as Equal from 'effect/Equal';
 import * as Fiber from 'effect/Fiber';
 import * as FileSystem from 'effect/FileSystem';
+import * as Layer from 'effect/Layer';
 import * as ManagedRuntime from 'effect/ManagedRuntime';
 import * as Option from 'effect/Option';
+import type { PlatformError } from 'effect/PlatformError';
 import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
 import * as Stream from 'effect/Stream';
@@ -23,16 +28,15 @@ import type { Activity, AgentsSummary, DaemonInfo, Stage, TrailerProblem, Worktr
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { createRequestHandler, eventStream, focusResponse } from './http.ts';
-import { makeRepository } from './repository.ts';
-import { problemsKey, reconcileTrailers } from './trailers.ts';
+import { eventStream, focusResponse, makeRequestHandler } from './http.ts';
+import { makeRepository, type SessionRepository } from './repository.ts';
+import { reconcileTrailers } from './trailers.ts';
 import {
   encodeWorktreeKey,
   ensureSession,
   listGitWorktrees,
   refreshWorktreeMetadata,
   resolveWorktreeSession,
-  type WorktreeMetadata,
   type WorktreeSession,
 } from './worktree.ts';
 
@@ -280,7 +284,10 @@ export const openInBrowser = (url: string) =>
 type Tracked = {
   readonly path: string;
   readonly key: string;
-  readonly metadata: WorktreeMetadata;
+  /** Where the worktree's session and its Git state are, as resolved when it was tracked. */
+  readonly session: WorktreeSession;
+  /** The one repository the board and the trailer passes both write through, so they share a lock. */
+  readonly repository: SessionRepository;
   conflict: string | null;
   handler: ((request: Request) => Promise<Response>) | undefined;
   /** Every tracked worktree has these from the moment it is tracked: the
@@ -288,26 +295,36 @@ type Tracked = {
    *  which is not something a board being open can be a condition of. */
   readonly events: SessionEventSource;
   readonly watcher: Fiber.Fiber<void, never>;
-  /** Follows the worktree's reflog, which Git appends to on every commit. */
-  readonly commits: SessionEventSource;
-  readonly commitWatcher: Fiber.Fiber<void, never>;
-  /** The last reconcile's answer; derived, and replaced by every pass. */
+  /** The worktree's trailer passes; see `reconcileLoop`. */
+  readonly trailerLoop: Fiber.Fiber<void, never>;
+  /** The last pass's answer; derived, and replaced by every pass that changes it. */
   trailerProblems: readonly TrailerProblem[];
+  /** Pushed when that answer changes, and only then. */
+  readonly trailerEvents: SessionEventSource;
 };
 
 /**
- * One set of Node services for the daemon's whole life. Providing the layer on
- * every call built each service again, and the terminal service hooks stdin
- * each time it is built, so a daemon holding a watcher per worktree ran past
- * Node's listener limit. Built on first use, so a CLI that only imports this
- * module never builds it.
+ * The services the daemon uses, and only those. Node's full set also builds a
+ * terminal, which hooks stdin every time it is built and which a daemon never
+ * reads.
  */
-const nodeRuntime = ManagedRuntime.make(NodeServices.layer);
+const daemonServices = Layer.provideMerge(
+  NodeChildProcessSpawner.layer,
+  Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer),
+);
 
-const runNode = <A, E>(effect: Effect.Effect<A, E, NodeServiceUnion>) => nodeRuntime.runPromise(effect);
+type DaemonServices = Layer.Success<typeof daemonServices>;
+
+/**
+ * Built once for the daemon's whole life, on first use, so a CLI that only
+ * imports this module never builds it.
+ */
+const nodeRuntime = ManagedRuntime.make(daemonServices);
+
+const runNode = <A, E>(effect: Effect.Effect<A, E, DaemonServices>) => nodeRuntime.runPromise(effect);
 
 /** A long-lived fiber on the daemon's services: a watcher, which ends only when interrupted. */
-const forkNode = (effect: Effect.Effect<void, never, NodeServiceUnion>) => nodeRuntime.runFork(effect);
+const forkNode = (effect: Effect.Effect<void, never, DaemonServices>) => nodeRuntime.runFork(effect);
 
 /**
  * Every task here spawns Git and reads a session, so the index must not fan out
@@ -350,44 +367,49 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
     Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
   );
 
+/** A commit, an amend, a rebase or a push writes Git's logs in a burst. */
+const trailerSettle = '500 millis';
+
 /**
- * A worktree's own git dir, read the way Git reads it: `.git` is that
- * directory in a main worktree, and in a linked one a file whose `gitdir:` line
- * points into the main repository, relative to the worktree when it is not
- * absolute. Reading it costs no process, which matters because every tracked
- * worktree asks at once when the daemon starts.
+ * When a worktree's trailers are worth reading again: once at the start, to
+ * catch up on whatever landed while nothing was watching; on a change to its
+ * session, which can make a named item exist or bring one back; on a commit,
+ * which Git records in the worktree's own reflog; and on a push, which moves a
+ * remote-tracking ref in the logs the repository shares and is what takes a
+ * commit out of the unpushed range. A log that does not exist yet is not
+ * watched.
  */
-const gitDirectoryOf = (worktree: string) =>
+const trailerTriggers = (session: WorktreeSession) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
-    const dotGit = join(worktree, '.git');
-    if (!(yield* fs.exists(dotGit))) return null;
-    if ((yield* fs.stat(dotGit)).type === 'Directory') return dotGit;
-    const pointer = /^gitdir: (.+)$/mu.exec(yield* fs.readFileString(dotGit))?.[1];
-    return pointer === undefined ? null : resolve(worktree, pointer.trim());
+    const watched = [
+      { directory: session.directory, recursive: true },
+      ...(session.git === null ? [] : [
+        { directory: join(session.git.directory, 'logs'), recursive: false },
+        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true },
+      ]),
+    ];
+    const streams: Array<Stream.Stream<null, PlatformError>> = [Stream.succeed(null)];
+    for (const { directory, recursive } of watched) {
+      if (yield* fs.exists(directory)) {
+        streams.push(fs.watch(directory, { recursive }).pipe(Stream.map(() => null)));
+      }
+    }
+    return Stream.mergeAll(streams, { concurrency: 'unbounded' });
   });
 
 /**
- * A commit lands as one append to the worktree's reflog, `<git dir>/logs/HEAD`.
- * Watching the directory rather than the file is what keeps the watch alive
- * across Git rewriting it. A worktree with no reflog has no commits to follow.
+ * One worktree's trailer passes, one at a time: a burst of triggers is answered
+ * by one pass once it settles, and whatever happens during a pass by one pass
+ * after it.
  */
-const watchCommits = (worktree: string, events: SessionEventSource) =>
+const reconcileLoop = (session: WorktreeSession, pass: Effect.Effect<void>) =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem;
-    const gitDirectory = yield* gitDirectoryOf(worktree);
-    if (gitDirectory === null) return;
-    const logs = join(gitDirectory, 'logs');
-    if (!(yield* fs.exists(logs))) return;
-    yield* fs.watch(logs, { recursive: false }).pipe(
-      Stream.runForEach(() => Effect.sync(() => events.changed())),
-    );
+    const triggers = yield* trailerTriggers(session);
+    yield* triggers.pipe(Stream.debounce(trailerSettle), Stream.runForEach(() => pass));
   }).pipe(
-    Effect.catchCause((cause) => Effect.logError(`Commit watch stopped for ${worktree}`, cause)),
+    Effect.catchCause((cause) => Effect.logError(`Trailer passes stopped for ${session.directory}`, cause)),
   );
-
-/** A commit, an amend or a rebase writes the reflog in a burst. */
-const commitSettleMilliseconds = 500;
 
 /**
  * When this worktree last did something, and what did it: the newest of a
@@ -490,22 +512,18 @@ export const runDaemon = async () => {
     );
 
   /**
-   * Trailers are reconciled one worktree at a time: each pass spawns Git and
-   * may write a session, and twenty at once at startup is the fan-out the
-   * index already refuses. A worktree asked for again while it is queued runs
-   * once; asked for while it runs, it runs once more after.
+   * One trailer pass for a tracked worktree. It announces on the worktree's own
+   * trailers stream, never on its files stream, so a pass is not a trigger for
+   * the next one.
    */
-  const queuedReconciles = new Set<string>();
-  let draining = false;
-
-  const reconcileOne = async (entry: Tracked) => {
+  const reconcile = async (path: string) => {
+    const entry = tracked.get(path);
+    if (entry === undefined) return;
     try {
-      const problems = await runNode(
-        reconcileTrailers({ worktree: entry.path, directory: join(entry.path, '.session') }),
-      );
-      if (problemsKey(problems) === problemsKey(entry.trailerProblems)) return;
+      const problems = await runNode(reconcileTrailers({ worktree: entry.path, repository: entry.repository }));
+      if (Equal.equals(problems, entry.trailerProblems)) return;
       entry.trailerProblems = problems;
-      entry.events.changed();
+      entry.trailerEvents.changed();
       worktreeEvents.changed();
     } catch (error) {
       // The session could not be read; its board already says so. The last
@@ -514,66 +532,39 @@ export const runDaemon = async () => {
     }
   };
 
-  /** One at a time, each after the last: the queue may grow while one runs. */
-  const drainReconciles = async (): Promise<void> => {
-    const path: string | undefined = queuedReconciles.values().next().value;
-    if (path === undefined) {
-      draining = false;
-      return;
-    }
-    queuedReconciles.delete(path);
-    const entry = tracked.get(path);
-    if (entry !== undefined) await reconcileOne(entry);
-    return drainReconciles();
-  };
-
-  const requestReconcile = (path: string) => {
-    queuedReconciles.add(path);
-    if (draining) return;
-    draining = true;
-    void drainReconciles();
-  };
-
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
     // Out of the map first: the watcher's own finalizer asks whether this path
     // is still tracked, and the answer by then has to be no.
     tracked.delete(path);
-    queuedReconciles.delete(path);
     Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
-    Effect.runFork(entry.commitWatcher.pipe(Fiber.interrupt));
+    Effect.runFork(entry.trailerLoop.pipe(Fiber.interrupt));
     entry.events.close();
-    entry.commits.close();
+    entry.trailerEvents.close();
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
-  const insert = (path: string, resolved: WorktreeSession) => {
+  const insert = (path: string, session: WorktreeSession, repository: SessionRepository) => {
     if (tracked.has(path)) return;
-    const key = encodeWorktreeKey(resolved.worktree.name);
+    const key = encodeWorktreeKey(session.worktree.name);
     const owner = [...tracked.values()].find((entry) => entry.key === key);
     const conflict = owner === undefined ? null : `The key ${key} already belongs to ${owner.path}.`;
     if (conflict !== null) console.error(`${path}: ${conflict}`);
     const events = makeSessionEvents();
-    const commits = makeSessionEvents(commitSettleMilliseconds);
     tracked.set(path, {
       path,
       key,
-      metadata: resolved.worktree,
+      session,
+      repository,
       conflict,
       handler: undefined,
       events,
-      watcher: forkNode(watchDirectory(resolved.directory, events)),
-      commits,
-      commitWatcher: forkNode(watchCommits(path, commits)),
+      watcher: forkNode(watchDirectory(session.directory, events)),
+      trailerLoop: forkNode(reconcileLoop(session, Effect.promise(() => reconcile(path)))),
       trailerProblems: [],
+      trailerEvents: makeSessionEvents(0),
     });
-    // A new commit is the obvious moment; a changed session is the other one,
-    // since it can make a named item exist or bring one back. The first pass is
-    // the catch-up for whatever landed while nothing was watching.
-    commits.subscribe(() => requestReconcile(path));
-    events.subscribe(() => requestReconcile(path));
-    requestReconcile(path);
   };
 
   /**
@@ -679,11 +670,11 @@ export const runDaemon = async () => {
     }));
     const usable: string[] = [];
     for (const entry of checked) if (entry.usable) usable.push(entry.path);
-    const described = await mapWorktrees(usable, async (path) => ({
-      path,
-      resolved: await runNode(resolveWorktreeSession(path)),
-    }));
-    for (const entry of described) insert(entry.path, entry.resolved);
+    const described = await mapWorktrees(usable, async (path) => {
+      const session = await runNode(resolveWorktreeSession(path));
+      return { path, session, repository: await runNode(makeRepository(session.directory)) };
+    });
+    for (const entry of described) insert(entry.path, entry.session, entry.repository);
     syncParentWatchers();
   };
 
@@ -720,22 +711,16 @@ export const runDaemon = async () => {
     const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
     const base = {
       key: entry.key,
-      name: entry.metadata.name,
+      name: entry.session.worktree.name,
       path: entry.path,
-      branch: entry.metadata.branch,
+      branch: entry.session.worktree.branch,
       agents: overlay,
       trailerProblems: entry.trailerProblems,
     };
     try {
-      const metadata = await runNode(refreshWorktreeMetadata(entry.metadata));
+      const metadata = await runNode(refreshWorktreeMetadata(entry.session.worktree));
       const loaded = await runNode(
-        Effect.gen(function*() {
-          const repository = yield* makeRepository(join(entry.path, '.session'));
-          return {
-            session: yield* repository.load,
-            lastChange: yield* repository.lastChange,
-          };
-        }),
+        Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
       // The batch in Execute names the work under way; a batch with no name is
@@ -766,22 +751,19 @@ export const runDaemon = async () => {
 
   const handlerFor = async (entry: Tracked) => {
     if (entry.handler !== undefined) return entry.handler;
-    const resolved = await runNode(resolveWorktreeSession(entry.path));
-    await runNode(ensureSession(resolved));
-    entry.handler = await createRequestHandler({
-      run: runNode,
-      directory: resolved.directory,
+    await runNode(ensureSession(entry.session));
+    entry.handler = await runNode(makeRequestHandler({
+      repository: entry.repository,
       distDirectory,
-      worktree: resolved.worktree,
-      refreshWorktree: true,
+      worktree: entry.session.worktree,
       events: entry.events,
       agents: {
         read: () => overlayFor(entry.path),
         focus: (pid) => runNode(focus(pid)),
         events: agentsEvents,
       },
-      trailers: () => entry.trailerProblems,
-    });
+      trailers: { read: () => entry.trailerProblems, events: entry.trailerEvents },
+    }));
     return entry.handler;
   };
 

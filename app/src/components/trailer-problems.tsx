@@ -1,6 +1,8 @@
 import type { TrailerProblem } from '../../contract'
-import { problemSentence, trailerMeaning } from '../lib/trailers'
+import { problemCount, problemSentence, trailerMeaning } from '../lib/trailers'
 import { Explained } from './agent-marks'
+import { Alert, AlertDescription, AlertTitle } from './ui/alert'
+import { Badge } from './ui/badge'
 import { TooltipProvider } from './ui/tooltip'
 
 /**
@@ -13,22 +15,45 @@ export function TrailerProblems({ problems }: { problems: readonly TrailerProble
   if (problems.length === 0) return null
   return (
     <TooltipProvider>
-      <section
-        role="alert"
-        aria-label="Commit trailers not applied"
-        className="mx-6 mt-4 space-y-2 rounded-lg border border-destructive bg-muted p-3 text-sm"
-      >
-        <Explained meaning={trailerMeaning} className="w-fit">
-          <span className="font-medium">Commit trailers not applied</span>
-        </Explained>
-        <ul className="space-y-1">
-          {problems.map((problem) => (
-            <li key={`${problem.commit}:${problem.id}:${problem.kind}`} className="wrap-anywhere">
-              {problemSentence(problem)}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <Alert variant="destructive" aria-label="Commit trailers not applied" className="mx-6 mt-4 w-auto">
+        <AlertTitle>
+          <Explained meaning={trailerMeaning} className="w-fit">Commit trailers not applied</Explained>
+        </AlertTitle>
+        <AlertDescription>
+          <ul className="space-y-1">
+            {problems.map((problem) => (
+              <li key={`${problem.commit}:${problem.id}:${problem.kind}`} className="wrap-anywhere">
+                {problemSentence(problem)}
+              </li>
+            ))}
+          </ul>
+        </AlertDescription>
+      </Alert>
     </TooltipProvider>
+  )
+}
+
+/**
+ * The same problems on the index: a count beside the worktree's name, with the
+ * sentences one hover or one focus away, so there is something to read on its
+ * board.
+ */
+export function TrailerCount({ problems }: { problems: readonly TrailerProblem[] }) {
+  if (problems.length === 0) return null
+  return (
+    <Explained
+      meaning={
+        <span className="block space-y-2">
+          <span className="block">{trailerMeaning}</span>
+          {problems.map((problem) => (
+            <span key={`${problem.commit}:${problem.id}:${problem.kind}`} className="block">
+              {problemSentence(problem)}
+            </span>
+          ))}
+        </span>
+      }
+    >
+      <Badge variant="destructive">{problemCount(problems.length)}</Badge>
+    </Explained>
   )
 }

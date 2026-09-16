@@ -5,6 +5,7 @@ import { isBatchedStage } from '../contract.ts';
 import {
   fail,
   type ItemDraft,
+  itemIdSource,
   parseItemFile,
   quote,
   renderItem,
@@ -59,12 +60,37 @@ export const archiveFilePath = (input: {
 }): string =>
   `${archiveDirectory}/${input.day} ${input.id} — ${input.title.replaceAll('/', '-')} (${input.state}).md`;
 
+const archivedName = new RegExp(`^\\d{4}-\\d{2}-\\d{2} (${itemIdSource}) — `, 'u');
+
 /**
  * The item an archived record belongs to, read back from its name; null for a
  * file that was not named by `archiveFilePath`.
  */
-export const archivedItemId = (name: string): string | null =>
-  /^\d{4}-\d{2}-\d{2} ([A-Za-z0-9][A-Za-z0-9._-]*) — /u.exec(name)?.[1] ?? null;
+export const archivedItemId = (name: string): string | null => archivedName.exec(name)?.[1] ?? null;
+
+const closedHeading = '### Closed by commit';
+
+/**
+ * The note a commit that closed an item leaves in the item's own text: the
+ * commit's full hash and its subject, under a heading of its own. It travels
+ * with the item wherever the file goes, into the archive and back out of it.
+ */
+export const closedByCommitNote = (commit: { readonly hash: string; readonly subject: string }): string =>
+  `${closedHeading}\n\n\`${commit.hash}\` ${commit.subject}`;
+
+const closedLine = /^`([0-9a-f]{40,64})` /u;
+
+/** The commits whose notes an item's text carries: the reader of `closedByCommitNote`. */
+export const commitsThatClosed = (text: string): ReadonlySet<string> => {
+  const hashes = new Set<string>();
+  const lines = text.split('\n');
+  for (const [index, line] of lines.entries()) {
+    if (line.trimEnd() !== closedHeading) continue;
+    const hash = closedLine.exec(lines[index + 2] ?? '')?.[1];
+    if (hash !== undefined) hashes.add(hash);
+  }
+  return hashes;
+};
 
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {
   const match: RegExpExecArray = entryName.exec(name) ??

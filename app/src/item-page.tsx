@@ -6,6 +6,7 @@ import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { CompleteDialog } from './components/session-dialogs'
 import { StageControl } from './components/stage-control'
+import { Alert, AlertDescription } from './components/ui/alert'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -109,9 +110,9 @@ export function ItemPage({ id }: { id: string }) {
       <title>{session?.worktree ? `${id} · ${session.worktree.name} · Session` : `${id} · Session`}</title>
       <Trail id={id} worktree={session?.worktree?.name ?? null} />
       {problem === null ? null : (
-        <p role="alert" className={`${column} mt-6 rounded-lg border border-destructive bg-muted p-3 text-sm`}>
-          {problem}
-        </p>
+        <Alert variant="destructive" className={`${column} mt-6`}>
+          <AlertDescription>{problem}</AlertDescription>
+        </Alert>
       )}
       {refreshed
         ? <p className={`${column} mt-6 text-sm text-muted-foreground`}>{refreshedNotice}</p>

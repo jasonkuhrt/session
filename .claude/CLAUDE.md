@@ -14,16 +14,18 @@ Commands scaffold the session as they go, so nothing depends on an imperative
 setup step, and the CLI never migrates an old one. One daemon serves every
 tracked worktree's board.
 
-A `Session-Done: <ID>` trailer on a commit closes that item: the daemon follows
-each tracked worktree's reflog and files the item as done from any stage, with
-the commit written into its archived record. It reads only unpushed commits and
+A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
+each tracked worktree's session, its reflog and the repository's remote-tracking
+logs, and the engine files the named item as done from any stage, with the
+commit's note written into the item's text. It reads only unpushed commits and
 derives every pass from the history and the files, holding no state of its own;
-the commit in the record is what keeps a restored item from being filed again.
-Trailers it cannot act on are reported, never dropped.
+the note travelling with the item is what keeps a restored one from being filed
+again. Trailers it cannot act on are reported on their own event stream, never
+dropped.
 
-The daemon runs every effect on one Node runtime. Providing the services per call
-builds the terminal service each time, which hooks stdin, so do not provide
-`NodeServices.layer` anywhere on the server; pass the daemon's runner instead.
+The daemon builds its services once, from only the ones it uses: Node's full set
+includes a terminal, which hooks stdin every time it is built. Run server effects
+on the daemon's runtime; never provide a Node layer per call.
 
 The board carries a read-only agents overlay beside the records: the Claude Code
 sessions Claude Code's own listing reports, grouped to worktrees by working

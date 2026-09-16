@@ -1,13 +1,13 @@
 import { basename, join, resolve } from 'node:path';
-import type { NodeServices } from '@effect/platform-node/NodeServices';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
+import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { stageNames } from '../contract.ts';
 import type { AgentsSummary, FocusResult, Session, TrailerProblem } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
-import { makeRepository, RepositoryError } from './repository.ts';
+import { RepositoryError, type SessionRepository } from './repository.ts';
 import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
 
 const Stage = Schema.Literals(stageNames);
@@ -81,8 +81,6 @@ const writeIsSameOrigin = (request: Request): boolean => {
   return URL.canParse(origin) && new URL(origin).host === new URL(request.url).host;
 };
 
-const runRepository = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
-
 /**
  * Focusing a session's terminal, as both routers serve it: a board's under its
  * own prefix, and the index's at the root, where there is no board to scope it
@@ -99,7 +97,7 @@ export async function focusResponse(
     return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
   }
   try {
-    const input = await runRepository(decodeBody(request, FocusSession));
+    const input = await Effect.runPromise(decodeBody(request, FocusSession));
     return json(await focus(input.pid));
   } catch (error) {
     return errorResponse(error);
@@ -166,17 +164,18 @@ export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => 
 };
 
 /* eslint-disable max-lines-per-function -- The HTTP boundary is a small linear route table; splitting each route would add indirection without isolating behavior. */
-export const createRequestHandler = async (options: {
-  /**
-   * Runs an effect on the daemon's one set of Node services. The board does
-   * not build its own: a layer built per request hooks stdin each time.
-   */
-  readonly run: <A, E>(effect: Effect.Effect<A, E, NodeServices>) => Promise<A>;
-  readonly directory: string;
-  readonly distDirectory?: string | undefined;
-  readonly worktree?: WorktreeMetadata | undefined;
-  readonly refreshWorktree?: boolean | undefined;
-  readonly events?: SessionEvents | undefined;
+/**
+ * One worktree's board. Built as an effect so it runs every request on the
+ * services it was built with: the daemon's one set, and not a set built per
+ * request. The repository is the worktree's own, the same instance the daemon
+ * closes items through, so both queue on one lock.
+ */
+export const makeRequestHandler = (options: {
+  readonly repository: SessionRepository;
+  readonly distDirectory: string;
+  readonly worktree: WorktreeMetadata;
+  /** Pushed on every write under the worktree's `.session`. */
+  readonly events: SessionEvents;
   /**
    * The agents overlay for this worktree. The daemon owns the listing, its
    * cache and the window manager; the board's routes only hand them on.
@@ -188,105 +187,109 @@ export const createRequestHandler = async (options: {
   };
   /**
    * The `Session-Done` trailers on this worktree's unpushed commits that could
-   * not be acted on. The daemon reconciles them; the board only reads them.
+   * not be acted on, and the stream that says when that answer changed. The
+   * daemon reconciles them; the board only reads them.
    */
-  readonly trailers: () => ReadonlyArray<TrailerProblem>;
-}) => {
-  const repository = await options.run(makeRepository(options.directory));
-  const distDirectory = resolve(options.distDirectory ?? join(import.meta.dir, '../dist'));
-  const attachWorktree = async (session: Session): Promise<Session> => {
-    if (options.worktree === undefined) return session;
-    const worktree = options.refreshWorktree === true
-      ? await options.run(refreshWorktreeMetadata(options.worktree))
-      : options.worktree;
-    return { ...session, worktree };
+  readonly trailers: {
+    readonly read: () => ReadonlyArray<TrailerProblem>;
+    readonly events: SessionEvents;
   };
+}) =>
+  Effect.gen(function*() {
+    const run = Effect.runPromiseWith(yield* Effect.context<ChildProcessSpawner>());
+    const { repository } = options;
+    const distDirectory = resolve(options.distDirectory);
+    const attachWorktree = async (session: Session): Promise<Session> => ({
+      ...session,
+      worktree: await run(refreshWorktreeMetadata(options.worktree)),
+    });
 
-  return async (request: Request): Promise<Response> => {
-    try {
-      const url = new URL(request.url);
-      const mutation = request.method === 'PUT' || request.method === 'POST';
-      if (mutation && !writeIsSameOrigin(request)) {
-        return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
-      }
+    return async (request: Request): Promise<Response> => {
+      try {
+        const url = new URL(request.url);
+        const mutation = request.method === 'PUT' || request.method === 'POST';
+        if (mutation && !writeIsSameOrigin(request)) {
+          return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
+        }
 
-      if (request.method === 'GET' && url.pathname === '/api/session') {
-        return json(await attachWorktree(await runRepository(repository.load)));
-      }
+        if (request.method === 'GET' && url.pathname === '/api/session') {
+          return json(await attachWorktree(await run(repository.load)));
+        }
 
-      if (request.method === 'GET' && url.pathname === '/api/agents') {
-        return json(await options.agents.read());
-      }
+        if (request.method === 'GET' && url.pathname === '/api/agents') {
+          return json(await options.agents.read());
+        }
 
-      if (request.method === 'GET' && url.pathname === '/api/trailers') {
-        return json(options.trailers());
-      }
+        if (request.method === 'GET' && url.pathname === '/api/trailers') {
+          return json(options.trailers.read());
+        }
 
-      if (request.method === 'GET' && url.pathname === '/api/events') {
-        return eventStream([
-          { name: 'changed', events: options.events },
-          { name: 'agents', events: options.agents.events },
-        ]);
-      }
+        if (request.method === 'GET' && url.pathname === '/api/events') {
+          return eventStream([
+            { name: 'changed', events: options.events },
+            { name: 'agents', events: options.agents.events },
+            { name: 'trailers', events: options.trailers.events },
+          ]);
+        }
 
-      if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
-        let relativePath: string;
-        try {
-          relativePath = decodeURIComponent(url.pathname.slice('/files/'.length));
-        } catch {
+        if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
+          let relativePath: string;
+          try {
+            relativePath = decodeURIComponent(url.pathname.slice('/files/'.length));
+          } catch {
+            return json({ error: 'Not found.' }, { status: 404 });
+          }
+          const markdown = await run(repository.readMarkdownFile(relativePath));
+          return new Response(markdown, {
+            headers: { 'cache-control': 'no-store', 'content-type': 'text/markdown; charset=utf-8' },
+          });
+        }
+
+        if (request.method === 'POST' && url.pathname === '/api/move') {
+          const input = await run(decodeBody(request, MoveItem));
+          return json(await attachWorktree(await run(repository.moveItem(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/batch') {
+          const input = await run(decodeBody(request, QueueBatch));
+          return json(await attachWorktree(await run(repository.queueBatch(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/start') {
+          const input = await run(decodeBody(request, StartBatch));
+          return json(await attachWorktree(await run(repository.startBatch(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
+          return await focusResponse({ request, focus: options.agents.focus });
+        }
+        if (request.method === 'POST' && url.pathname === '/api/complete') {
+          const input = await run(decodeBody(request, CompleteItem));
+          return json(await attachWorktree(await run(repository.completeItem(input))));
+        }
+
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+          return json({ error: 'Method not allowed.' }, { status: 405 });
+        }
+
+        const requestedPath = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+        const staticPath = resolve(distDirectory, requestedPath);
+        if (staticPath !== distDirectory && !staticPath.startsWith(`${distDirectory}/`)) {
           return json({ error: 'Not found.' }, { status: 404 });
         }
-        const markdown = await runRepository(repository.readMarkdownFile(relativePath));
-        return new Response(markdown, {
-          headers: { 'cache-control': 'no-store', 'content-type': 'text/markdown; charset=utf-8' },
-        });
+        let staticFile = file(staticPath);
+        if (!(await staticFile.exists()) && !requestedPath.includes('.')) {
+          staticFile = file(join(distDirectory, 'index.html'));
+        }
+        // A page nested under the board (`item/<ID>`) resolves `./app.js` against
+        // its own directory. The bundle is one flat set of files at the root of
+        // dist, so a nested asset is that same file; `basename` is what keeps
+        // this from reaching anywhere else.
+        if (!(await staticFile.exists()) && requestedPath.includes('/')) {
+          staticFile = file(join(distDirectory, basename(requestedPath)));
+        }
+        if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
+        return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);
+      } catch (error) {
+        return errorResponse(error);
       }
-
-      if (request.method === 'POST' && url.pathname === '/api/move') {
-        const input = await runRepository(decodeBody(request, MoveItem));
-        return json(await attachWorktree(await runRepository(repository.moveItem(input))));
-      }
-      if (request.method === 'POST' && url.pathname === '/api/batch') {
-        const input = await runRepository(decodeBody(request, QueueBatch));
-        return json(await attachWorktree(await runRepository(repository.queueBatch(input))));
-      }
-      if (request.method === 'POST' && url.pathname === '/api/start') {
-        const input = await runRepository(decodeBody(request, StartBatch));
-        return json(await attachWorktree(await runRepository(repository.startBatch(input))));
-      }
-      if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
-        return await focusResponse({ request, focus: options.agents.focus });
-      }
-      if (request.method === 'POST' && url.pathname === '/api/complete') {
-        const input = await runRepository(decodeBody(request, CompleteItem));
-        return json(await attachWorktree(await runRepository(repository.completeItem(input))));
-      }
-
-      if (request.method !== 'GET' && request.method !== 'HEAD') {
-        return json({ error: 'Method not allowed.' }, { status: 405 });
-      }
-
-      const requestedPath = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      const staticPath = resolve(distDirectory, requestedPath);
-      if (staticPath !== distDirectory && !staticPath.startsWith(`${distDirectory}/`)) {
-        return json({ error: 'Not found.' }, { status: 404 });
-      }
-      let staticFile = file(staticPath);
-      if (!(await staticFile.exists()) && !requestedPath.includes('.')) {
-        staticFile = file(join(distDirectory, 'index.html'));
-      }
-      // A page nested under the board (`item/<ID>`) resolves `./app.js` against
-      // its own directory. The bundle is one flat set of files at the root of
-      // dist, so a nested asset is that same file; `basename` is what keeps
-      // this from reaching anywhere else.
-      if (!(await staticFile.exists()) && requestedPath.includes('/')) {
-        staticFile = file(join(distDirectory, basename(requestedPath)));
-      }
-      if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
-      return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);
-    } catch (error) {
-      return errorResponse(error);
-    }
-  };
-};
+    };
+  });
 /* eslint-enable max-lines-per-function */

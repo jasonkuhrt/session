@@ -13,6 +13,12 @@ export type WorktreeMetadata = {
 export type WorktreeSession = {
   readonly directory: string;
   readonly worktree: WorktreeMetadata;
+  /**
+   * Where Git keeps this worktree's own state (its HEAD and reflog) and the
+   * state it shares with every worktree of the repository (branches and
+   * remote-tracking refs); null outside a Git worktree.
+   */
+  readonly git: { readonly directory: string; readonly common: string } | null;
 };
 
 export class WorktreeError extends Data.TaggedError('WorktreeError')<{
@@ -75,6 +81,21 @@ export const refreshWorktreeMetadata = (metadata: WorktreeMetadata) =>
     return { ...metadata, branch: current.branch };
   });
 
+/**
+ * Where Git puts a path: the worktree it belongs to, that worktree's own Git
+ * state, and the state it shares with the repository's other worktrees. One
+ * question, three answers, one per line, all absolute; null outside Git.
+ */
+const locateGit = (start: string) =>
+  runGit(start, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-dir', '--git-common-dir']).pipe(
+    Effect.map((located) => {
+      const [topLevel, directory, common] = located.stdout.split('\n');
+      return located.exitCode !== 0 || topLevel === undefined || directory === undefined || common === undefined
+        ? null
+        : { topLevel, git: { directory, common } };
+    }),
+  );
+
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
     const candidate = resolve(input);
@@ -82,15 +103,16 @@ export const resolveWorktreeSession = (input: string) =>
     // worktree it belongs to is its parent.
     const isSessionDirectory = basename(candidate) === '.session';
     const start = isSessionDirectory ? dirname(candidate) : candidate;
-    const topLevel = yield* runGit(start, ['rev-parse', '--show-toplevel']);
-    if (topLevel.exitCode !== 0) {
+    const located = yield* locateGit(start);
+    if (located === null) {
       return {
         directory: isSessionDirectory ? candidate : join(start, '.session'),
         worktree: { name: basename(start), path: start, branch: null },
+        git: null,
       } satisfies WorktreeSession;
     }
 
-    const worktreePath = resolve(topLevel.stdout);
+    const worktreePath = resolve(located.topLevel);
     const worktrees = yield* listGitWorktrees(worktreePath);
     const mainWorktree = worktrees[0];
     const current = worktrees.find((worktree) => worktree.path === worktreePath);
@@ -117,6 +139,7 @@ export const resolveWorktreeSession = (input: string) =>
         path: worktreePath,
         branch: current.branch,
       },
+      git: located.git,
     } satisfies WorktreeSession;
   });
 
