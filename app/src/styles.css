@@ -120,20 +120,62 @@
 }
 
 /* The reader is app content; controls keep the stock preset above. */
-.markdown-reader { max-width: 48rem; line-height: 1.75; }
+/*
+ * The reading view of an item. The measure belongs to the page's column, so
+ * this owns only the reading itself: a size that does not ask to be leaned
+ * into, a line height with room between lines, and space above a heading that
+ * says a new section began without drawing a thing.
+ */
+.markdown-reader { font-size: 1.0625rem; line-height: 1.75; }
 .markdown-reader > :first-child { margin-top: 0; }
-.markdown-reader :is(h1,h2,h3,h4) { margin-block: 1.5em .5em; font-weight: 600; line-height: 1.3; }
-.markdown-reader h1 { font-size: 1.75rem; }
-.markdown-reader h2 { font-size: 1.5rem; }
-.markdown-reader h3 { font-size: 1.125rem; }
-.markdown-reader :is(p,ul,ol,pre,blockquote,table) { margin-block: 1em; }
-.markdown-reader :is(ul,ol) { padding-left: 1.5em; }
+.markdown-reader :is(h1,h2,h3,h4) {
+  margin-block: 2em .55em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+}
+/* A record's sections are written as `###`, so that is the level that has to
+   read as a section; `##` above it is rare and `####` is an aside inside one. */
+.markdown-reader h1 { font-size: 1.6rem; }
+.markdown-reader h2 { font-size: 1.35rem; }
+.markdown-reader h3 { font-size: 1.2rem; }
+.markdown-reader h4 { font-size: 1.0625rem; color: var(--muted-foreground); }
+.markdown-reader :is(p,ul,ol,pre,blockquote,table) { margin-block: 1.15em; }
+.markdown-reader p { text-wrap: pretty; }
+.markdown-reader :is(ul,ol) { padding-left: 1.4em; }
+.markdown-reader li { margin-block: .4em; }
+.markdown-reader li::marker { color: color-mix(in oklch, var(--muted-foreground) 70%, transparent); }
 .markdown-reader ul { list-style: disc; }
 .markdown-reader ol { list-style: decimal; }
-.markdown-reader a { text-decoration: underline; text-underline-offset: .2em; }
-.markdown-reader code { background: var(--muted); padding: .1em .25em; border-radius: var(--radius-sm); font-size: .875em; }
-.markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); }
-.markdown-reader pre code { padding: 0; }
+/* A link is part of the sentence it sits in, so its underline stays out of the
+   way until the pointer is on it. */
+.markdown-reader a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .25em;
+  text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+  transition: text-decoration-color 120ms ease;
+}
+.markdown-reader a:hover { text-decoration-color: currentColor; }
+.markdown-reader code { background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
+.markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); font-size: .9em; line-height: 1.6; }
+.markdown-reader pre code { padding: 0; background: none; font-size: 1em; }
 .markdown-reader blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
-.markdown-reader table { width: 100%; border-collapse: collapse; }
+.markdown-reader table { width: 100%; border-collapse: collapse; font-size: .95em; }
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }
+
+/* Evidence is the long tail of an item: present, one click away, and never in
+   the way of the argument above it. */
+.evidence-panel { margin-top: 2.5em; border-top: 1px solid var(--border); padding-top: 1em; }
+.evidence-panel > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: .875rem;
+  color: var(--muted-foreground);
+  width: fit-content;
+}
+.evidence-panel > summary::-webkit-details-marker { display: none; }
+.evidence-panel > summary::before { content: "▸ "; }
+.evidence-panel[open] > summary::before { content: "▾ "; }
+.evidence-panel > summary:hover { color: var(--foreground); }
