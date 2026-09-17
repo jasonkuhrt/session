@@ -79,12 +79,15 @@ inside: `QUEUE/010-Email backend peel/010-BE-16.md`. The item file is the same a
 in Batch, and it keeps the Outcome and Acceptance sections it carried there. The
 batch an item belongs to is its directory, so nothing inside the file names it,
 and every item in these two stages belongs to a batch. Batch names are non-empty
-and trimmed, contain no `/`, and are unique within a stage.
+and trimmed, contain no `/`, and are unique across the two stages together,
+because a batch keeps its name when it starts.
 
 Queue holds the composed batches in order, none of them started. Execute holds
-the one running batch and is frozen. `session start` is the only way in: it
-requires Execute to be empty and carries the first Queue batch across under its
-own name. Content can be clarified without expanding the selected item set.
+the batches that have been started, each of them frozen. `session start` is the
+only way in: it carries the first Queue batch across under its own name, beside
+the batches already running, and a batch name no other batch in Queue or Execute
+is using is what keeps the two apart. Content can be clarified without expanding
+the selected item set.
 `session done` is the way out for finished work and `session archive` for work
 that is abandoned; both file the item under `archive/`.
 
@@ -140,6 +143,11 @@ QUEUE/
     020-BE-12.md
   020-Second batch/
     010-DEV-3.md
+EXECUTE/
+  010-CI cache unification/
+    010-HB-2.md
+  020-Board polish/
+    010-HB-7.md
 ```
 
 - Every entry is a number, a hyphen, then the rest: for a file the rest is
@@ -156,7 +164,8 @@ QUEUE/
   when it can fit an entry between them and renumbers the whole directory from
   `010` otherwise, so gaps are normal and hand-renumbering is unnecessary.
 - Emptying a batch removes its directory on the next write; the stage directory
-  itself stays, empty.
+  itself stays, empty. A batch that starts is appended, so the batch directories
+  already in Execute keep their numbers.
 
 ## Evidence and migration
 

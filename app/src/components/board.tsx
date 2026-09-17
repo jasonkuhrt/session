@@ -79,7 +79,6 @@ export function Board(props: BoardProps) {
     if (source.stage === target.stage) return true
     return moveAvailability(source.item, source.stage, target.stage).enabled
   }
-  const executeOccupied = props.stages.some(stage => stage.stage === 'EXECUTE' && stage.items.length > 0)
 
   return (
     <TooltipProvider>
@@ -110,7 +109,7 @@ export function Board(props: BoardProps) {
       >
         <div className="grid min-w-300 grid-cols-5 items-start gap-4">
           {props.stages.map(stage => (
-            <Lane key={stage.stage} {...props} stage={stage} accepts={accepts} executeOccupied={executeOccupied} />
+            <Lane key={stage.stage} {...props} stage={stage} accepts={accepts} />
           ))}
         </div>
       </DragDropProvider>
@@ -121,10 +120,9 @@ export function Board(props: BoardProps) {
 type LaneProps = BoardProps & {
   stage: StageFile
   accepts: (id: unknown, target: DropTarget) => boolean
-  executeOccupied: boolean
 }
 
-function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
+function Lane({ stage, accepts, ...props }: LaneProps) {
   const { ref, isDropTarget } = useDroppable({
     id: `lane:${stage.stage}`,
     type: 'lane',
@@ -134,11 +132,12 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
     disabled: props.pending,
   })
   const meta = stageMeta[stage.stage]
-  // A control appears when it can act. An empty selection and an occupied
-  // Execute are both visible in the lanes themselves, so a disabled button
-  // carrying the reason would say a second time what the board already shows.
+  // A control appears when it can act. An empty selection is visible in the
+  // lane itself, so a disabled button carrying the reason would say a second
+  // time what the board already shows. A batch starts whatever else is running:
+  // Execute holds as many batches as have been started.
   const canQueue = stage.stage === 'BATCH' && props.selectedBatchIds.size > 0
-  const canStart = stage.stage === 'QUEUE' && stage.items.length > 0 && !executeOccupied
+  const canStart = stage.stage === 'QUEUE' && stage.items.length > 0
   return (
     <section ref={ref} className="min-w-0 space-y-3">
       <div className="flex items-center gap-2">
@@ -179,7 +178,7 @@ function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
           >
             Start next batch
           </TooltipTrigger>
-          <TooltipContent>Move the first queued batch into Execute.</TooltipContent>
+          <TooltipContent>Move the first queued batch into Execute, where it runs beside any batch already there.</TooltipContent>
         </Tooltip>
       ) : null}
       <div className={cn('min-h-32 space-y-3 rounded-lg', isDropTarget && 'outline-2 outline-primary outline-dashed')}>
@@ -212,7 +211,8 @@ function WorkflowCard({ item, index, stage, group, accepts, ...props }: BoardPro
   group: string
   accepts: (id: unknown, target: DropTarget) => boolean
 }) {
-  // Execute is frozen: its cards leave only by completing, never by dragging.
+  // Every batch in Execute is frozen: its cards leave only by completing,
+  // never by dragging.
   const frozen = stage === 'EXECUTE'
   const { ref, isDropTarget, isDragSource } = useSortable({
     id: item.id,

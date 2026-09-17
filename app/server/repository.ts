@@ -508,6 +508,18 @@ export const makeRepository = (directory: string) =>
             for (const item of state.items) validateItemSections(state.stage, item);
           }
         });
+        // A batch keeps its name when it starts, so one name in both batched
+        // stages is two batches that cannot both be told apart later. Loading
+        // stays permissive about it, as it does about sections, so a session
+        // edited by hand still opens while it is being fixed.
+        yield* attempt(() => {
+          const queued = new Set(stageOf(loaded, 'QUEUE').items.map((item) => item.batch));
+          for (const item of stageOf(loaded, 'EXECUTE').items) {
+            if (item.batch !== null && queued.has(item.batch)) {
+              fail(`Batch ${quote(item.batch)} is in both QUEUE and EXECUTE; rename one of them.`);
+            }
+          }
+        });
         return toSession(loaded);
       }),
     );
@@ -626,10 +638,18 @@ export const makeRepository = (directory: string) =>
           }
           const pool = stageOf(loaded, 'BATCH');
           const queue = stageOf(loaded, 'QUEUE');
-          if (queue.items.some((item) => item.batch === name)) {
+          const execute = stageOf(loaded, 'EXECUTE');
+          // A name has to be free in both batched stages, because `start`
+          // carries the batch from one into the other under this same name.
+          const taken = queue.items.some((item) => item.batch === name)
+            ? 'QUEUE'
+            : execute.items.some((item) => item.batch === name)
+            ? 'EXECUTE'
+            : null;
+          if (taken !== null) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `QUEUE already has a batch named ${quote(name)}.`,
+              message: `${taken} already has a batch named ${quote(name)}.`,
             });
           }
           const available = new Map(pool.items.map((item) => [item.id, item]));
@@ -649,17 +669,17 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
+    /**
+     * The first queued batch starts beside whatever is already running: EXECUTE
+     * holds any number of batches, each frozen on its own, and a batch leaves
+     * only as its items are completed or archived. The started batch is
+     * appended, so the batch directories already there keep their prefixes.
+     */
     const startBatch = (input: { readonly revision: string }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const queue = stageOf(loaded, 'QUEUE');
           const execute = stageOf(loaded, 'EXECUTE');
-          if (execute.items.length > 0) {
-            return yield* new RepositoryError({
-              kind: 'conflict',
-              message: 'Complete the current EXECUTE batch first.',
-            });
-          }
           const first = queue.items[0];
           if (first === undefined) {
             return yield* new RepositoryError({
@@ -667,7 +687,17 @@ export const makeRepository = (directory: string) =>
               message: 'QUEUE is empty; queue a batch first.',
             });
           }
-          const name = first.batch;
+          // Loading validated that every QUEUE item belongs to a batch.
+          const name = first.batch!;
+          // Two batch directories of one name would read as one batch, so a
+          // name a hand-edited EXECUTE already runs is refused rather than
+          // merged. `queueBatch` keeps this from arising through the CLI.
+          if (execute.items.some((item) => item.batch === name)) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: `EXECUTE already runs a batch named ${quote(name)}; rename one of them first.`,
+            });
+          }
           const starting: ItemDraft[] = [];
           const waiting: ItemDraft[] = [];
           for (const item of queue.items) {
@@ -676,7 +706,10 @@ export const makeRepository = (directory: string) =>
           }
           return yield* attempt(() => {
             for (const item of starting) validateItemSections('EXECUTE', item);
-            return [...stageChanges(queue, waiting), ...stageChanges(execute, starting)];
+            return [
+              ...stageChanges(queue, waiting),
+              ...stageChanges(execute, [...execute.items, ...starting]),
+            ];
           });
         }),
       );

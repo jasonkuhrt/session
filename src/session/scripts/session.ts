@@ -55,7 +55,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   add <STAGE> <ID> "<title>"            add an item, body on stdin
   mv <ID> <STAGE> [--before ID]         move an item, or reorder it where it is
   batch "<name>" <ID...>                queue BATCH items as a named batch
-  start                                 move the first queued batch into EXECUTE
+  start                                 move the first queued batch into EXECUTE, beside any already running
   done <ID>                             complete an EXECUTE item
   archive <ID>                          file an item away, from any stage
   open                                  ensure the daemon and open this worktree's board`;
@@ -270,10 +270,12 @@ const start = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.load;
     const started = yield* repository.startBatch({ revision: session.revision });
-    const execute = stageIn(started, 'EXECUTE');
-    yield* Console.log(
-      `Started ${quote(execute.items[0]?.batch ?? '')} (${counted(execute.items.length, 'item')})`,
-    );
+    // EXECUTE may already hold other batches, so the line names the one that
+    // just started: the batch Queue held first, which the revision check proves
+    // is the batch that moved.
+    const name = stageIn(session, 'QUEUE').items[0]!.batch!;
+    const items = stageIn(started, 'EXECUTE').items.filter((item) => item.batch === name);
+    yield* Console.log(`Started ${quote(name)} (${counted(items.length, 'item')})`);
   });
 
 const complete = (options: Options, repository: SessionRepository) =>

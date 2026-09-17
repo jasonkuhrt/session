@@ -15,7 +15,7 @@ ls [STAGE]                 one line per item: ID, path, title; the path encodes 
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
 mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute
 batch "<name>" <ID...>     compose a named batch from Batch items and append it to Queue
-start                      move the first Queue batch into Execute
+start                      move the first Queue batch into Execute, beside the batches already running
 done <ID>                  finish an Execute item into archive/
 archive <ID>               archive an item from any stage into archive/, recording the stage
 open                       ensure the daemon and this worktree, then open its board
@@ -46,8 +46,11 @@ end of the stage. The target stage's required sections are validated on arrival,
 so rewrite the item file first and then move it; that is the ordinary way an
 item leaves Design for Batch.
 
-`batch` takes items that are all in Batch. `start` requires Execute to be empty
-and keeps the batch's name.
+`batch` takes items that are all in Batch, under a name no batch in Queue or
+Execute already carries. `start` moves the first Queue batch into Execute under
+that same name, beside the batches already running there, and numbers it after
+them; Execute holds as many batches as have been started, each frozen on its
+own.
 
 ## Finish and archive
 
@@ -195,7 +198,7 @@ and the first `no` drops the row, rewrites the state file and pushes a
 the route the CLI registers through.
 
 The index at `/` lists the tracked worktrees: name, branch, the agents at work
-in it, the item counts per stage, and activity. The batch in Execute is named
+in it, the item counts per stage, and activity. Every batch in Execute is named
 beside that stage's count, which is the only place a batch is named, and a stage
 holding nothing renders an empty cell, so the five columns read as a pipeline by
 what is in them. Each board sits under `/w/<key>/`, where the key is the
@@ -225,12 +228,12 @@ or in the editor.
 Select ready items in the Batch lane and use "Queue batch", which appears once
 something is selected, to name them and append the batch to Queue. The Queue
 lane groups cards under their batch in file order and offers "Start next
-batch" while there is a batch to start and Execute is empty. Neither button is
-ever drawn disabled with a reason: an empty selection and an occupied Execute
-are already visible in the lanes themselves. Execute is frozen: its cards can
-only be completed, which files them under `archive/`. Nothing drops into Queue
-or Execute; a Queue card can be reordered inside its own batch or dragged back
-to Batch, Design, or Triage.
+batch" while there is a batch to start; the Execute lane groups its cards the
+same way, one heading per running batch. Neither button is ever drawn disabled
+with a reason: an empty selection is already visible in the lane itself. Every
+batch in Execute is frozen: its cards can only be completed, which files them
+under `archive/`. Nothing drops into Queue or Execute; a Queue card can be
+reordered inside its own batch or dragged back to Batch, Design, or Triage.
 
 The board follows the files. The daemon watches that worktree's `.session` and
 pushes an event when anything under it changes, and the board refetches the
@@ -387,8 +390,9 @@ carry the whole record and remove its old file; never leave duplicate IDs.
 
 `check` rejects malformed records, duplicate IDs, missing stage-specific
 sections, `# ` headings inside item files, Queue or Execute items belonging to no
-batch, entries whose names break the numbering pattern, a missing `.gitignore`, a
-`.session` that is a symlink, and a leftover `STAGE.md`. It does not judge
+batch, one batch name held by both Queue and Execute, entries whose names break
+the numbering pattern, a missing `.gitignore`, a `.session` that is a symlink,
+and a leftover `STAGE.md`. It does not judge
 acceptance criteria or user approval. An empty stage is an empty directory.
 
 ## App development

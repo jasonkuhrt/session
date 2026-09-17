@@ -15,14 +15,16 @@ batch composition, and when execution begins.
 | `DESIGN` | Accepted work with open questions. | Outcome and acceptance are settled. |
 | `BATCH` | Settled work, a flat pool ready to batch. | The user composes it into a queued batch. |
 | `QUEUE` | Named batches in order, composed, not started. | The user starts the first batch. |
-| `EXECUTE` | The one running batch. Frozen. | Each item completes, or the user changes the batch. |
+| `EXECUTE` | The running batches, each frozen. | Each item completes, or the user changes a batch. |
 
 Those are the stage names, in that order, in the files, the CLI, and the UI.
 Finished designs leave Design immediately. Readiness does not authorize
 execution: ready items wait in Batch, composed batches wait in Queue, and
-starting the first one is the user's explicit act. Work that arrives while a
-batch is running waits in Batch. Do not add it to Execute without the user's
-explicit change of scope.
+starting the first one is the user's explicit act. Execute holds every batch the
+user has started, each frozen on its own and completing at its own pace. Work
+that arrives while a batch is running waits in Batch. Do not add it to a running
+batch, and do not start another batch, without the user's explicit change of
+scope.
 
 ## The files are the source of truth
 
