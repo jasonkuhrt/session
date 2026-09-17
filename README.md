@@ -6,7 +6,8 @@ Execute**.
 The board shows the same Markdown files you open in your editor, and moves them
 through the stages. Each item is one file and lives in one stage. Finished
 designs wait in Batch, the batches you compose wait in Queue, and starting one
-does not absorb new work that arrives later.
+does not absorb new work that arrives later: Execute holds every batch you have
+started, each frozen on its own.
 
 ## Install
 
@@ -66,7 +67,7 @@ Each card is a link to its item's own page at `/w/<worktree name>/item/<ID>`,
 which reads the Markdown at a reading width and carries the same workflow
 actions, so a long item is a page you can link someone to rather than a panel.
 The board is a viewer with workflow actions: move an item, compose a batch,
-start the queued batch, complete an item. It follows the files as they
+start the next queued batch, complete an item. It follows the files as they
 change, over a stream the daemon pushes, and pauses while a card is being
 dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.

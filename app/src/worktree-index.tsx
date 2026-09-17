@@ -249,20 +249,20 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
 }
 
 /**
- * How much is in one stage, and, in Execute, which batch it is. A count of zero
- * renders nothing at all: a column of zeroes is a column of nothing to do, and
- * the five of them read as a pipeline by what is actually in them.
+ * How much is in one stage, and, in Execute, which batches those are. A count of
+ * zero renders nothing at all: a column of zeroes is a column of nothing to do,
+ * and the five of them read as a pipeline by what is actually in them.
  */
-function CountCell({ stage, count, executing }: { stage: Stage; count: number; executing: string | null }) {
-  const batch = stage === 'EXECUTE' ? executing : null
+function CountCell({ stage, count, executing }: { stage: Stage; count: number; executing: readonly string[] }) {
+  const batches = stage === 'EXECUTE' ? executing : []
   return (
     <TableCell className="text-right">
-      <span className="flex items-center justify-end gap-2">
-        {batch === null ? null : (
-          <Explained meaning="The batch in Execute.">
+      <span className="flex flex-wrap items-center justify-end gap-2">
+        {batches.map(batch => (
+          <Explained key={batch} meaning="A batch running in Execute.">
             <Badge variant="secondary">{batch}</Badge>
           </Explained>
-        )}
+        ))}
         {count === 0 ? null : <span className="tabular-nums text-foreground">{count}</span>}
       </span>
     </TableCell>

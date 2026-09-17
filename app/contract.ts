@@ -259,8 +259,8 @@ export type WorktreeSummary = {
   name: string;
   path: string;
   branch: string | null;
-  /** The batch in Execute, and null when Execute is empty. */
-  executing: string | null;
+  /** The batches running in Execute, in file order; empty when Execute is empty. */
+  executing: readonly string[];
   counts: Record<Stage, number>;
   /** ISO 8601 of the newest item file, or null for an empty session. */
   lastChange: string | null;
@@ -278,7 +278,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
   branch: Schema.NullOr(Schema.String),
-  executing: Schema.NullOr(Schema.String),
+  executing: Schema.Array(Schema.String),
   counts: Schema.Struct({
     TRIAGE: Schema.Int,
     DESIGN: Schema.Int,

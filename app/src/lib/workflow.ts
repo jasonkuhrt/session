@@ -13,7 +13,7 @@ export const stageMeta: Record<Stage, { label: string; hint: string }> = {
   DESIGN: { label: 'Design', hint: 'Accepted work with open design questions; settle them here before it can be batched.' },
   BATCH: { label: 'Batch', hint: 'Settled work, ready to be grouped into a batch.' },
   QUEUE: { label: 'Queue', hint: 'Batches waiting to start.' },
-  EXECUTE: { label: 'Execute', hint: 'The batch under way; its items leave only by being completed.' },
+  EXECUTE: { label: 'Execute', hint: 'The batches under way; their items leave only by being completed.' },
 }
 
 export function isStage(value: unknown): value is Stage {

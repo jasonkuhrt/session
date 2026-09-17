@@ -24,7 +24,15 @@ import * as Stream from 'effect/Stream';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type { Activity, AgentsSummary, DaemonInfo, Stage, TrailerProblem, WorktreeSummary } from '../contract.ts';
+import type {
+  Activity,
+  AgentsSummary,
+  DaemonInfo,
+  Session,
+  Stage,
+  TrailerProblem,
+  WorktreeSummary,
+} from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
@@ -437,6 +445,19 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   return best;
 };
 
+/**
+ * The batches Execute is running, in file order. A batch with no name is
+ * nothing to render, so it is left out rather than shown as a blank.
+ */
+const executingBatches = (session: Session): string[] => {
+  const execute = session.stages.find((stage) => stage.stage === 'EXECUTE');
+  const names = new Set<string>();
+  for (const item of execute?.items ?? []) {
+    if (item.batch !== null && item.batch !== '') names.add(item.batch);
+  }
+  return [...names];
+};
+
 // eslint-disable-next-line max-lines-per-function -- The registry, its routes and its lifecycle are one object; the closures share the map.
 export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
@@ -723,14 +744,11 @@ export const runDaemon = async () => {
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
-      // The batch in Execute names the work under way; a batch with no name is
-      // nothing to render, so it reads as an empty Execute rather than a blank.
-      const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
-      const batch = execute?.items[0]?.batch ?? null;
       return {
         ...base,
         branch: metadata.branch,
-        executing: batch === null || batch === '' ? null : batch,
+        // The batches Execute is running name the work under way.
+        executing: executingBatches(loaded.session),
         counts,
         lastChange: loaded.lastChange,
         activity: activityOf(overlay, loaded.lastChange),
@@ -740,7 +758,7 @@ export const runDaemon = async () => {
       // A row that cannot be read is a row that cannot be served; say why.
       return {
         ...base,
-        executing: null,
+        executing: [],
         counts,
         lastChange: null,
         activity: activityOf(overlay, null),
