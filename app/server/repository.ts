@@ -508,6 +508,18 @@ export const makeRepository = (directory: string) =>
             for (const item of state.items) validateItemSections(state.stage, item);
           }
         });
+        // A batch keeps its name when it starts, so one name in both batched
+        // stages is two batches that cannot both be told apart later. Loading
+        // stays permissive about it, as it does about sections, so a session
+        // edited by hand still opens while it is being fixed.
+        yield* attempt(() => {
+          const queued = new Set(stageOf(loaded, 'QUEUE').items.map((item) => item.batch));
+          for (const item of stageOf(loaded, 'EXECUTE').items) {
+            if (item.batch !== null && queued.has(item.batch)) {
+              fail(`Batch ${quote(item.batch)} is in both QUEUE and EXECUTE; rename one of them.`);
+            }
+          }
+        });
         return toSession(loaded);
       }),
     );

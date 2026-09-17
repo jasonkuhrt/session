@@ -390,8 +390,9 @@ carry the whole record and remove its old file; never leave duplicate IDs.
 
 `check` rejects malformed records, duplicate IDs, missing stage-specific
 sections, `# ` headings inside item files, Queue or Execute items belonging to no
-batch, entries whose names break the numbering pattern, a missing `.gitignore`, a
-`.session` that is a symlink, and a leftover `STAGE.md`. It does not judge
+batch, one batch name held by both Queue and Execute, entries whose names break
+the numbering pattern, a missing `.gitignore`, a `.session` that is a symlink,
+and a leftover `STAGE.md`. It does not judge
 acceptance criteria or user approval. An empty stage is an empty directory.
 
 ## App development
