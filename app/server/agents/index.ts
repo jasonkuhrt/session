@@ -14,8 +14,6 @@ import { codexThreads, lockDirectory } from './codex.ts';
  * would say the opposite of the truth.
  */
 
-export { focus } from './cmux.ts';
-
 type Services = FileSystem.FileSystem | ChildProcessSpawner;
 
 /** What a worktree shows before any listing has run for it. */

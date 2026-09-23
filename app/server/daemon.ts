@@ -24,12 +24,24 @@ import * as Stream from 'effect/Stream';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClient from 'effect/unstable/http/HttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
-import type { Activity, AgentsSummary, DaemonInfo, Stage, TrailerProblem, WorktreeSummary } from '../contract.ts';
+import type {
+  Activity,
+  AgentsSummary,
+  DaemonCapabilities,
+  DaemonInfo,
+  Links,
+  Stage,
+  TrailerProblem,
+  WorktreeSummary,
+} from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
-import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
+import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
+import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { eventStream, focusResponse, makeRequestHandler } from './http.ts';
+import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
+import { linksFor } from './links/index.ts';
 import { makeRepository, type SessionRepository } from './repository.ts';
+import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
   encodeWorktreeKey,
@@ -295,12 +307,24 @@ type Tracked = {
    *  which is not something a board being open can be a condition of. */
   readonly events: SessionEventSource;
   readonly watcher: Fiber.Fiber<void, never>;
-  /** The worktree's trailer passes; see `reconcileLoop`. */
-  readonly trailerLoop: Fiber.Fiber<void, never>;
+  /** The worktree's trailer passes and link re-reads, over one set of watches; see `worktreeLoops`. */
+  readonly loops: Fiber.Fiber<void, never>;
   /** The last pass's answer; derived, and replaced by every pass that changes it. */
   trailerProblems: readonly TrailerProblem[];
   /** Pushed when that answer changes, and only then. */
   readonly trailerEvents: SessionEventSource;
+  /** Where the worktree's work lives outside its files, as last asked; null before the first ask. */
+  links: Links | null;
+  /** When that answer was asked for, in epoch milliseconds. */
+  linksAskedAt: number;
+  /** How many times a remote-tracking ref has moved while the worktree was tracked. */
+  refMoves: number;
+  /** `refMoves` as it stood when the answer was asked for; a ref that has moved since makes it old. */
+  refMovesWhenAsked: number;
+  /** The ask under way, which every caller in the meantime shares. */
+  linksRead: Promise<Links> | undefined;
+  /** Pushed after every ask, because every ask moves `reportedAt`. */
+  readonly linksEvents: SessionEventSource;
 };
 
 /**
@@ -370,46 +394,122 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
 /** A commit, an amend, a rebase or a push writes Git's logs in a burst. */
 const trailerSettle = '500 millis';
 
+/** Which of a worktree's watches a change came from. */
+type Change = 'session' | 'reflog' | 'remotes';
+
 /**
- * When a worktree's trailers are worth reading again: once at the start, to
- * catch up on whatever landed while nothing was watching; on a change to its
- * session, which can make a named item exist or bring one back; on a commit,
- * which Git records in the worktree's own reflog; and on a push, which moves a
- * remote-tracking ref in the logs the repository shares and is what takes a
- * commit out of the unpushed range. A log that does not exist yet is not
- * watched.
+ * A worktree's watches, each change tagged with the watch it came from, as one
+ * stream that both of its loops read: the trailer passes read every change,
+ * and the link re-reads only the remote-tracking refs. It is shared, so each
+ * directory is watched once however many loops follow it. The session can make
+ * a named item exist or bring one back; the worktree's own reflog is where Git
+ * records a commit; and the remote-tracking logs the repository shares move on
+ * a push, which takes a commit out of the unpushed range, and on a fetch that
+ * learned something new. A log that does not exist yet is not watched.
  */
-const trailerTriggers = (session: WorktreeSession) =>
+const worktreeChanges = (session: WorktreeSession) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
-    const watched = [
-      { directory: session.directory, recursive: true },
+    const watched: ReadonlyArray<{ readonly directory: string; readonly recursive: boolean; readonly change: Change }> = [
+      { directory: session.directory, recursive: true, change: 'session' },
       ...(session.git === null ? [] : [
-        { directory: join(session.git.directory, 'logs'), recursive: false },
-        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true },
+        { directory: join(session.git.directory, 'logs'), recursive: false, change: 'reflog' as const },
+        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true, change: 'remotes' as const },
       ]),
     ];
-    const streams: Array<Stream.Stream<null, PlatformError>> = [Stream.succeed(null)];
-    for (const { directory, recursive } of watched) {
+    const streams: Array<Stream.Stream<Change, PlatformError>> = [];
+    for (const { directory, recursive, change } of watched) {
       if (yield* fs.exists(directory)) {
-        streams.push(fs.watch(directory, { recursive }).pipe(Stream.map(() => null)));
+        streams.push(fs.watch(directory, { recursive }).pipe(Stream.map(() => change)));
       }
     }
-    return Stream.mergeAll(streams, { concurrency: 'unbounded' });
+    // Sliding, because a loop still busy with one answer needs only the latest change.
+    return yield* Stream.mergeAll(streams, { concurrency: 'unbounded' }).pipe(
+      Stream.share({ capacity: 16, strategy: 'sliding' }),
+    );
   });
 
 /**
- * One worktree's trailer passes, one at a time: a burst of triggers is answered
- * by one pass once it settles, and whatever happens during a pass by one pass
- * after it.
+ * One worktree's trailer passes, one at a time: once at the start, to catch up
+ * on whatever landed while nothing was watching, and on every change after it.
+ * A burst is answered by one pass once it settles, and whatever happens during
+ * a pass by one pass after it.
  */
-const reconcileLoop = (session: WorktreeSession, pass: Effect.Effect<void>) =>
-  Effect.gen(function*() {
-    const triggers = yield* trailerTriggers(session);
-    yield* triggers.pipe(Stream.debounce(trailerSettle), Stream.runForEach(() => pass));
-  }).pipe(
-    Effect.catchCause((cause) => Effect.logError(`Trailer passes stopped for ${session.directory}`, cause)),
+const reconcileLoop = (changes: Stream.Stream<Change, PlatformError>, pass: Effect.Effect<void>) =>
+  Stream.succeed<Change | 'start'>('start').pipe(
+    Stream.merge(changes),
+    Stream.debounce(trailerSettle),
+    Stream.runForEach(() => pass),
   );
+
+/** How old a worktree's links may be before they are asked for again. */
+const linksFreshnessMilliseconds = 60_000;
+
+/** How often the clock asks whether a board's links have reached that age. */
+const linksCheck = '10 seconds';
+
+/** A push or a fetch moves several remote-tracking refs at once; one ask answers the burst. */
+const linksSettle = '500 millis';
+
+type LinksTrigger = 'clock' | 'refs';
+
+/**
+ * One worktree's link re-reads, one at a time: on the clock, and when a
+ * remote-tracking ref moves. Nothing on this machine says that a check
+ * finished or a review landed, so the clock is what keeps an open board
+ * current; nothing in the session's files says anything about either, so the
+ * session's own changes are never a trigger.
+ */
+const linksLoop = (
+  changes: Stream.Stream<Change, PlatformError>,
+  onTrigger: (trigger: LinksTrigger) => Effect.Effect<void>,
+) =>
+  Stream.tick(linksCheck).pipe(
+    Stream.map((): LinksTrigger => 'clock'),
+    Stream.merge(
+      changes.pipe(
+        Stream.filter((change) => change === 'remotes'),
+        Stream.debounce(linksSettle),
+        Stream.map((): LinksTrigger => 'refs'),
+      ),
+    ),
+    Stream.runForEach(onTrigger),
+  );
+
+/**
+ * A tracked worktree's two loops over its one set of watches. Interrupting it
+ * stops both and closes the watches; a loop that fails is logged, and the
+ * other goes on.
+ */
+const worktreeLoops = (session: WorktreeSession, loops: {
+  readonly pass: Effect.Effect<void>;
+  readonly onLinksTrigger: (trigger: LinksTrigger) => Effect.Effect<void>;
+}) =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const changes = yield* worktreeChanges(session);
+      yield* Effect.all(
+        [
+          reconcileLoop(changes, loops.pass).pipe(
+            Effect.catchCause((cause) => Effect.logError(`Trailer passes stopped for ${session.directory}`, cause)),
+          ),
+          linksLoop(changes, loops.onLinksTrigger).pipe(
+            Effect.catchCause((cause) => Effect.logError(`Link re-reads stopped for ${session.directory}`, cause)),
+          ),
+        ],
+        { concurrency: 'unbounded', discard: true },
+      );
+    }),
+  ).pipe(Effect.catchCause((cause) => Effect.logError(`Watches stopped for ${session.directory}`, cause)));
+
+/**
+ * Whether a worktree's links can be served as they are: asked within the last
+ * minute, and not before a remote-tracking ref moved. The moves are counted
+ * rather than timed, because a move and the ask it causes can land in one
+ * millisecond.
+ */
+const linksFresh = (entry: Tracked, now: number) =>
+  entry.refMovesWhenAsked === entry.refMoves && now - entry.linksAskedAt < linksFreshnessMilliseconds;
 
 /**
  * When this worktree last did something, and what did it: the newest of a
@@ -532,6 +632,59 @@ export const runDaemon = async () => {
     }
   };
 
+  /**
+   * Ask a worktree's sources again, stamped with the moment the ask began. An
+   * ask is shared by every caller that arrives while it runs, so a board
+   * opening mid-ask waits for this answer rather than starting a second one.
+   */
+  const readLinks = (entry: Tracked): Promise<Links> => {
+    if (entry.linksRead !== undefined) return entry.linksRead;
+    const read = (async () => {
+      try {
+        const moves = entry.refMoves;
+        const at = await runNode(Clock.currentTimeMillis);
+        const links = await runNode(linksFor({ path: entry.path, git: entry.session.git !== null }));
+        entry.links = links;
+        entry.linksAskedAt = at;
+        entry.refMovesWhenAsked = moves;
+        entry.linksEvents.changed();
+        return links;
+      } finally {
+        entry.linksRead = undefined;
+      }
+    })();
+    entry.linksRead = read;
+    return read;
+  };
+
+  /** What a board is served: the last answer while it is fresh, else a new ask. */
+  const linksOf = async (entry: Tracked): Promise<Links> => {
+    const now = await runNode(Clock.currentTimeMillis);
+    return entry.links !== null && linksFresh(entry, now) ? entry.links : await readLinks(entry);
+  };
+
+  /**
+   * What a trigger does to a worktree's links. With no board of the worktree
+   * open, which is no stream listening for `links`, nothing is asked, and a ref
+   * that moved only makes the last answer old, so the next board to open asks
+   * again. With a board open, an answer that is no longer fresh is asked for
+   * again, after any ask already under way, which may have begun before the
+   * ref moved.
+   */
+  const onLinksTrigger = async (path: string, trigger: LinksTrigger) => {
+    const entry = tracked.get(path);
+    if (entry === undefined) return;
+    if (trigger === 'refs') entry.refMoves += 1;
+    if (!entry.linksEvents.watched()) return;
+    try {
+      await entry.linksRead;
+      if (!linksFresh(entry, await runNode(Clock.currentTimeMillis))) await readLinks(entry);
+    } catch (error) {
+      // The board already shows the last answer; the next trigger tries again.
+      console.error(`${entry.path}: links not read: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
@@ -539,9 +692,10 @@ export const runDaemon = async () => {
     // is still tracked, and the answer by then has to be no.
     tracked.delete(path);
     Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
-    Effect.runFork(entry.trailerLoop.pipe(Fiber.interrupt));
+    Effect.runFork(entry.loops.pipe(Fiber.interrupt));
     entry.events.close();
     entry.trailerEvents.close();
+    entry.linksEvents.close();
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -561,9 +715,18 @@ export const runDaemon = async () => {
       handler: undefined,
       events,
       watcher: forkNode(watchDirectory(session.directory, events)),
-      trailerLoop: forkNode(reconcileLoop(session, Effect.promise(() => reconcile(path)))),
+      loops: forkNode(worktreeLoops(session, {
+        pass: Effect.promise(() => reconcile(path)),
+        onLinksTrigger: (trigger) => Effect.promise(() => onLinksTrigger(path, trigger)),
+      })),
       trailerProblems: [],
       trailerEvents: makeSessionEvents(0),
+      links: null,
+      linksAskedAt: 0,
+      refMoves: 0,
+      refMovesWhenAsked: 0,
+      linksRead: undefined,
+      linksEvents: makeSessionEvents(0),
     });
   };
 
@@ -763,6 +926,7 @@ export const runDaemon = async () => {
         events: agentsEvents,
       },
       trailers: { read: () => entry.trailerProblems, events: entry.trailerEvents },
+      links: { read: () => linksOf(entry), events: entry.linksEvents },
     }));
     return entry.handler;
   };
@@ -796,17 +960,35 @@ export const runDaemon = async () => {
     return method === 'HEAD' ? new Response(null) : new Response(candidate);
   };
 
+  /** Who the daemon is, which the CLI checks, and what it can do for a page, which a page checks. */
+  const describe = async (): Promise<DaemonInfo & DaemonCapabilities> => ({
+    pid: process.pid,
+    port: settings.port,
+    startedAt,
+    sourceStamp: stamp,
+    terminal: await runNode(cmuxOnPath),
+  });
+
+  /** A terminal in a tracked worktree; undefined for a path the daemon does not track. */
+  const terminalAt = async (path: string) => {
+    const entry = tracked.get(resolve(path));
+    return entry === undefined
+      ? undefined
+      : await runNode(openTerminal({ path: entry.path, worktrees: [...tracked.keys()] }));
+  };
+
   const handle = async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);
-      if (request.method === 'GET' && url.pathname === '/api/daemon') {
-        return json({ pid: process.pid, port: settings.port, startedAt, sourceStamp: stamp });
-      }
+      if (request.method === 'GET' && url.pathname === '/api/daemon') return json(await describe());
       if (request.method === 'GET' && url.pathname === '/api/events') {
-        return eventStream([
-          { name: 'agents', events: agentsEvents },
-          { name: 'worktrees', events: worktreeEvents },
-        ]);
+        return eventStream(namedChannels({
+          url,
+          channels: [
+            { name: 'agents', events: agentsEvents },
+            { name: 'worktrees', events: worktreeEvents },
+          ],
+        }));
       }
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
         await sweepTracked();
@@ -817,6 +999,10 @@ export const runDaemon = async () => {
       // be in any worktree it lists, so the root serves the board's own route.
       if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
         return await focusResponse({ request, focus: (pid) => runNode(focus(pid)) });
+      }
+      // A board and the index both ask for a terminal by the worktree's path.
+      if (request.method === 'POST' && url.pathname === '/api/terminal') {
+        return await terminalResponse({ request, open: terminalAt });
       }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));

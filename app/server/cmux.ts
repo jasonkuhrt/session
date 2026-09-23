@@ -1,19 +1,19 @@
-import { join } from 'node:path';
-import * as Config from 'effect/Config';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
+import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { FocusResult } from '../../contract.ts';
-import { capture } from '../command.ts';
+import type { FocusResult, TerminalResult } from '../contract.ts';
+import { capture, type Command } from './command.ts';
 
 /**
- * Where a session's terminal is, and how to bring it forward. cmux is the only
- * window manager the board knows; a session running anywhere else simply has no
- * terminal, which is an ordinary state and never a failure.
+ * cmux, the one window manager the board knows: the calls every use of it
+ * shares, and where a session's terminal is and how to bring it forward. A
+ * session running anywhere else simply has no terminal, which is an ordinary
+ * state and never a failure. The terminal action for a worktree is in
+ * `terminal.ts`.
  */
 
-/** A filesystem to find the socket with, and a way to spawn the CLI. */
-type Services = FileSystem.FileSystem | ChildProcessSpawner;
+/** A way to spawn the CLI, which finds cmux's socket for itself. */
+type Services = ChildProcessSpawner;
 
 /** The cmux refs that name one panel: the surface, and where it is docked. */
 export type Terminal = {
@@ -25,21 +25,11 @@ export type Terminal = {
 /** cmux is a local socket call; nothing here should ever take seconds. */
 const budget = '5 seconds';
 
-/** Its CLI prints a banner on first contact unless it is asked not to. */
+/** Its CLI prints a banner on first contact, and a notice on a legacy verb, unless it is asked not to. */
 const quiet = { CMUX_QUIET: '1' };
 
 /** A window holds a workspace holds a pane holds a surface holds a process. */
 const depthLimit = 8;
-
-/** One socket per uid. Without it cmux is not running for this user. */
-const runningSocket = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem;
-  const uid = process.getuid?.();
-  if (uid === undefined) return null;
-  const home = yield* Config.String('HOME');
-  const path = join(home, '.local/state/cmux', `cmux-${uid}.sock`);
-  return (yield* fs.exists(path)) ? path : null;
-}).pipe(Effect.orElseSucceed(() => null));
 
 type Node = { readonly kind: string; readonly parent: string };
 
@@ -85,18 +75,29 @@ const terminalOf = (tree: ReadonlyMap<string, Node>, pid: number): Terminal | nu
   return null;
 };
 
-const runningTree = Effect.gen(function*() {
-  const socket = yield* runningSocket;
-  if (socket === null) return null;
-  const listing = yield* capture({
-    command: 'cmux',
-    args: ['top', '--all', '--processes', '--format', 'tsv'],
-    env: quiet,
-    timeout: budget,
-  }).pipe(Effect.orElseSucceed(() => null));
-  if (listing === null || listing.exitCode !== 0) return null;
-  return parseTree(listing.stdout);
-});
+/** What cmux said went wrong, verbatim, or the plainest true sentence about it. */
+const refusal = (
+  command: string,
+  result: { readonly stderr: string; readonly exitCode: number },
+): string => {
+  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
+  return line ?? `${command} exited ${result.exitCode}.`;
+};
+
+/**
+ * The running tree, or the line cmux refused with. cmux finds its own socket,
+ * which has moved between releases, so nothing here guesses at where it is: a
+ * cmux that is not running is a listing that fails, and says why.
+ */
+const runningTree = capture({
+  command: 'cmux',
+  args: ['top', '--all', '--processes', '--format', 'tsv'],
+  env: quiet,
+  timeout: budget,
+}).pipe(
+  Effect.map((listing) => (listing.exitCode === 0 ? parseTree(listing.stdout) : refusal('cmux top', listing))),
+  Effect.catchTag('CommandError', (error) => Effect.succeed(error.message)),
+);
 
 /**
  * The terminal holding each of these pids. A pid cmux does not know, a cmux
@@ -111,7 +112,7 @@ export const terminalsFor = (
     const found = new Map<number, Terminal>();
     if (pids.length === 0) return found;
     const tree = yield* runningTree;
-    if (tree === null) return found;
+    if (typeof tree === 'string') return found;
     for (const pid of pids) {
       const terminal = terminalOf(tree, pid);
       if (terminal !== null) found.set(pid, terminal);
@@ -119,23 +120,30 @@ export const terminalsFor = (
     return found;
   });
 
-/** What cmux said went wrong, verbatim, or the plainest true sentence about it. */
-const refusal = (
-  command: string,
-  result: { readonly stderr: string; readonly exitCode: number },
-): string => {
-  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
-  return line ?? `${command} exited ${result.exitCode}.`;
-};
+/**
+ * One command, and what it printed: its first line when it worked, the line
+ * it complained with when it did not, and the plainest true sentence when it
+ * never ran or never finished.
+ */
+export const say = ({ command, args, timeout = budget }: {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly timeout?: Command['timeout'];
+}) =>
+  capture({ command, args, env: quiet, timeout }).pipe(
+    Effect.map((result): TerminalResult =>
+      result.exitCode === 0
+        ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
+        : { ok: false, line: refusal(`${command} ${args[0] ?? ''}`.trim(), result) }
+    ),
+    Effect.catch((error) => Effect.succeed<TerminalResult>({ ok: false, line: error.message })),
+  );
 
 /** One command of the focus sequence: `null` when it worked, else why not. */
 const step = (command: string, args: ReadonlyArray<string>) =>
-  capture({ command, args, env: quiet, timeout: budget }).pipe(
-    Effect.map((result) => (result.exitCode === 0 ? null : refusal(`${command} ${args[0]}`, result))),
-    Effect.orElseSucceed(() => `Could not run ${command}.`),
-  );
+  say({ command, args }).pipe(Effect.map((result) => (result.ok ? null : result.line)));
 
-/** The two answers this route can give, built where their shape is checked. */
+/** The two answers the focus route can give, built where their shape is checked. */
 const refuse = (reason: string): FocusResult => ({ ok: false, reason });
 const focused: FocusResult = { ok: true };
 
@@ -150,7 +158,7 @@ const focused: FocusResult = { ok: true };
 export const focus = (pid: number): Effect.Effect<FocusResult, never, Services> =>
   Effect.gen(function*() {
     const tree = yield* runningTree;
-    if (tree === null) return refuse('cmux is not running on this machine.');
+    if (typeof tree === 'string') return refuse(tree);
     const terminal = terminalOf(tree, pid);
     if (terminal === null) return refuse(`cmux has no terminal for pid ${pid}.`);
 
@@ -166,3 +174,27 @@ export const focus = (pid: number): Effect.Effect<FocusResult, never, Services> 
     }
     return focused;
   }).pipe(Effect.catchCause(() => Effect.succeed(refuse('The terminal could not be reached.'))));
+
+/** A cmux listing as it came back: what it listed, or the line that says why it did not. */
+export type Listing<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly line: string };
+
+/**
+ * One cmux listing, decoded. When cmux refuses, the answer is the line it
+ * refused with; when it answers in a shape this build does not read, a
+ * sentence that says so. Neither is ever read as an empty listing.
+ */
+export const list = <A>({ args, schema }: {
+  readonly args: ReadonlyArray<string>;
+  readonly schema: Schema.Codec<A, string>;
+}): Effect.Effect<Listing<A>, never, Services> =>
+  Effect.gen(function*() {
+    const result = yield* capture({ command: 'cmux', args, env: quiet, timeout: budget });
+    if (result.exitCode !== 0) return { ok: false, line: refusal(`cmux ${args.join(' ')}`, result) } as const;
+    return { ok: true, value: yield* Schema.decodeEffect(schema)(result.stdout) } as const;
+  }).pipe(
+    Effect.catchTags({
+      CommandError: (error) => Effect.succeed({ ok: false, line: error.message } as const),
+      SchemaError: () =>
+        Effect.succeed({ ok: false, line: `cmux ${args.join(' ')} answered in a shape this build does not read.` } as const),
+    }),
+  );

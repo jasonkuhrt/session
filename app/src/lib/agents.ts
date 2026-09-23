@@ -165,7 +165,8 @@ export const sortThreads = (threads: readonly CodexThread[]): CodexThread[] =>
  */
 export type Action =
   | { kind: 'focus'; label: string; meaning: string; pid: number }
-  | { kind: 'link'; label: string; meaning: string; href: string; external: boolean }
+  /** An address an app answers, handed to that app; the board opens no tab for it. */
+  | { kind: 'link'; label: string; meaning: string; href: string }
   | { kind: 'copy'; label: string; meaning: string; value: string }
 
 /**
@@ -181,15 +182,6 @@ export const actionsFor = (session: ClaudeSession): Action[] => {
       label: 'Focus terminal',
       meaning: 'Bring its cmux tab to the front.',
       pid: session.pid,
-    })
-  }
-  if (session.web !== null) {
-    actions.push({
-      kind: 'link',
-      label: 'Open on claude.ai',
-      meaning: "Open this session's page on claude.ai.",
-      href: session.web,
-      external: true,
     })
   }
   if (session.terminal === null && session.resume !== null) {
@@ -219,7 +211,6 @@ export const actionsForThread = (thread: CodexThread): Action[] => {
       label: 'Open in Codex',
       meaning: 'Open this thread in the Codex app.',
       href: thread.link,
-      external: false,
     },
   ]
   if (thread.resume !== null) {

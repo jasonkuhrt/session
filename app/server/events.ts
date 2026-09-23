@@ -11,10 +11,12 @@ export type SessionEvents = {
   readonly subscribe: (notify: () => void) => () => void;
 };
 
-/** What the daemon needs on top: the trigger, and the shutdown. */
+/** What the daemon needs on top: the trigger, whether anyone is listening, and the shutdown. */
 export type SessionEventSource = SessionEvents & {
   /** Records a change; listeners hear about it once the burst settles. */
   readonly changed: () => void;
+  /** True while at least one page holds a stream subscribed to this source. */
+  readonly watched: () => boolean;
   readonly close: () => void;
 };
 
@@ -39,6 +41,7 @@ export const makeSessionEvents = (settle = settleMilliseconds): SessionEventSour
       if (pending !== undefined) clearTimeout(pending);
       pending = setTimeout(flush, settle);
     },
+    watched: () => listeners.size > 0,
     close: () => {
       if (pending !== undefined) clearTimeout(pending);
       pending = undefined;

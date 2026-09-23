@@ -6,6 +6,7 @@ import { ActivityCell } from './components/activity-cell'
 import { Explained } from './components/agent-marks'
 import { AgentsCell } from './components/agents-cell'
 import { Copyable } from './components/copyable'
+import { TerminalAction, useTerminalAvailable } from './components/terminal-action'
 import { TrailerCount } from './components/trailer-problems'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Badge } from './components/ui/badge'
@@ -61,7 +62,7 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /** What each column holds, said where its name is. */
 const columnMeaning = {
-  worktree: 'A Git worktree the daemon is tracking, and the directory it sits in; its name opens that worktree’s board.',
+  worktree: 'A Git worktree the daemon is tracking, and the directory it sits in; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
   branch: 'The Git branch checked out in that worktree.',
   agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
   activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
@@ -75,6 +76,7 @@ export function WorktreeIndex() {
   const [rows, setRows] = React.useState<readonly WorktreeSummary[] | null>(null)
   const [notice, setNotice] = React.useState<string | null>(null)
   const now = useNow()
+  const terminal = useTerminalAvailable()
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
     try {
@@ -99,7 +101,7 @@ export function WorktreeIndex() {
   // and came back refetches too, since changes land while it is down and the
   // index otherwise never polls.
   React.useEffect(() => {
-    const source = new EventSource(eventsUrl)
+    const source = new EventSource(eventsUrl(['agents', 'worktrees']))
     const dropped = { value: false }
     const refetch = () => void load()
     source.addEventListener('agents', refetch)
@@ -167,7 +169,9 @@ export function WorktreeIndex() {
                         <span className="ml-2 tabular-nums tracking-normal text-muted-foreground/60">{entry.rows.length}</span>
                       </TableCell>
                     </TableRow>
-                    {entry.rows.map(row => <Row key={row.path} row={row} now={now} muted={entry.band.muted} />)}
+                    {entry.rows.map(row => (
+                      <Row key={row.path} row={row} now={now} muted={entry.band.muted} terminal={terminal} />
+                    ))}
                   </React.Fragment>
                 ))}
               </TableBody>
@@ -179,8 +183,11 @@ export function WorktreeIndex() {
   )
 }
 
-/** The name, over the directory it sits in; the whole path stays on hover. */
-function NameCell({ row }: { row: WorktreeSummary }) {
+/**
+ * The name, over the directory it sits in; the whole path stays on hover. A
+ * terminal there is one click away whenever the daemon can run cmux.
+ */
+function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }) {
   const parent = parentPath(row.path)
   return (
     <TableCell title={row.path}>
@@ -194,6 +201,7 @@ function NameCell({ row }: { row: WorktreeSummary }) {
           </a>
         ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
         <TrailerCount problems={row.trailerProblems} />
+        {terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
       </span>
       {parent === '' ? null : (
         <span className="block">
@@ -207,7 +215,7 @@ function NameCell({ row }: { row: WorktreeSummary }) {
   )
 }
 
-function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: boolean }) {
+function Row({ row, now, muted, terminal }: { row: WorktreeSummary; now: number; muted: boolean; terminal: boolean }) {
   // Dimmed, not disabled: a session with nothing in it recedes, and its name is
   // still the link that opens its board.
   const dim = muted ? 'opacity-60' : undefined
@@ -216,7 +224,7 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
   if (row.conflict !== null) {
     return (
       <TableRow className={dim}>
-        <NameCell row={row} />
+        <NameCell row={row} terminal={terminal} />
         <TableCell colSpan={8} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
             <Badge variant="destructive" title="Two tracked worktrees want the same address, so this one has no board.">
@@ -231,7 +239,7 @@ function Row({ row, now, muted }: { row: WorktreeSummary; now: number; muted: bo
 
   return (
     <TableRow className={dim}>
-      <NameCell row={row} />
+      <NameCell row={row} terminal={terminal} />
       <TableCell className="text-muted-foreground">
         {row.branch === null
           ? <span title="This folder is not a Git worktree, so it has no branch.">No branch</span>

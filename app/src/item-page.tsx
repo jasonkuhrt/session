@@ -90,8 +90,9 @@ export function ItemPage({ id }: { id: string }) {
 
   // The daemon pushes `changed` for every write under this worktree's
   // `.session`. The page holds no placement of its own, so it always refetches.
+  // It reads nothing else, so its stream carries nothing else.
   React.useEffect(() => {
-    const source = new EventSource(eventsUrl)
+    const source = new EventSource(eventsUrl(['changed']))
     const refetch = () => {
       settle()
       void load()
