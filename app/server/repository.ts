@@ -234,20 +234,20 @@ const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: str
   }
 };
 
-/** Whether a resolved path inside the session passes through a directory of one of these names, at any depth. */
-const passesThrough = (realRoot: string, candidate: string, names: ReadonlySet<string>): boolean =>
-  relative(realRoot, candidate)
-    .split(sep)
-    .some((segment) => names.has(segment));
-
 /** Whether a resolved path inside the session lies under one of these directories of the root. */
 const liesUnder = (realRoot: string, candidate: string, names: ReadonlySet<string>): boolean =>
   names.has(relative(realRoot, candidate).split(sep)[0] ?? '');
 
-/** What the files route never serves, at any depth. */
+/*
+ * `archive` and `ignore` are names of the root only. A directory called either
+ * further down, such as `context/SES-1/archive/`, is an ordinary directory:
+ * refresh reads it, the board lists it, and the files route serves it.
+ */
+
+/** The root's directory the files route never serves. */
 const unserved: ReadonlySet<string> = new Set([ignoreDirectory]);
 
-/** The root's directories a refresh leaves out of agent context; one of these names deeper down is read like any other. */
+/** The root's directories a refresh leaves out of agent context, and the board's context listing with it. */
 const outOfContext: ReadonlySet<string> = new Set([ignoreDirectory, archiveDirectory]);
 
 /** A modification time as the contract writes times, or null when the platform gave none. */
@@ -464,8 +464,8 @@ export const makeRepository = (directory: string) =>
 
     /**
      * Where a regular file under the session really is, for the board's files
-     * route to send: Markdown, images, and everything else. `ignore/` is
-     * refused at any depth, both as written and where a link resolves to, and
+     * route to send: Markdown, images, and everything else. The root's
+     * `ignore/` is refused, both as written and where a link resolves to, and
      * so is anything that resolves outside the session.
      */
     const servedFile = (relativePath: string) =>
@@ -473,9 +473,8 @@ export const makeRepository = (directory: string) =>
         const segments = relativePath.split(/[\\/]/u);
         if (
           relativePath.startsWith('/') ||
-          segments.some(
-            (segment) => segment === '' || segment === '.' || segment === '..' || unserved.has(segment),
-          )
+          unserved.has(segments[0] ?? '') ||
+          segments.some((segment) => segment === '' || segment === '.' || segment === '..')
         ) {
           return yield* new RepositoryError({
             kind: 'not-found',
@@ -492,7 +491,7 @@ export const makeRepository = (directory: string) =>
         }
         const realCandidate = yield* fs.realPath(candidate);
         yield* attempt(() => ensureInsideRoot(realRoot, realCandidate, relativePath));
-        if (passesThrough(realRoot, realCandidate, unserved)) {
+        if (liesUnder(realRoot, realCandidate, unserved)) {
           return yield* new RepositoryError({
             kind: 'not-found',
             message: `${relativePath} is outside the live session.`,
@@ -1093,9 +1092,11 @@ export const makeRepository = (directory: string) =>
 
     /**
      * `context/` for the board, depth first, each directory right before what
-     * it holds. Names starting with a dot and anything named `ignore` are left
-     * out, as everywhere; an entry that cannot be shown for another reason is
-     * left out with a notice that says why.
+     * it holds, and the same entries refresh reads there: a directory named
+     * `archive` or `ignore` is an ordinary one, and only a link into the root's
+     * `archive/` or `ignore/` is left out. Names starting with a dot are left
+     * out too. An entry that cannot be shown for another reason is left out
+     * with a notice that says why.
      */
     const contextListing = semaphore.withPermit(
       Effect.gen(function*() {
@@ -1134,7 +1135,7 @@ export const makeRepository = (directory: string) =>
               return;
             }
             for (const name of names.value.toSorted()) {
-              if (name.startsWith('.') || unserved.has(name)) continue;
+              if (name.startsWith('.')) continue;
               const path = `${relativeDirectory}/${name}`;
               const real = yield* fs.realPath(join(realDirectory, name)).pipe(Effect.option);
               if (Option.isNone(real)) {
@@ -1145,7 +1146,8 @@ export const makeRepository = (directory: string) =>
                 notices.push(`${path} is not listed: it resolves outside the session directory.`);
                 continue;
               }
-              if (passesThrough(realRoot, real.value, unserved)) continue;
+              // What refresh leaves out, a link into the root's archive or ignore, is left out here too.
+              if (liesUnder(realRoot, real.value, outOfContext)) continue;
               const info = yield* fs.stat(real.value).pipe(Effect.option);
               const writtenAt = Option.isNone(info) ? null : writtenAtOf(info.value);
               if (Option.isNone(info) || writtenAt === null) {

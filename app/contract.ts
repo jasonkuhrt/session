@@ -135,8 +135,9 @@ export type ContextListing = {
   /**
    * Every file and directory under `context/`, depth first: a directory comes
    * right before what it holds, and entries that share a directory are sorted
-   * by name. Names starting with a dot are left out, and so is anything named
-   * `ignore`, which the files route never serves.
+   * by name. Names starting with a dot are left out. A directory named
+   * `archive` or `ignore` here is ordinary; only a link into the root's
+   * `archive/` or `ignore/` is left out, as `refresh` leaves it out.
    */
   entries: readonly ContextEntry[];
   /** One line per entry that is left out for a reason worth saying, such as a link that leads outside the session. */

@@ -102,7 +102,8 @@ that is abandoned; both file the item under `archive/`.
 ## Context
 
 `context/` is for agents: any file, in any layout, with no lifecycle, and
-`check` does not look inside it. Material about one item lives under
+`check` does not look inside it. `archive` and `ignore` are names of the root
+only, so a directory called either inside `context/` is an ordinary one. Material about one item lives under
 `context/<ID>/` and is linked from that item's `### Evidence`, so the item stays
 the one place its outcome is read. Nothing that needs the user goes here; that
 is a stage move.

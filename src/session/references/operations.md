@@ -184,8 +184,9 @@ session refresh --previous /tmp/session-previous.json
 ```
 
 The root's `ignore/` and `archive/` are excluded before traversal, and those
-two only: a directory of either name further down, such as
-`context/SES-1/archive/`, is read like any other. The inventory does not make
+two only: `archive` and `ignore` are names of the root, and a directory of
+either name further down, such as `context/SES-1/archive/`, is read like any
+other, and listed on the board's context page alike. The inventory does not make
 linked history part of current context. Resolve deleted or moved references
 instead of retaining an older item as if it were still live.
 
@@ -285,10 +286,11 @@ or in the editor.
 The Markdown links in an item resolve through the board's files route,
 `/w/<key>/files/<path>`, which serves any regular file under the session:
 Markdown as Markdown, PNG, JPEG, GIF, WebP and SVG images as images, and
-anything else as plain text. Nothing under a directory named `ignore` is
-served, at any depth, and neither is anything that resolves outside the
-session; `archive/` is served. What the route serves never runs: it is sent
-sandboxed and is never sniffed into another type.
+anything else as plain text. Nothing under the root's `ignore/` is served,
+whether asked for by path or reached through a link, and neither is anything
+that resolves outside the session; `archive/` is served, and a directory named
+`ignore` further down is an ordinary one. What the route serves never runs: it
+is sent sandboxed and is never sniffed into another type.
 
 Select ready items in the Batch lane and use "Queue batch", which appears once
 something is selected, to name them and append the batch to Queue. The Queue
@@ -305,9 +307,10 @@ Beside the session, each board serves three read-only listings. `GET
 name, with a notice naming each file in `ledger/` that breaks the ledger's
 rules and is left out. `GET /w/<key>/api/context` is every file and directory
 under `context/`, depth first, each with when it was written, and a notice for
-an entry left out, such as a link that resolves outside the session; names
-starting with a dot are left out, and so is anything named `ignore`, which the
-files route never serves.
+an entry left out, such as a link that resolves outside the session. It lists
+what refresh reads there: a directory named `archive` or `ignore` under
+`context/` is an ordinary one, and only a link into the root's `archive/` or
+`ignore/` is left out. Names starting with a dot are left out as well.
 `GET /w/<key>/api/archive` is the archive's records as their names give them,
 the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
