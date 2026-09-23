@@ -60,7 +60,9 @@ export const rulesFile = 'RULES.md';
 /**
  * The session root is closed: it holds the stages, these directories and
  * `RULES.md`, each as its own kind, and entries whose name starts with a dot,
- * which are ignored here as everywhere.
+ * which this rule leaves alone, as the stage directories and the ledger do.
+ * They are not hidden everywhere: refresh lists them and the files route
+ * serves them.
  */
 const rootEntries: ReadonlyMap<string, 'directory' | 'file'> = new Map([
   ...stageNames.map((stage) => [stage, 'directory'] as const),
