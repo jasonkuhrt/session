@@ -91,6 +91,9 @@ async function run<A, E>(program: Effect.Effect<A, E, HttpClient.HttpClient>, si
   return result.success
 }
 
+/** Every route that moves the records. The board and the item page share them. */
+export type SessionMutation = '/api/move' | '/api/group' | '/api/ungroup' | '/api/batch' | '/api/start' | '/api/complete'
+
 /**
  * The stream this page listens to: a board's under its own prefix, the index's
  * at the root, so where the bundle is served decides which one it opens. It
@@ -136,10 +139,7 @@ export const SessionApi = {
       decodeFocus,
     )),
 
-  mutate: (
-    path: '/api/move' | '/api/batch' | '/api/start' | '/api/complete',
-    body: Record<string, unknown>,
-  ) =>
+  mutate: (path: SessionMutation, body: Record<string, unknown>) =>
     run(send(
       HttpClientRequest.post(`${basePath}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
       decodeSession,

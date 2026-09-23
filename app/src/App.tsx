@@ -1,10 +1,11 @@
 import * as React from 'react'
 
 import type { AgentsSummary, FocusResult, Item, Links, Session, TrailerProblem } from '../contract'
-import { stageNames } from '../contract'
+import { isBatchedStage, stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
-import { BatchDialog, CompleteDialog } from './components/session-dialogs'
+import type { NameRequest } from './components/session-dialogs'
+import { CompleteDialog, NameDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
 import { useTerminalAvailable } from './components/terminal-action'
 import { TrailerProblems } from './components/trailer-problems'
@@ -24,9 +25,9 @@ function App() {
   const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
   const [links, setLinks] = React.useState<Links | null>(null)
   const [linksError, setLinksError] = React.useState<string | null>(null)
-  const [batching, setBatching] = React.useState(false)
+  const [naming, setNaming] = React.useState<NameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
-  const [batchSelection, setSelectedBatchIds] = React.useState<Set<string>>(new Set())
+  const [selection, setSelection] = React.useState<Set<string>>(new Set())
   const now = useNow()
   const terminal = useTerminalAvailable()
 
@@ -159,8 +160,17 @@ function App() {
     void load()
   }, [busy, load])
 
-  const batchIds = new Set(session?.stages.find(stage => stage.stage === 'BATCH')?.items.map(item => item.id))
-  const selectedBatchIds = new Set([...batchSelection].filter(id => batchIds.has(id)))
+  // A selection is gathered into a group, or composed into a batch, only in the
+  // lanes where an item may be in no group; one that has moved on to Queue or
+  // Execute is no longer selected.
+  const selectableIds = new Set(
+    session?.stages.flatMap(stage => (isBatchedStage(stage.stage) ? [] : stage.items.map(item => item.id))),
+  )
+  const selectedIds = new Set([...selection].filter(id => selectableIds.has(id)))
+  const deselect = (ids: readonly string[]) => {
+    const done = new Set(ids)
+    setSelection(current => new Set([...current].filter(id => !done.has(id))))
+  }
 
   // A write that failed and a write the board recovered from read differently:
   // one is a problem to look at, the other is the board saying it caught up.
@@ -188,31 +198,34 @@ function App() {
           <Board
             stages={session.stages}
             pending={pending}
-            selectedBatchIds={selectedBatchIds}
-            onSelect={(id, selected) => setSelectedBatchIds(current => {
+            selectedIds={selectedIds}
+            onSelect={(id, selected) => setSelection(current => {
               const next = new Set(current)
               if (selected) next.add(id)
               else next.delete(id)
               return next
             })}
-            onQueue={() => setBatching(true)}
+            onGroup={(stage, ids) => setNaming({ kind: 'group', stage, ids })}
+            onQueue={(ids, group) => setNaming({ kind: 'batch', ids, group })}
+            onUngroup={ids => void mutate('/api/ungroup', { ids })}
             onStart={() => void mutate('/api/start', {})}
             onComplete={setCompleting}
-            onMove={(id, to, beforeId) => mutate('/api/move', { id, to, beforeId })}
+            onMove={(id, placement) => mutate('/api/move', { id, ...placement })}
             onDraggingChange={setDragging}
           />
         ) : <p className="py-20 text-center text-muted-foreground">The session files could not be loaded.</p>}
       </main>
 
-      <BatchDialog
-        open={batching}
+      <NameDialog
+        request={naming}
         pending={pending}
-        count={selectedBatchIds.size}
-        onOpenChange={setBatching}
-        onQueue={async name => {
-          if (await mutate('/api/batch', { ids: [...selectedBatchIds], name })) {
-            setSelectedBatchIds(new Set())
-            setBatching(false)
+        onClose={() => setNaming(null)}
+        onName={async name => {
+          if (naming === null) return
+          const path = naming.kind === 'group' ? '/api/group' : '/api/batch'
+          if (await mutate(path, { ids: naming.ids, name })) {
+            deselect(naming.ids)
+            setNaming(null)
           }
         }}
       />

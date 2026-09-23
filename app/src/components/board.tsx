@@ -1,19 +1,16 @@
-import { CollisionPriority } from '@dnd-kit/abstract'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
-import { DragDropProvider, KeyboardSensor, PointerSensor, useDroppable } from '@dnd-kit/react'
-import { isSortable, useSortable } from '@dnd-kit/react/sortable'
-import { Check } from 'lucide-react'
-import type { Item, Stage, StageFile } from '../../contract'
-import { isBatchedStage } from '../../contract'
-import { itemHref } from '../lib/base'
-import { cn } from '../lib/utils'
-import { Copyable } from './copyable'
-import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
-import { Checkbox } from './ui/checkbox'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import type { DragOverEvent } from '@dnd-kit/react'
+import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
+import * as React from 'react'
+
+import type { StageFile } from '../../contract'
+import type { Lane as LaneLayout, Placement } from '../lib/lanes'
+import { isInList, lanesOf, moved, placementInto, placementOf, placementOver } from '../lib/lanes'
+import { isStage, moveAvailability } from '../lib/workflow'
+import type { LaneActions } from './lane'
+import { Lane } from './lane'
+import { TooltipProvider } from './ui/tooltip'
+import type { DropTarget } from './workflow-card'
 
 /**
  * A card is dragged by its whole self, so nobody has to hit a grip. Without a
@@ -32,233 +29,130 @@ const sensors = [
   KeyboardSensor,
 ]
 
-/** Where a drag would land: a lane carries no batch, a card carries its own. */
-type DropTarget = { stage: Stage; batch: string | null }
-
-type BoardProps = {
+type BoardProps = Omit<LaneActions, 'accepts'> & {
   stages: StageFile[]
-  pending: boolean
-  selectedBatchIds: ReadonlySet<string>
-  onSelect: (id: string, selected: boolean) => void
-  onQueue: () => void
-  onStart: () => void
-  onComplete: (item: Item) => void
-  onMove: (id: string, stage: Stage, beforeId: string | null) => Promise<boolean>
+  /** Moves a card; resolves once the move is written or refused. */
+  onMove: (id: string, placement: Placement) => Promise<boolean>
   onDraggingChange: (dragging: boolean) => void
 }
 
-/** Queued items arrive in file order, so consecutive items share a heading. */
-function batchGroups(items: Item[]) {
-  const groups: Array<{ batch: string | null; items: Item[] }> = []
-  for (const item of items) {
-    const last = groups.at(-1)
-    if (last && last.batch === item.group) last.items.push(item)
-    else groups.push({ batch: item.group, items: [item] })
-  }
-  return groups
-}
+/** A card being dragged: where it was when the drag began, and where it would land if it were dropped now. */
+type Held = { readonly id: string; readonly origin: Placement; readonly placement: Placement }
 
-export function Board(props: BoardProps) {
+const samePlacement = (left: Placement, right: Placement) =>
+  left.to === right.to && left.group === right.group && left.beforeId === right.beforeId
+
+export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardProps) {
+  const committed = lanesOf(stages)
+  const [held, setHeld] = React.useState<Held | null>(null)
+  // The hover that chose a placement can be newer than the last render, and
+  // the drop must act on what the board was about to show.
+  const latest = React.useRef<Held | null>(null)
+  const hold = (next: Held | null) => {
+    latest.current = next
+    setHeld(next)
+  }
+  const drawn = (current: Held | null): LaneLayout[] =>
+    current === null ? committed : moved({ lanes: committed, id: current.id, placement: current.placement })
+
   const findItem = (id: unknown) => {
-    for (const stage of props.stages) {
+    for (const stage of stages) {
       const item = stage.items.find(candidate => candidate.id === id)
       if (item) return { item, stage: stage.stage }
     }
     return null
   }
   // Execute is entered only by starting the next queued batch and Queue only by
-  // composing one in Batch, so neither accepts a drop. A queued card may still
-  // reorder against its own batch's cards.
+  // composing one in Batch, so neither takes a card from elsewhere. A queued
+  // card may still move inside its own batch.
   const accepts = (id: unknown, target: DropTarget) => {
     const source = findItem(id)
     if (source === null) return false
     if (target.stage === 'EXECUTE') return false
-    if (target.stage === 'QUEUE') {
-      return source.stage === 'QUEUE' && target.batch !== null && source.item.group === target.batch
-    }
+    if (target.stage === 'QUEUE') return source.stage === 'QUEUE' && target.group !== null && source.item.group === target.group
     if (source.stage === target.stage) return true
     return moveAvailability(source.item, source.stage, target.stage).enabled
   }
-  const executeOccupied = props.stages.some(stage => stage.stage === 'EXECUTE' && stage.items.length > 0)
+
+  /**
+   * Where the held card would land for what it is over now, or null to leave
+   * it where it is. Over a card it goes in front of that card or after it;
+   * over a group's heading or edge it joins the group, at its start or its end
+   * by which half of the group it is over, and over the lane's own space it
+   * leaves any group for the end of the lane. Over what it is already in,
+   * nothing changes.
+   */
+  const placementFor = (current: Held, operation: DragOverEvent['operation']): Placement | null => {
+    const { source, target } = operation
+    if (source === null || target === null || target.id === source.id) return null
+    const lanes = drawn(current)
+    const centre = operation.shape?.current.center ?? operation.position.current
+    const below = target.shape !== undefined && Math.round(centre.y) > Math.round(target.shape.center.y)
+    if (target.type === 'item') return placementOver({ lanes, heldId: current.id, overId: String(target.id), below })
+    if (target.type !== 'group' && target.type !== 'lane') return null
+    const stage: unknown = target.data['stage']
+    const group: unknown = target.data['group']
+    if (!isStage(stage)) return null
+    const into = typeof group === 'string' ? group : null
+    if (isInList({ lanes, id: current.id, stage, group: into })) return null
+    return placementInto({ lanes, heldId: current.id, stage, group: into, atStart: !below })
+  }
+
+  const executeOccupied = stages.some(stage => stage.stage === 'EXECUTE' && stage.items.length > 0)
 
   return (
     <TooltipProvider>
       <DragDropProvider
         sensors={sensors}
-        onDragStart={() => props.onDraggingChange(true)}
+        onDragStart={event => {
+          const id = event.operation.source?.id
+          const origin = typeof id === 'string' ? placementOf({ lanes: committed, id }) : null
+          if (typeof id === 'string' && origin !== null) hold({ id, origin, placement: origin })
+          onDraggingChange(true)
+        }}
+        onDragOver={event => {
+          // The board draws every card where the files would put it, so the
+          // sortable's own plugin must not move cards in the DOM behind React:
+          // a card it had moved to another list would be one React no longer
+          // finds when it next draws that list.
+          event.preventDefault()
+          const current = latest.current
+          if (current === null) return
+          const next = placementFor(current, event.operation)
+          if (next === null || samePlacement(next, current.placement)) return
+          if (!accepts(current.id, { stage: next.to, group: next.group })) return
+          hold({ ...current, placement: next })
+        }}
         onDragEnd={event => {
-          const { source, target } = event.operation
-          if (event.canceled || !isSortable(source) || !target) {
-            props.onDraggingChange(false)
+          const current = latest.current
+          // Hovers stop counting at the drop; what is drawn stays until the
+          // move is written, so the card does not jump back while it is.
+          latest.current = null
+          if (event.canceled || current === null || samePlacement(current.placement, current.origin)) {
+            setHeld(null)
+            onDraggingChange(false)
             return
           }
-          const to = target.data['stage']
-          const batch = typeof target.data['batch'] === 'string' ? target.data['batch'] : null
-          const entry = findItem(source.id)
-          if (!entry || !isStage(to) || !accepts(source.id, { stage: to, batch })) {
-            props.onDraggingChange(false)
-            return
-          }
-          // dnd-kit supplies the final optimistic index within the target group.
-          // Persist a stable neighbor ID so the engine owns the actual move and
-          // resulting order; a queued card's neighbours are its own batch.
-          const destination = props.stages.find(stage => stage.stage === to)
-          const peers = destination?.items.filter(item => item.id !== entry.item.id && item.group === batch) ?? []
-          const beforeId = target.type === 'lane' ? null : peers[source.index]?.id ?? null
-          void props.onMove(entry.item.id, to, beforeId).finally(() => props.onDraggingChange(false))
+          void onMove(current.id, current.placement).finally(() => {
+            setHeld(null)
+            onDraggingChange(false)
+          })
         }}
       >
         <div className="grid min-w-300 grid-cols-5 items-start gap-4">
-          {props.stages.map(stage => (
-            <Lane key={stage.stage} {...props} stage={stage} accepts={accepts} executeOccupied={executeOccupied} />
+          {drawn(held).map(lane => (
+            <Lane
+              key={lane.stage}
+              {...actions}
+              lane={lane}
+              count={stages.find(stage => stage.stage === lane.stage)?.items.length ?? 0}
+              held={held?.placement ?? null}
+              accepts={accepts}
+              executeOccupied={executeOccupied}
+            />
           ))}
         </div>
       </DragDropProvider>
     </TooltipProvider>
-  )
-}
-
-type LaneProps = BoardProps & {
-  stage: StageFile
-  accepts: (id: unknown, target: DropTarget) => boolean
-  executeOccupied: boolean
-}
-
-function Lane({ stage, accepts, executeOccupied, ...props }: LaneProps) {
-  const { ref, isDropTarget } = useDroppable({
-    id: `lane:${stage.stage}`,
-    type: 'lane',
-    data: { stage: stage.stage, batch: null },
-    accept: source => accepts(source.id, { stage: stage.stage, batch: null }),
-    collisionPriority: CollisionPriority.Low,
-    disabled: props.pending,
-  })
-  const meta = stageMeta[stage.stage]
-  // A control appears when it can act. An empty selection and an occupied
-  // Execute are both visible in the lanes themselves, so a disabled button
-  // carrying the reason would say a second time what the board already shows.
-  const canQueue = stage.stage === 'BATCH' && props.selectedBatchIds.size > 0
-  const canStart = stage.stage === 'QUEUE' && stage.items.length > 0 && !executeOccupied
-  return (
-    <section ref={ref} className="min-w-0 space-y-3">
-      <div className="flex items-center gap-2">
-        {/* What the stage is for is one hover away rather than a line under
-            every lane; the heading is what carries it. */}
-        <h2 className="font-medium">
-          <Tooltip>
-            <TooltipTrigger className="cursor-default rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-              {meta.label}
-            </TooltipTrigger>
-            <TooltipContent>{meta.hint}</TooltipContent>
-          </Tooltip>
-        </h2>
-        <Badge
-          variant={stage.items.length === 0 ? 'outline' : 'secondary'}
-          className={cn(stage.items.length === 0 && 'text-muted-foreground')}
-          title="How many items are in this stage."
-        >
-          {stage.items.length}
-        </Badge>
-      </div>
-      {canQueue ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="outline" className="w-full" disabled={props.pending} onClick={props.onQueue} />
-            }
-          >
-            Queue batch ({props.selectedBatchIds.size})
-          </TooltipTrigger>
-          <TooltipContent>Name the selected items as a batch and append it to Queue.</TooltipContent>
-        </Tooltip>
-      ) : null}
-      {canStart ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={<Button variant="outline" className="w-full" disabled={props.pending} onClick={props.onStart} />}
-          >
-            Start next batch
-          </TooltipTrigger>
-          <TooltipContent>Move the first queued batch into Execute.</TooltipContent>
-        </Tooltip>
-      ) : null}
-      <div className={cn('min-h-32 space-y-3 rounded-lg', isDropTarget && 'outline-2 outline-primary outline-dashed')}>
-        {isBatchedStage(stage.stage)
-          ? batchGroups(stage.items).map(group => (
-            <div key={`${group.batch}`} className="space-y-3">
-              <h3
-                className="text-xs font-medium tracking-wide text-foreground"
-                title="The batch these items were queued in."
-              >
-                {group.batch}
-              </h3>
-              {group.items.map((item, index) => (
-                <WorkflowCard key={item.id} item={item} index={index} stage={stage.stage} group={`${stage.stage}:${group.batch}`} accepts={accepts} {...props} />
-              ))}
-            </div>
-          ))
-          : stage.items.map((item, index) => (
-            <WorkflowCard key={item.id} item={item} index={index} stage={stage.stage} group={stage.stage} accepts={accepts} {...props} />
-          ))}
-      </div>
-    </section>
-  )
-}
-
-function WorkflowCard({ item, index, stage, group, accepts, ...props }: BoardProps & {
-  item: Item
-  index: number
-  stage: Stage
-  group: string
-  accepts: (id: unknown, target: DropTarget) => boolean
-}) {
-  // Execute is frozen: its cards leave only by completing, never by dragging.
-  const frozen = stage === 'EXECUTE'
-  const { ref, isDropTarget, isDragSource } = useSortable({
-    id: item.id,
-    index,
-    group,
-    type: 'item',
-    data: { stage, batch: item.group },
-    accept: source => accepts(source.id, { stage, batch: item.group }),
-    disabled: props.pending || frozen,
-  })
-  return (
-    // The card is the drag surface now, so it is what the keyboard reaches and
-    // what the sortable's keyboard sensor listens on. It carries the name the
-    // grip used to carry, and no button role: it holds a link and a checkbox,
-    // and a button may not contain those.
-    <div
-      ref={ref}
-      tabIndex={frozen ? undefined : 0}
-      aria-roledescription={frozen ? undefined : 'Draggable card'}
-      aria-label={frozen ? undefined : `Drag ${item.title}`}
-      className={cn(
-        'relative rounded-xl outline-none',
-        frozen ? undefined : 'cursor-grab focus-visible:ring-3 focus-visible:ring-ring/50',
-        !frozen && isDragSource && 'cursor-grabbing',
-      )}
-    >
-      {isDropTarget ? <div className="pointer-events-none absolute inset-x-0 -top-2 h-1 rounded-full bg-primary" /> : null}
-      <Card size="sm" className={cn(isDragSource && 'opacity-50')}>
-        <CardContent className="space-y-3">
-          <div className="flex items-start gap-2">
-            {stage === 'BATCH' ? <Checkbox checked={props.selectedBatchIds.has(item.id)} onCheckedChange={selected => props.onSelect(item.id, selected)} aria-label={`Select ${item.title}`} /> : null}
-            {/* A real link: the item has a page, so it opens in a tab like anything else. */}
-            <a
-              href={itemHref(item.id)}
-              className="min-w-0 flex-1 rounded-sm text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {item.title}
-            </a>
-          </div>
-          {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Copyable value={item.id}>{item.id}</Copyable>
-            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => props.onComplete(item)} title={`Complete ${item.title}`} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
   )
 }

@@ -11,6 +11,7 @@ import { Button } from './components/ui/button'
 import { eventsUrl, SessionApi } from './lib/api'
 import { basePath } from './lib/base'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
+import { groupMeta } from './lib/workflow'
 
 const boardHref = `${basePath}/`
 
@@ -164,12 +165,13 @@ function Detail({
 }) {
   return (
     <article>
-      {/* A batch name on its own is a phrase nobody can place, so it is
-          labelled the way the header labels a branch. */}
+      {/* A group's name on its own is a phrase nobody can place, so it is
+          labelled the way the header labels a branch: a batch in Queue and
+          Execute, where every group is one, and a group everywhere else. */}
       {item.group
         ? (
           <dl className="mb-3 flex items-baseline gap-2 text-sm">
-            <dt className="text-muted-foreground" title="The batch this item was queued in.">Batch</dt>
+            <dt className="text-muted-foreground" title={groupMeta[stage].field}>{groupMeta[stage].label}</dt>
             <dd className="font-medium">{item.group}</dd>
           </dl>
         )

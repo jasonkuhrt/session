@@ -1,14 +1,12 @@
 import * as React from 'react'
 
 import type { Session } from '../../contract'
+import type { SessionMutation } from './api'
 import { ApiError, SessionApi } from './api'
 
 /** A conflict is not a failure: nothing was lost and the surface caught up. */
 export const refreshedNotice =
   'The Markdown changed on disk. The board was refreshed; please try again.'
-
-/** Every route that moves the records. The board and the item page share them. */
-export type SessionMutation = '/api/move' | '/api/batch' | '/api/start' | '/api/complete'
 
 /**
  * The one way a surface changes the records, so the board and the item page

@@ -399,7 +399,9 @@ The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
 there is no way to type a body or create an item in it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
-reading width, shows the item's id and its path under the session, and resolves
+reading width, shows the item's id and its path under the session, and above
+its title the name of its group when it has one, labelled Batch in Queue and
+Execute and Group elsewhere, and resolves
 Markdown links inside the body against the session directory; the path copies
 the absolute file, which is what a terminal beside the page can open. An id
 with a dot in it, such as `BE-1.2`, has its page like any other: a path under
@@ -427,15 +429,47 @@ served, and a directory named `ignore` further down is an ordinary one. What the
 route serves never runs: it is sent sandboxed and is never sniffed into another
 type.
 
-Select ready items in the Batch lane and use "Queue batch", which appears once
-something is selected, to name them and append the batch to Queue. The Queue
-lane groups cards under their batch in file order and offers "Start next
-batch" while there is a batch to start and Execute is empty. Neither button is
+Every lane draws its groups as they are filed: a group is a heading over its
+cards, in its place in the lane's file order among the cards in no group. The
+heading's tooltip says what a group is in that lane: candidates or work
+gathered under one name in Triage and Design, a proposed batch in Batch, and a
+batch in Queue and Execute. Select cards in Triage, Design or Batch and
+"Group (n)" appears, which names them as a group of that lane in the dialog
+"Queue batch" uses; a name the lane already has adds them to that group, as
+`group` does. In Batch, "Queue batch (n)" appears beside it, to name the
+selected items as a batch and append it to Queue. Selected items join the group
+or the batch in the order the lane shows them. A group's heading in Batch offers
+"Queue batch" too: the dialog starts from the group's name, and it queues
+exactly that group's items, which takes the group with them. A group's heading
+in Triage, Design or Batch offers "Ungroup", which takes its items out of the
+group, each to the end of its lane, as `ungroup` does. A batch's heading in
+Queue and Execute offers nothing, because a batch is composed in Batch and a
+queued card leaves it only by leaving Queue. The Queue lane offers "Start next
+batch" while there is a batch to start and Execute is empty. None of these is
 ever drawn disabled with a reason: an empty selection and an occupied Execute
 are already visible in the lanes themselves. Execute is frozen: its cards can
-only be completed, which files them under `archive/`. Nothing drops into Queue
-or Execute; a Queue card can be reordered inside its own batch or dragged back
-to Batch, Design, or Triage.
+only be completed, which files them under `archive/`.
+
+A card is dragged by its whole self. While it is held, the board draws it where
+the move would write it and outlines the list it would land in: one group, or
+the lane's cards in no group. Held over a card of its own list it takes that
+card's place; arriving over a card of another list it goes in front of that
+card, or after it when its own centre is below the other's, as the sortable
+library places cards. Held over a group's heading or edge it joins the group,
+at its start over the group's top half and at its end over the bottom half,
+and a group the drag has emptied is still there to take it back until the
+drop. Held over the lane's own space, which runs on below the lane's last card,
+it leaves any group for the end of the lane. So a card dropped among a
+group's cards joins that group, one dropped among the lane's cards in no group
+leaves its group, and one dropped in another lane lands in no group there unless
+it was dropped among one of that lane's groups. `POST /api/move` carries that as
+`group`: the group it lands in, or `null`. A card in no group can go in front of
+another card in no group, or to the end of the lane, and never straight in front
+of a group, because the move names the card it goes before; held just after
+such a card, it is drawn past the groups that follow, where it would be written.
+Nothing drops into Queue or Execute; a Queue card can be reordered inside its
+own batch or dragged back to Batch, Design, or Triage, into a group there or
+not. Escape puts the held card back, and so does a move the engine refuses.
 
 Beside the session, each board serves three read-only listings. `GET
 /w/<key>/api/ledger` is the ledger's entries, newest first by date and then by
