@@ -13,7 +13,7 @@ batch composition, and when execution begins.
 | --- | --- | --- |
 | `TRIAGE` | Candidates not yet accepted. | The user accepts, rejects, or redirects. |
 | `DESIGN` | Accepted work with open questions. | Outcome and acceptance are settled. |
-| `BATCH` | Settled work, a flat pool ready to batch. | The user composes it into a queued batch. |
+| `BATCH` | Settled work, a pool ready to batch, grouped or not. | The user composes it into a queued batch. |
 | `QUEUE` | Named batches in order, composed, not started. | The user starts the first batch. |
 | `EXECUTE` | The one running batch. Frozen. | Each item completes, or the user changes the batch. |
 
@@ -38,9 +38,11 @@ alone, and every record is ordinary Markdown.
 `.gitignore` of exactly `*`, which ignores the directory and that file.
 
 Every stage is a directory of numbered item files. One item is one file, and an
-empty stage is an empty directory. Triage, Design, and Batch hold their item
-files directly. Queue and Execute hold one directory per batch with that batch's
-item files inside, so every item there belongs to a batch.
+empty stage is an empty directory. Triage, Design, and Batch hold item files and
+group directories side by side; a group directory is numbered like an item file,
+named for its group, and holds that group's item files. Queue and Execute hold
+one directory per batch with that batch's item files inside, so every item there
+belongs to a batch.
 [references/records.md](references/records.md) has the format.
 
 The root is closed. Beside the five stages and the `.gitignore`, it holds only

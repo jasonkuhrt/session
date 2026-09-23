@@ -17,6 +17,17 @@ const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
   beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
+  /** The drop target's group, or null for none; left out, as `session mv` leaves it out. */
+  group: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
+  revision: Schema.String,
+});
+const GroupItems = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+  name: Schema.String,
+  revision: Schema.String,
+});
+const UngroupItems = Schema.Struct({
+  ids: Schema.Array(Schema.String),
   revision: Schema.String,
 });
 const QueueBatch = Schema.Struct({
@@ -344,6 +355,14 @@ export const makeRequestHandler = (options: {
         if (request.method === 'POST' && url.pathname === '/api/move') {
           const input = await run(decodeBody(request, MoveItem));
           return json(await attachWorktree(await run(repository.moveItem(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/group') {
+          const input = await run(decodeBody(request, GroupItems));
+          return json(await attachWorktree(await run(repository.groupItems(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/ungroup') {
+          const input = await run(decodeBody(request, UngroupItems));
+          return json(await attachWorktree(await run(repository.ungroupItems(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/batch') {
           const input = await run(decodeBody(request, QueueBatch));

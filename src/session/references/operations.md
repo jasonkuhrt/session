@@ -11,10 +11,12 @@ session [-C <worktree-or-.session>] <command>
 init                       create whatever the session is missing and print it; for handing off to your editor
 check                      validate; prints "OK <revision>, <n> items" or "OK <revision>, empty", or the first error and exits 1
 refresh [--previous F]     JSON path/hash inventory, and what it skipped
-ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, batch, and order
+ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, group, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
-mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute
-batch "<name>" <ID...>     compose a named batch from Batch items and append it to Queue
+mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute; another stage drops the group
+group "<name>" <ID...>     gather items of one stage into a named group; refuses Queue and Execute
+ungroup <ID...>            take items out of their groups, to the end of their stage; refuses Queue and Execute
+batch "<name>" <ID...>     compose a named batch from Batch items, grouped or not, and append it to Queue
 start                      move the first Queue batch into Execute
 done <ID>                  finish an Execute item into archive/
 archive <ID>               archive an item from any stage into archive/, recording the stage
@@ -29,8 +31,10 @@ the command is not on PATH:
 bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree check
 ```
 
-Success prints one short line, such as `Queued "Email backend peel" (3 items)`
-or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` and
+Success prints one short line, such as `Queued "Email backend peel" (3 items)`,
+`Moved BE-16 to BATCH/030-BE-16.md` or
+`Grouped 2 items in TRIAGE/020-Needs a decision`. Errors print a message on
+stderr and exit 1. `add` and
 `log` are the commands that read stdin, in full and trimmed. A pipe or a file is
 read to its end. A socket, which is what a program that spawns the CLI hands
 it, is read to its end once it starts sending within half a second; one that
@@ -43,21 +47,52 @@ in the half second after that, it is too late: `log` has written the entry
 without it, says on stderr that the body was not written, and keeps the exit
 code of the write. A body that starts later still is not seen at all.
 
-## Move and batch rules
+## Move, group and batch rules
 
 The engine owns placement, so the CLI refuses what the stage rules forbid. `add`
-creates an item in Triage, Design, or Batch and refuses Queue and Execute,
-because a Queue batch is composed with `batch` and Execute is entered only by
-`start`. `mv` moves between Triage, Design, and Batch, and out of Queue into any
-of them, dropping the batch. It never moves an item into Queue or Execute, and
-never out of Execute, which `done` and `archive` do. Within Queue, `--before`
-reorders an item inside its own batch. Without `--before`, an item lands at the
-end of the stage. The target stage's required sections are validated on arrival,
-so rewrite the item file first and then move it; that is the ordinary way an
-item leaves Design for Batch.
+creates an item in Triage, Design, or Batch, in no group at the end of the
+stage, and refuses Queue and Execute, because a Queue batch is composed with
+`batch` and Execute is entered only by `start`. `mv` moves between Triage,
+Design, and Batch, and out of Queue into any of them. It never moves an item
+into Queue or Execute, and never out of Execute, which `done` and `archive` do.
+The target stage's required sections are validated on arrival, so rewrite the
+item file first and then move it; that is the ordinary way an item leaves Design
+for Batch.
 
-`batch` takes items that are all in Batch. `start` requires Execute to be empty
-and keeps the batch's name.
+An item `mv` takes to another stage leaves its group, as one that leaves Queue
+leaves its batch, and lands in no group there. Inside its own stage it keeps
+its group. Without `--before`, an item lands at the end of its group, or at the
+end of the stage when it is in none. `--before` names the item it goes in front
+of, which must be in the same group, or in none for an item in none; that is how
+an item is reordered inside its Queue batch, or inside a group anywhere.
+
+`group "<name>" <ID...>` gathers items that are all in one of Triage, Design, and
+Batch into the group of that name there. A group the stage does not hold yet
+starts at the end of the stage; one it holds takes the items at its own end, in
+the order given, so a second `group` with the same name adds to the first. An
+item already in that group stays where it is, because `group` says what an item
+belongs to and `mv --before` says where it sits. `ungroup <ID...>` takes items
+out of their groups, each to the end of its own stage, and leaves an item in no
+group where it is. Both refuse Queue and Execute, where every group is a batch:
+a batch is composed from Batch with `batch`, and a queued item leaves its batch
+only by leaving Queue. `group` trims the name, as `batch` does, and refuses one
+that is empty or holds a `/`; [records.md](records.md) has the rules a group
+directory keeps.
+
+`batch` takes items that are all in Batch, in a group there or not. Each leaves
+its group for the batch, and a group it empties goes with it. `start` requires
+Execute to be empty and keeps the batch's name.
+
+The board makes the same changes through its own routes, each checked against
+the revision and answered with the session:
+
+- `POST /w/<key>/api/move {id, to, beforeId?, group?, revision}` moves as `mv`
+  does. `group` is the drop target's group: one the target stage already holds,
+  or `null` for none. Left out, the item keeps its group inside its own stage
+  and has none in another, as with `mv`. A group the target stage does not hold
+  is refused rather than started, because starting one is `group`'s to do.
+- `POST /w/<key>/api/group {ids, name, revision}` is `group`.
+- `POST /w/<key>/api/ungroup {ids, revision}` is `ungroup`.
 
 ## Finish and archive
 
@@ -583,14 +618,18 @@ read it, does not match it against the sessions it lists, and never writes it.
 
 The item files are ordinary Markdown, and the editor is where their content is
 written. Edit them with the usual filesystem tools and run `check` afterward.
-Preserve any unrelated edits. Prefer `mv` to a hand move: it validates the target
-stage, keeps the batch rules, and renumbers the directories. A hand move must
-carry the whole record and remove its old file; never leave duplicate IDs.
+Preserve any unrelated edits. Prefer `mv`, `group` and `ungroup` to a hand move:
+they validate the target stage, keep the group and batch rules, and renumber the
+directories. A hand move must carry the whole record and remove its old file;
+never leave duplicate IDs. Moving a file into or out of a group directory is a
+hand move too, because the directory is the group.
 
 `check` rejects malformed records, duplicate IDs, missing stage-specific
 sections, `# ` headings inside item files, Queue or Execute items belonging to no
-batch, entries whose names break the numbering pattern, a missing `.gitignore`, a
-`.session` that is a symlink, and a leftover `STAGE.md`. It closes the session
+batch, a directory inside a group directory, a group name that is empty or has
+surrounding spaces, two directories naming one group in a stage, entries whose
+names break the numbering pattern, a missing `.gitignore`, a `.session` that is
+a symlink, and a leftover `STAGE.md`. It closes the session
 root: any entry other than the five stages, `archive/`, `ignore/`, `context/`,
 `ledger/`, `RULES.md`, `.gitignore` and names starting with a dot is an error
 that names it and says to move it under `context/` or delete it, or to rename

@@ -52,8 +52,8 @@ function batchGroups(items: Item[]) {
   const groups: Array<{ batch: string | null; items: Item[] }> = []
   for (const item of items) {
     const last = groups.at(-1)
-    if (last && last.batch === item.batch) last.items.push(item)
-    else groups.push({ batch: item.batch, items: [item] })
+    if (last && last.batch === item.group) last.items.push(item)
+    else groups.push({ batch: item.group, items: [item] })
   }
   return groups
 }
@@ -74,7 +74,7 @@ export function Board(props: BoardProps) {
     if (source === null) return false
     if (target.stage === 'EXECUTE') return false
     if (target.stage === 'QUEUE') {
-      return source.stage === 'QUEUE' && target.batch !== null && source.item.batch === target.batch
+      return source.stage === 'QUEUE' && target.batch !== null && source.item.group === target.batch
     }
     if (source.stage === target.stage) return true
     return moveAvailability(source.item, source.stage, target.stage).enabled
@@ -103,7 +103,7 @@ export function Board(props: BoardProps) {
           // Persist a stable neighbor ID so the engine owns the actual move and
           // resulting order; a queued card's neighbours are its own batch.
           const destination = props.stages.find(stage => stage.stage === to)
-          const peers = destination?.items.filter(item => item.id !== entry.item.id && item.batch === batch) ?? []
+          const peers = destination?.items.filter(item => item.id !== entry.item.id && item.group === batch) ?? []
           const beforeId = target.type === 'lane' ? null : peers[source.index]?.id ?? null
           void props.onMove(entry.item.id, to, beforeId).finally(() => props.onDraggingChange(false))
         }}
@@ -219,8 +219,8 @@ function WorkflowCard({ item, index, stage, group, accepts, ...props }: BoardPro
     index,
     group,
     type: 'item',
-    data: { stage, batch: item.batch },
-    accept: source => accepts(source.id, { stage, batch: item.batch }),
+    data: { stage, batch: item.group },
+    accept: source => accepts(source.id, { stage, batch: item.group }),
     disabled: props.pending || frozen,
   })
   return (

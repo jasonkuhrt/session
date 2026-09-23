@@ -42,10 +42,12 @@ import {
 import {
   fail,
   findRequiredItem,
+  groupNoun,
   type ItemDraft,
   makeItem,
   quote,
   SessionError,
+  validateGroupName,
   validateItem,
   validateItemSections,
   validateUniqueIds,
@@ -145,12 +147,12 @@ const toSession = (loaded: Loaded): Session => ({
 const stageOf = (loaded: Loaded, stage: Stage): StageState =>
   loaded.stages.find((entry) => entry.stage === stage)!;
 
-const draftOf = (item: ItemDraft, batch: string | null): ItemDraft => ({
+const draftOf = (item: ItemDraft, group: string | null): ItemDraft => ({
   id: item.id,
   title: item.title,
   body: item.body,
   summary: item.summary,
-  batch,
+  group,
 });
 
 const projected = (
@@ -187,39 +189,47 @@ const stageChanges = (state: StageState, items: ReadonlyArray<ItemDraft>): FileC
     renderStageDirectory({ stage: state.stage, items, current: state.files }),
   );
 
-const placeItem = (
-  stage: Stage,
-  items: ReadonlyArray<ItemDraft>,
-  item: ItemDraft,
-  beforeId: string | null | undefined,
-): ItemDraft[] => {
+/** Where an item sits in a stage, as a refusal names it. */
+const placeName = (stage: Stage, group: string | null): string =>
+  group === null ? `no ${groupNoun(stage)}` : `the ${groupNoun(stage)} ${quote(group)}`;
+
+/**
+ * An item placed among a stage's other items, in file order, in the group its
+ * draft names, or in none. `beforeId` names the item it goes in front of,
+ * which must sit in the same group, or in none for an item in none, so a group
+ * is never split. Without it the item goes at the end of its group, and an
+ * item in no group at the end of the stage. A group the other items do not
+ * hold starts at `start`: the end of the stage, unless the caller keeps the
+ * place of a group it has just emptied.
+ */
+const placeItem = (input: {
+  readonly stage: Stage;
+  readonly items: ReadonlyArray<ItemDraft>;
+  readonly item: ItemDraft;
+  readonly beforeId?: string | null | undefined;
+  readonly start?: number | undefined;
+}): ItemDraft[] => {
+  const { stage, items, item, beforeId } = input;
+  const { group } = item;
   const insertAt = (index: number) => [...items.slice(0, index), item, ...items.slice(index)];
-  const indexOfBefore = (from: number, to: number) => {
-    const index = items.findIndex((candidate) => candidate.id === beforeId);
-    if (index < from || index >= to) {
-      fail(`${stage}: cannot place ${item.id} before ${String(beforeId)}.`);
-    }
-    return index;
-  };
 
-  if (!isBatchedStage(stage)) {
-    if (beforeId === undefined || beforeId === null) return [...items, item];
-    return insertAt(indexOfBefore(0, items.length));
+  if (beforeId === undefined || beforeId === null) {
+    if (group === null) return [...items, item];
+    const first = items.findIndex((candidate) => candidate.group === group);
+    if (first === -1) return insertAt(input.start ?? items.length);
+    let end = first;
+    while (end < items.length && items[end]!.group === group) end += 1;
+    return insertAt(end);
   }
 
-  const batch: string = item.batch ??
-    fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
-  const start = items.findIndex((candidate) => candidate.batch === batch);
-  if (start === -1) {
-    if (beforeId !== undefined && beforeId !== null) {
-      fail(`${stage}: batch ${quote(batch)} has no item ${beforeId}.`);
-    }
-    return [...items, item];
+  const index = items.findIndex((candidate) => candidate.id === beforeId);
+  const neighbour = items[index] ?? fail(`${stage}: cannot place ${item.id} before ${beforeId}, which is not in ${stage}.`);
+  if (neighbour.group !== group) {
+    fail(
+      `${stage}: cannot place ${item.id} before ${beforeId}; ${item.id} goes in ${placeName(stage, group)} and ${beforeId} is in ${placeName(stage, neighbour.group)}.`,
+    );
   }
-  let end = start;
-  while (end < items.length && items[end]!.batch === batch) end += 1;
-  if (beforeId === undefined || beforeId === null) return insertAt(end);
-  return insertAt(indexOfBefore(start, end));
+  return insertAt(index);
 };
 
 const isInsideRoot = (realRoot: string, candidate: string): boolean =>
@@ -361,16 +371,23 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
-    /** A stage directory keeps itself; the batch directories it empties do not. */
+    /**
+     * A stage directory keeps itself; the group directories it empties do not.
+     * Every reader skips an entry whose name starts with a dot, so a group
+     * directory holding only such entries, like Finder's `.DS_Store`, holds
+     * nothing and goes with them; left behind, it would keep its prefix and its
+     * name from the next group or item. A directory whose own name starts with
+     * a dot is no group, and is left alone as every reader leaves it.
+     */
     const pruneEmptyDirectories = Effect.gen(function*() {
       for (const stage of stageNames) {
         const stageDirectory = absolute(stage);
         if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
         for (const name of yield* fs.readDirectory(stageDirectory)) {
+          if (name.startsWith('.')) continue;
           const child = join(stageDirectory, name);
           if ((yield* pathType(child)) !== 'Directory') continue;
-          // `remove` needs `recursive` for a directory even when it is empty.
-          if ((yield* fs.readDirectory(child)).length === 0) {
+          if ((yield* fs.readDirectory(child)).every((entry) => entry.startsWith('.'))) {
             yield* fs.remove(child, { recursive: true });
           }
         }
@@ -380,7 +397,7 @@ export const makeRepository = (directory: string) =>
         (cause) =>
           new RepositoryError({
             kind: 'io',
-            message: 'Could not remove an emptied batch directory.',
+            message: 'Could not remove an emptied group directory.',
             cause,
           }),
       ),
@@ -688,13 +705,13 @@ export const makeRepository = (directory: string) =>
               id: input.id,
               title: input.title.trim(),
               body: input.body,
-              batch: null,
+              group: null,
             });
             validateItem(input.stage, candidate);
             validateItemSections(input.stage, candidate);
             return candidate;
           });
-          const items = yield* attempt(() => placeItem(input.stage, state.items, item, null));
+          const items = yield* attempt(() => placeItem({ stage: input.stage, items: state.items, item }));
           yield* attempt(() => validateUniqueIds(projected(loaded, [{ stage: input.stage, items }])));
           return yield* attempt(() => stageChanges(state, items));
         }),
@@ -704,6 +721,12 @@ export const makeRepository = (directory: string) =>
       readonly id: string;
       readonly to: Stage;
       readonly beforeId?: string | null | undefined;
+      /**
+       * The group it lands in, which the target stage must already hold, or
+       * null for none. Left out, an item keeps its group inside its own stage
+       * and has none in another, as leaving QUEUE drops the batch.
+       */
+      readonly group?: string | null | undefined;
       readonly revision: string;
     }) =>
       mutate(input.revision, (loaded) =>
@@ -728,8 +751,31 @@ export const makeRepository = (directory: string) =>
             });
           }
 
+          const inPlace = found.stage === input.to;
+          const group = input.group === undefined ? (inPlace ? found.item.group : null) : input.group;
+          const staysInGroup = inPlace && group === found.item.group;
           // Inside QUEUE an item keeps its batch and only changes place in it.
-          const item = draftOf(found.item, input.to === 'QUEUE' ? found.item.batch : null);
+          if (input.to === 'QUEUE' && !staysInGroup) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: `QUEUE: ${input.id} stays in the batch ${quote(found.item.group ?? '')}; a queued item moves only within its batch, or out of QUEUE.`,
+            });
+          }
+          const target = stageOf(loaded, input.to);
+          if (group !== null && !target.items.some((candidate) => candidate.group === group)) {
+            return yield* new RepositoryError({
+              kind: 'not-found',
+              message: `${input.to} has no group ${quote(group)}; \`session group\` starts one.`,
+            });
+          }
+          if (input.beforeId === input.id && !staysInGroup) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `${input.to}: cannot place ${input.id} before itself.`,
+            });
+          }
+
+          const item = draftOf(found.item, group);
           yield* attempt(() => {
             validateItem(input.to, item);
             validateItemSections(input.to, item);
@@ -737,22 +783,119 @@ export const makeRepository = (directory: string) =>
 
           const source = stageOf(loaded, found.stage);
           const remaining = source.items.filter((candidate) => candidate.id !== input.id);
-          if (found.stage === input.to) {
-            const beforeId = input.beforeId === input.id
-              ? source.items[source.items.findIndex((entry) => entry.id === input.id) + 1]?.id ?? null
-              : input.beforeId;
-            const items = yield* attempt(() => placeItem(input.to, remaining, item, beforeId));
+          if (inPlace) {
+            // Placed before itself, an item stays where it is.
+            if (input.beforeId === input.id) return [];
+            const items = yield* attempt(() =>
+              placeItem({
+                stage: input.to,
+                items: remaining,
+                item,
+                beforeId: input.beforeId,
+                // An item alone in its group keeps the group's place.
+                start: staysInGroup ? source.items.findIndex((candidate) => candidate.id === input.id) : undefined,
+              })
+            );
             return yield* attempt(() => stageChanges(source, items));
           }
 
-          const target = stageOf(loaded, input.to);
           const items = yield* attempt(() =>
-            placeItem(input.to, target.items, item, input.beforeId),
+            placeItem({ stage: input.to, items: target.items, item, beforeId: input.beforeId }),
           );
           return yield* attempt(() => [
             ...stageChanges(source, remaining),
             ...stageChanges(target, items),
           ]);
+        }),
+      );
+
+    /** The items a group verb names, each where it is, refused when the list is empty or repeats one. */
+    const namedItems = (loaded: Loaded, ids: ReadonlyArray<string>, noun: string) =>
+      attempt(() => {
+        if (ids.length === 0) fail(`${noun} needs at least one item.`);
+        if (new Set(ids).size !== ids.length) fail(`${noun} cannot repeat an item ID.`);
+        return ids.map((id) => findRequiredItem(loaded.stages, id));
+      });
+
+    /**
+     * Gather items of one flat stage into the group of that name. A group the
+     * stage does not hold yet starts at its end; one it holds takes the items
+     * at its own end, in the order given. An item already in it stays where it
+     * is, so gathering is about belonging and `mv --before` about order.
+     */
+    const groupItems = (input: {
+      readonly name: string;
+      readonly ids: ReadonlyArray<string>;
+      readonly revision: string;
+    }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const name = input.name.trim();
+          const found = yield* namedItems(loaded, input.ids, 'A group');
+          const { stage } = found[0]!;
+          const elsewhere = found.find((entry) => entry.stage !== stage);
+          if (elsewhere !== undefined) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message:
+                `A group holds items of one stage: ${found[0]!.item.id} is in ${stage} and ${elsewhere.item.id} is in ${elsewhere.stage}.`,
+            });
+          }
+          if (isBatchedStage(stage)) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: stage === 'QUEUE'
+                ? 'In QUEUE a group is a batch, composed from BATCH with `session batch`.'
+                : 'EXECUTE is frozen; its batch stays as it started.',
+            });
+          }
+          const state = stageOf(loaded, stage);
+          const items = yield* attempt(() => {
+            validateGroupName(stage, name);
+            let placed: ReadonlyArray<ItemDraft> = state.items;
+            for (const { item } of found) {
+              if (item.group === name) continue;
+              const joined = draftOf(item, name);
+              validateItem(stage, joined);
+              validateItemSections(stage, joined);
+              placed = placeItem({ stage, items: placed.filter((candidate) => candidate.id !== item.id), item: joined });
+            }
+            return placed;
+          });
+          return yield* attempt(() => stageChanges(state, items));
+        }),
+      );
+
+    /**
+     * Take items out of their groups, each to the end of its own stage, in the
+     * order given. An item in no group stays where it is. QUEUE and EXECUTE
+     * refuse, because every item there belongs to a batch.
+     */
+    const ungroupItems = (input: { readonly ids: ReadonlyArray<string>; readonly revision: string }) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const found = yield* namedItems(loaded, input.ids, 'Ungrouping');
+          const batched = found.find((entry) => isBatchedStage(entry.stage));
+          if (batched !== undefined) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: batched.stage === 'QUEUE'
+                ? `QUEUE: ${batched.item.id} stays in the batch ${quote(batched.item.group ?? '')}; a queued item leaves its batch only by leaving QUEUE, with \`session mv\`.`
+                : 'EXECUTE is frozen; its batch stays as it started.',
+            });
+          }
+          const placed = new Map<Stage, ReadonlyArray<ItemDraft>>();
+          yield* attempt(() => {
+            for (const { stage, item } of found) {
+              if (item.group === null) continue;
+              const loose = draftOf(item, null);
+              validateItem(stage, loose);
+              validateItemSections(stage, loose);
+              const items = placed.get(stage) ?? stageOf(loaded, stage).items;
+              placed.set(stage, placeItem({ stage, items: items.filter((candidate) => candidate.id !== item.id), item: loose }));
+            }
+          });
+          return yield* attempt(() => [...placed].flatMap(([stage, items]) => stageChanges(stageOf(loaded, stage), items)));
         }),
       );
 
@@ -779,12 +922,14 @@ export const makeRepository = (directory: string) =>
           }
           const pool = stageOf(loaded, 'BATCH');
           const queue = stageOf(loaded, 'QUEUE');
-          if (queue.items.some((item) => item.batch === name)) {
+          if (queue.items.some((item) => item.group === name)) {
             return yield* new RepositoryError({
               kind: 'validation',
               message: `QUEUE already has a batch named ${quote(name)}.`,
             });
           }
+          // An item in a group of BATCH leaves it for the batch, and a group
+          // left empty goes with it.
           const available = new Map(pool.items.map((item) => [item.id, item]));
           const selected = yield* attempt(() =>
             input.ids.map((id) => {
@@ -820,11 +965,11 @@ export const makeRepository = (directory: string) =>
               message: 'QUEUE is empty; queue a batch first.',
             });
           }
-          const name = first.batch;
+          const name = first.group;
           const starting: ItemDraft[] = [];
           const waiting: ItemDraft[] = [];
           for (const item of queue.items) {
-            if (item.batch === name) starting.push(draftOf(item, name));
+            if (item.group === name) starting.push(draftOf(item, name));
             else waiting.push(item);
           }
           return yield* attempt(() => {
@@ -1368,6 +1513,8 @@ export const makeRepository = (directory: string) =>
       check,
       addItem,
       moveItem,
+      groupItems,
+      ungroupItems,
       queueBatch,
       startBatch,
       completeItem,

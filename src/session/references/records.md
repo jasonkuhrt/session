@@ -78,19 +78,47 @@ checkout's configuration, and reports the cache import outcome.
 - Missing source configuration produces an actionable error.
 ```
 
-Batch is a flat pool of settled work. Its item files sit directly in `BATCH/`,
-with no batch directories and no other grouping. Compose any coherent set of
-ready items into the next batch with `session batch "<name>" <ID...>`, which
-appends it to the end of Queue.
+Batch is the pool of settled work. A group there is a proposed composition:
+items gathered so the batch they could make shows before anyone queues it.
+Compose any coherent set of ready items, in groups or not, into the next batch
+with `session batch "<name>" <ID...>`, which appends it to the end of Queue;
+each item leaves its group for the batch.
+
+## Groups
+
+Any lane can gather its items into named groups, the way Queue gathers them into
+batches. A group is a directory inside the stage directory, numbered like an
+item file and named for the group, and it holds the group's item files:
+`TRIAGE/020-Needs a decision/010-BE-14.md`. In Triage, Design and Batch, item
+files and group directories sit side by side and one sequence of prefixes orders
+them together, so a group has its place in the lane among the items outside it.
+In Queue and Execute every item is in a group, and there the group is a batch.
+
+- The group an item belongs to is its directory, so nothing inside the file
+  names it. An item file directly in the stage directory is in no group.
+- A group's name is the rest of its directory's name: non-empty, with no
+  surrounding spaces and no `/`, and unique within its stage. The same name in
+  two lanes is two groups.
+- A group directory holds item files only; groups do not nest.
+- Emptying a group removes its directory on the next write, with anything left
+  in it whose name starts with a dot, such as Finder's `.DS_Store`: no reader
+  sees those, so they cannot keep a group alive.
+
+`session group "<name>" <ID...>` gathers items of one lane into a group, and
+`session ungroup <ID...>` takes them out to the end of their lane. An item that
+leaves its lane leaves its group, as an item that leaves Queue leaves its batch.
+A group made by hand is the same thing: a numbered directory in the stage, with
+the item files moved into it and numbered. [operations.md](operations.md) has
+each command's rules.
 
 ## Queue and Execute
 
-Queue and Execute hold one directory per batch, with the batch's item files
-inside: `QUEUE/010-Email backend peel/010-BE-16.md`. The item file is the same as
-in Batch, and it keeps the Outcome and Acceptance sections it carried there. The
-batch an item belongs to is its directory, so nothing inside the file names it,
-and every item in these two stages belongs to a batch. Batch names are non-empty
-and trimmed, contain no `/`, and are unique within a stage.
+A batch is a group that gets started as a unit. Queue and Execute hold only
+batches, one directory each, with the batch's item files inside:
+`QUEUE/010-Email backend peel/010-BE-16.md`. The item file is the same as in
+Batch, and it keeps the Outcome and Acceptance sections it carried there. Every
+item in these two stages belongs to a batch, and batch names follow the rules
+for group names.
 
 Queue holds the composed batches in order, none of them started. Execute holds
 the one running batch and is frozen. `session start` is the only way in: it
@@ -208,13 +236,16 @@ up.
 
 ## Directory layout
 
-A stage is always a directory. A flat stage holds item files; Queue and Execute
-hold batch directories:
+A stage is always a directory. Triage, Design and Batch hold item files and
+group directories side by side; Queue and Execute hold batch directories only:
 
 ```
 TRIAGE/
-  010-BE-16.md
-  020-BE-14.md
+  010-BE-18.md
+  020-Needs a decision/
+    010-BE-14.md
+    020-BE-15.md
+  030-BE-17.md
 QUEUE/
   010-Email backend peel/
     010-BE-16.md
@@ -224,20 +255,23 @@ QUEUE/
 ```
 
 - Every entry is a number, a hyphen, then the rest: for a file the rest is
-  `<ID>.md`, for a directory the rest is the batch name. Entries whose name
+  `<ID>.md`, for a directory the rest is the group's name. Entries whose name
   starts with `.` are ignored, which is also how a write in progress stays
   invisible until it is renamed into place. Anything else is an error, as are a
-  missing prefix and two entries sharing a prefix in one directory.
-- Ascending numeric prefix is the order, and that order is card order.
+  missing prefix, two entries sharing a prefix in one directory, and a
+  directory inside a group directory.
+- Ascending numeric prefix is the order, and that order is card order. A group
+  directory's prefix places the group among the stage's entries, and the
+  prefixes inside it order its items.
 - An item file is exactly the item's chunk: `## ID — Title` on the first line,
   with the ID matching the filename, then the body, ending in a single newline. A
-  `# ` heading inside an item file is an error, because batch names live in the
-  directory name.
+  `# ` heading inside an item file is an error, because a group's name, a
+  batch's included, lives in its directory's name.
 - Prefixes step by 10 and pad to three digits. The engine keeps existing numbers
   when it can fit an entry between them and renumbers the whole directory from
   `010` otherwise, so gaps are normal and hand-renumbering is unnecessary.
-- Emptying a batch removes its directory on the next write; the stage directory
-  itself stays, empty.
+- Emptying a group, a batch included, removes its directory on the next write,
+  dot entries and all; the stage directory itself stays, empty.
 
 ## Evidence and migration
 
@@ -260,5 +294,6 @@ The CLI never converts an old session. A `.session` that is a symlink is refused
 until it is replaced by a real directory, and a `STAGE.md` from the single-file
 layout is reported by `check` until it is folded into `STAGE/` by hand: split it
 at its `## ` headings into one numbered file per item, then delete it. A
-`BATCH.md` may still hold `# ` headings; batches live in Queue now, so drop them
-and re-form each group with `session batch "<name>" <ID...>`.
+`BATCH.md` may still hold `# ` headings; drop them, and re-form each heading's
+items as a group in Batch with `session group "<name>" <ID...>`, or compose them
+straight into a batch with `session batch "<name>" <ID...>`.

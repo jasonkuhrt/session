@@ -5,7 +5,10 @@ import { Schema } from 'effect';
 export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
 export type Stage = typeof stageNames[number];
 
-/** Stages whose items belong to a named batch, held in a batch directory. */
+/**
+ * Stages where every item belongs to a group, and the group is a batch: a
+ * group that gets started as a unit. Elsewhere a group is optional.
+ */
 export type BatchedStage = 'QUEUE' | 'EXECUTE';
 export const isBatchedStage = (stage: Stage): stage is BatchedStage =>
   stage === 'QUEUE' || stage === 'EXECUTE';
@@ -15,17 +18,22 @@ export type Item = {
   title: string;
   body: string;
   summary: string;
-  /** The batch the item belongs to. Always set in QUEUE and EXECUTE, never elsewhere. */
-  batch: string | null;
-  /** The item's file, relative to the session root: `TRIAGE/010-BE-1.md` or `QUEUE/010-Name/010-BE-1.md`. */
+  /**
+   * The group the item belongs to: the name of the directory its file sits in
+   * inside the stage. Always set in QUEUE and EXECUTE, where the group is the
+   * batch; null for an item filed directly in TRIAGE, DESIGN or BATCH.
+   */
+  group: string | null;
+  /** The item's file, relative to the session root: `TRIAGE/010-BE-1.md`, `TRIAGE/020-Name/010-BE-2.md` or `QUEUE/010-Name/010-BE-3.md`. */
   path: string;
 };
 
-/** A stage is a directory of item files; its listing order is card order. */
+/** A stage is a directory of numbered item files and group directories. */
 export type StageFile = {
   stage: Stage;
   /** Absolute path of the `STAGE/` directory. */
   path: string;
+  /** In file order, which is card order: a group's items are consecutive, in its directory's order. */
   items: Item[];
 };
 
@@ -45,7 +53,7 @@ export const ItemSchema = Schema.Struct({
   title: Schema.String,
   body: Schema.String,
   summary: Schema.String,
-  batch: Schema.NullOr(Schema.String),
+  group: Schema.NullOr(Schema.String),
   path: Schema.String,
 });
 
