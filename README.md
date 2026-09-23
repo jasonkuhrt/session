@@ -73,9 +73,13 @@ later edit on disk.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules
-for a session live in `RULES.md` at the session root and are read first;
-supporting evidence belongs under `context/`; finished and abandoned items live
-under `archive/`, one file each, and are not loaded as active context.
+for a session live in `RULES.md` at the session root and are read first. Next
+comes `ledger/`, the session's shared log: one dated entry per file, written
+with `session log` or by hand, for what another agent must know to act
+correctly here and would not learn from the items. Material about one item
+belongs under `context/<ID>/`, linked from that item's `### Evidence`. Finished
+and abandoned items live under `archive/`, one file each, and are not loaded as
+active context.
 
 A commit can close items itself: end its message with a `Session-Done: <ID>`
 trailer and the daemon files that item as done the moment the commit is made,
@@ -147,11 +151,12 @@ revision check guards every mutation, and a mutation writes its files before it
 deletes the ones it replaced.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
-Nova neutral preset. Keep the stock theme and component appearance. Card
-placement uses the native behavior of the established sortable library. Keep
-custom code limited to the board, Markdown workflow, and file boundary. Do not
-add separate mobile behavior, accessibility work, or concurrent-edit
-coordination unless Jason changes this contract.
+Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night
+variant, defined in `app/src/styles.css`. Keep that theme and the stock
+component appearance. Card placement uses the native behavior of the
+established sortable library. Keep custom code limited to the board, Markdown
+workflow, and file boundary. Do not add separate mobile behavior, accessibility
+work, or concurrent-edit coordination unless Jason changes this contract.
 
 Production checks replace authored tests for this project. Do not add tests,
 test dependencies, test scaffolding, or test pipelines unless Jason explicitly
