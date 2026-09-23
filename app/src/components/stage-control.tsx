@@ -5,9 +5,11 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
 
 /**
- * Where this item is, and where it may go from here. A stage it cannot reach
- * is dimmed and says on hover what has to be written first, so the rule that
- * refused the move is the thing the reader is told.
+ * Where this item is, and where it may go from here. The five stages are a
+ * fixed set that shows the shape of the flow, so a stage it cannot reach is
+ * still drawn, very dim, and says on hover what has to happen first: the rule
+ * that refused the move is the thing the reader is told, and nobody has to
+ * remember the flow to see it.
  */
 export function StageControl({
   item,
@@ -45,7 +47,7 @@ export function StageControl({
               <TooltipTrigger
                 render={
                   <ToggleGroupItem
-                    className="w-full aria-disabled:opacity-50"
+                    className="w-full aria-disabled:opacity-25"
                     value={candidate}
                     aria-disabled={!current && unavailable}
                     onPressedChange={(_pressed, details) => {

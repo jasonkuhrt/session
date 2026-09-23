@@ -2,38 +2,17 @@ import { CheckCircle2 } from 'lucide-react'
 import * as React from 'react'
 
 import type { Item, Session, Stage } from '../contract'
+import { BoardPageFrame, PageLoading } from './components/board-page'
 import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { CompleteDialog } from './components/session-dialogs'
 import { StageControl } from './components/stage-control'
-import { Alert, AlertDescription } from './components/ui/alert'
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from './components/ui/breadcrumb'
 import { Button } from './components/ui/button'
-import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
 import { basePath } from './lib/base'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
 
 const boardHref = `${basePath}/`
-
-/**
- * The reading column: everything on the page shares it, so the title, the
- * controls and the prose all start on one line down the middle of the window.
- *
- * The measure is fixed rather than in `ch`, because `ch` here would be counted
- * against the page's font rather than the prose's, and the number that matters
- * is how many characters of the prose land on a line. At its 17px this is
- * about sixty-eight of them, which is the width a paragraph is read at rather
- * than scanned across.
- */
-const column = 'mx-auto w-full max-w-[37rem]'
 
 /** Where an item is, the item itself, and the root its path is relative to. */
 function locate(session: Session | null, id: string) {
@@ -90,14 +69,24 @@ export function ItemPage({ id }: { id: string }) {
 
   // The daemon pushes `changed` for every write under this worktree's
   // `.session`. The page holds no placement of its own, so it always refetches.
-  // It reads nothing else, so its stream carries nothing else.
+  // It reads nothing else, so its stream carries nothing else. A stream that
+  // dropped and came back refetches too, since writes land while it is down.
   React.useEffect(() => {
     const source = new EventSource(eventsUrl(['changed']))
     const refetch = () => {
       settle()
       void load()
     }
+    let dropped = false
     source.addEventListener('changed', refetch)
+    source.addEventListener('error', () => {
+      dropped = true
+    })
+    source.addEventListener('open', () => {
+      if (!dropped) return
+      dropped = false
+      refetch()
+    })
     return () => source.close()
   }, [load, settle])
 
@@ -107,45 +96,33 @@ export function ItemPage({ id }: { id: string }) {
   const problem = failure ?? loadError
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <title>{session?.worktree ? `${id} · ${session.worktree.name} · Session` : `${id} · Session`}</title>
-      <Trail id={id} worktree={session?.worktree?.name ?? null} />
-      {problem === null ? null : (
-        <Alert variant="destructive" className={`${column} mt-6`}>
-          <AlertDescription>{problem}</AlertDescription>
-        </Alert>
-      )}
-      {refreshed
-        ? <p className={`${column} mt-6 text-sm text-muted-foreground`}>{refreshedNotice}</p>
-        : null}
-
-      <main className="px-6 pb-24 pt-10">
-        {loading
-          ? (
-            <div className={`${column} space-y-4`}>
-              <Skeleton className="h-9 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-              <Skeleton className="h-64" />
-            </div>
-          )
-          : found === null
-          ? (
-            <p className={`${column} text-sm text-muted-foreground`}>
-              No item {id} in this session.{' '}
-              <a className="underline underline-offset-4" href={boardHref}>Back to the board</a>
-            </p>
-          )
-          : (
-            <Detail
-              item={found.item}
-              stage={found.stage}
-              directory={found.directory}
-              pending={pending}
-              onMove={(to) => void mutate('/api/move', { id: found.item.id, to })}
-              onComplete={() => setCompleting(found.item)}
-            />
-          )}
-      </main>
+    <BoardPageFrame
+      title={id}
+      worktree={session?.worktree?.name ?? null}
+      boardMeaning="The board this item is on."
+      crumbs={[{ label: id, meaning: `The item ${id}, on a page of its own.`, literal: true }]}
+      problem={problem}
+      notice={refreshed ? refreshedNotice : null}
+    >
+      {loading
+        ? <PageLoading />
+        : found === null
+        ? (
+          <p className="text-sm text-muted-foreground">
+            No item {id} in this session.{' '}
+            <a className="underline underline-offset-4" href={boardHref}>Back to the board</a>
+          </p>
+        )
+        : (
+          <Detail
+            item={found.item}
+            stage={found.stage}
+            directory={found.directory}
+            pending={pending}
+            onMove={(to) => void mutate('/api/move', { id: found.item.id, to })}
+            onComplete={() => setCompleting(found.item)}
+          />
+        )}
 
       <CompleteDialog
         item={completing}
@@ -159,58 +136,7 @@ export function ItemPage({ id }: { id: string }) {
           }
         }}
       />
-    </div>
-  )
-}
-
-/**
- * Where this page sits, and the way back out of it.
- *
- * An item is one level inside a worktree's board, which is one level inside
- * every session on this machine, and the trail is that sentence: each step
- * names the place it goes to, and the last one names where you are. It is the
- * page's only navigation, so it sits where a window's navigation sits rather
- * than inside the reading column.
- */
-function Trail({ id, worktree }: { id: string; worktree: string | null }) {
-  return (
-    <header className="sticky top-0 z-10 border-b bg-background/85 px-6 py-3 backdrop-blur">
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink
-              render={
-                <a
-                  aria-label="All sessions"
-                  href="/"
-                  title="Every worktree the daemon is tracking."
-                />
-              }
-            >
-              All sessions
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbLink
-              render={
-                <a
-                  aria-label={worktree ?? 'Board'}
-                  href={boardHref}
-                  title="The board this item is on."
-                />
-              }
-            >
-              {worktree ?? 'Board'}
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage className="font-mono">{id}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-    </header>
+    </BoardPageFrame>
   )
 }
 
@@ -237,7 +163,7 @@ function Detail({
   onComplete: () => void
 }) {
   return (
-    <article className={column}>
+    <article>
       {/* A batch name on its own is a phrase nobody can place, so it is
           labelled the way the header labels a branch. */}
       {item.batch

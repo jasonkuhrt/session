@@ -187,6 +187,8 @@
 .markdown-reader code { background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
 .markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); font-size: .9em; line-height: 1.6; }
 .markdown-reader pre code { padding: 0; background: none; font-size: 1em; }
+/* An image keeps to the column, at its own proportions. */
+.markdown-reader img { max-width: 100%; height: auto; }
 .markdown-reader blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
 .markdown-reader table { width: 100%; border-collapse: collapse; font-size: .95em; }
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }

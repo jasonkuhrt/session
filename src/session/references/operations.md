@@ -73,8 +73,8 @@ for a finished item and the lowercase stage otherwise, so `(batch)` is settled
 work that never ran and `(triage)` a rejected candidate.
 [records.md](records.md) has the rest of the format. Like `ignore/`, `archive/`
 stays out of agent context: a refresh skips it, and it is never loaded as a
-stage. The board does serve it, read-only, for a person looking back: a listing
-of its records, and each record through the files route.
+stage. The board does serve it, read-only, for a person looking back: the
+archive page lists its records, and each opens on the file page.
 
 ### Close an item from a commit
 
@@ -267,10 +267,11 @@ conflict: the later one is listed with the reason and is not served.
 ## Use the board
 
 A board's header shows its worktree's name and Git branch, the branch's pull
-request, the Linear issues the worktree names, a terminal icon, and "All
-sessions", which links back to the index. A non-Git folder uses its own
-`.session` and has no branch, so it has no pull request and names no issue
-either.
+request, the Linear issues the worktree names, one icon apiece for the session's
+Ledger, Context and Archive pages, a terminal icon, and "All sessions", which
+links back to the index. The page icons carry no count and no age; each names
+its page on hover. A non-Git folder uses its own `.session` and has no branch,
+so it has no pull request and names no issue either.
 
 The pull request is one chip, and the chip is a link to it: its number, gh's
 state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
@@ -370,18 +371,24 @@ unknown `/api/` path, which is an error, and a path ending in the name of one of
 the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
-stage; unavailable destinations explain what is needed first. "Complete work" is
-there for an item in Execute, and returns you to the board. Settle missing content with the agent
-or in the editor.
+stage. All five stages are always drawn, because together they show the shape
+of the flow: a stage the item cannot reach is drawn very dim and says on hover
+what is needed first. "Complete work" is there for an item in Execute, and
+returns you to the board. Settle missing content with the agent or in the
+editor.
 
-The Markdown links in an item resolve through the board's files route,
-`/w/<key>/files/<path>`, which serves any regular file under the session:
-Markdown as Markdown, PNG, JPEG, GIF, WebP and SVG images as images, and
-anything else as plain text. Nothing under the root's `ignore/` is served,
-whether asked for by path or reached through a link, and neither is anything
-that resolves outside the session; `archive/` is served, and a directory named
-`ignore` further down is an ordinary one. What the route serves never runs: it
-is sent sandboxed and is never sniffed into another type.
+A relative link in an item's Markdown names a path under the session. A link to
+a Markdown file opens it on the file page, below; a link to any other file, and
+an image, resolve through the board's files route, `/w/<key>/files/<path>`, so
+an image kept under `context/` shows in the body. Each link opens beside the
+page, once, in a tab named for its address, as the header's chips do. The route
+serves any regular file under the session: Markdown as Markdown, PNG, JPEG, GIF,
+WebP and SVG images as images, and anything else as plain text. Nothing under
+the root's `ignore/` is served, whether asked for by path or reached through a
+link, and neither is anything that resolves outside the session; `archive/` is
+served, and a directory named `ignore` further down is an ordinary one. What the
+route serves never runs: it is sent sandboxed and is never sniffed into another
+type.
 
 Select ready items in the Batch lane and use "Queue batch", which appears once
 something is selected, to name them and append the batch to Queue. The Queue
@@ -406,10 +413,31 @@ what refresh reads there: a directory named `archive` or `ignore` under
 the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
 
-The board follows the files. The daemon watches that worktree's `.session` and
-pushes an event when anything under it changes, `context/` and `ledger/`
-included, and the board refetches; it never polls. Refetching pauses while a
-card is being dragged.
+The header's three icons open a page apiece for those listings, and a fourth
+page renders one file. Each carries the trail All sessions / worktree / page,
+reads at the item page's width, and follows the files as the board does. The
+ledger page, `/w/<key>/ledger`, shows the entries newest first as cards: the
+title, the age with the exact moment on hover, the body in the item page's
+reader, and one small line of the entry's other keys as `key: value`. The
+context page, `/w/<key>/context`, shows `context/` as a tree, directories first
+and then by name. A directory starts collapsed and shows how many entries it
+holds; a file shows when it was written, copies its absolute path, and opens: a
+Markdown file on the file page, anything else as it is on disk, once, in a tab
+of its own. The archive page, `/w/<key>/archive`, lists the records newest first
+with the day, the id, the title and the state, whose meaning is on hover; each
+opens on the file page, and a name the engine did not write is listed as it is.
+The file page, `/w/<key>/file/<path>`, renders one Markdown file of the session
+with the item page's reader, Evidence collapsed, under the file's path as its
+trail and a copy of its absolute path; frontmatter at the top of a file, such as
+a ledger entry's, shows as the block of keys it is. A listing's notices stand
+above it, and an empty one reads "No entries.", "No files." or "No records.". A
+session whose items cannot be read still shows these pages, with the reason
+above them, because none of them reads the items.
+
+The board follows the files, and so does every page under it. The daemon watches
+that worktree's `.session` and pushes an event when anything under it changes,
+`context/` and `ledger/` included, and the board refetches; it never polls.
+Refetching pauses while a card is being dragged.
 
 Every mutation checks the revision, a digest over every item file's path and
 content, so a stale tab cannot overwrite a later edit on disk; reload and repeat
