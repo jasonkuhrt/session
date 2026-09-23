@@ -39,7 +39,9 @@ import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
+import { contextDirectory, ledgerDirectory } from './layout.ts';
 import { linksFor } from './links/index.ts';
+import { aliasHostnames } from './portless.ts';
 import { makeRepository, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
@@ -398,13 +400,25 @@ const trailerSettle = '500 millis';
 type Change = 'session' | 'reflog' | 'remotes';
 
 /**
+ * The parts of a session no trailer depends on: what agents keep in
+ * `context/` and the entries in `ledger/` can neither make an item exist nor
+ * bring one back, so a change there never asks for a pass that runs Git.
+ */
+const trailerQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory]);
+
+/** Whether a change under the session, by its path there, can affect a trailer pass. */
+const touchesItems = (event: FileSystem.WatchEvent): boolean =>
+  !trailerQuiet.has(event.path.split(/[\\/]/u)[0] ?? '');
+
+/**
  * A worktree's watches, each change tagged with the watch it came from, as one
  * stream that both of its loops read: the trailer passes read every change,
  * and the link re-reads only the remote-tracking refs. It is shared, so each
- * directory is watched once however many loops follow it. The session can make
- * a named item exist or bring one back; the worktree's own reflog is where Git
- * records a commit; and the remote-tracking logs the repository shares move on
- * a push, which takes a commit out of the unpushed range, and on a fetch that
+ * directory is watched once however many loops follow it. The session outside
+ * `context/` and `ledger/` can make a named item exist or bring one back, and a
+ * change under those two is dropped here; the worktree's own reflog is where
+ * Git records a commit; and the remote-tracking logs the repository shares move
+ * on a push, which takes a commit out of the unpushed range, and on a fetch that
  * learned something new. A log that does not exist yet is not watched.
  */
 const worktreeChanges = (session: WorktreeSession) =>
@@ -420,7 +434,12 @@ const worktreeChanges = (session: WorktreeSession) =>
     const streams: Array<Stream.Stream<Change, PlatformError>> = [];
     for (const { directory, recursive, change } of watched) {
       if (yield* fs.exists(directory)) {
-        streams.push(fs.watch(directory, { recursive }).pipe(Stream.map(() => change)));
+        streams.push(
+          fs.watch(directory, { recursive }).pipe(
+            Stream.filter((event) => change !== 'session' || touchesItems(event)),
+            Stream.map(() => change),
+          ),
+        );
       }
     }
     // Sliding, because a loop still busy with one answer needs only the latest change.
@@ -960,6 +979,27 @@ export const runDaemon = async () => {
     return method === 'HEAD' ? new Response(null) : new Response(candidate);
   };
 
+  /**
+   * The names portless routes to this daemon, kept once seen: an alias
+   * registered after the daemon started is answered from its first request.
+   */
+  const aliases = new Set<string>();
+
+  /**
+   * The addresses this daemon answers at: its own port on 127.0.0.1 and on
+   * localhost, and its portless alias. A request naming any other host is
+   * refused before any route runs, so a page elsewhere that points a name of
+   * its own at this machine can read nothing from it.
+   */
+  const answersTo = async (host: string | null): Promise<boolean> => {
+    if (host === null || !URL.canParse(`http://${host}`)) return false;
+    const { hostname, port } = new URL(`http://${host}`);
+    if ((hostname === '127.0.0.1' || hostname === 'localhost') && port === String(settings.port)) return true;
+    if (aliases.has(hostname)) return true;
+    for (const alias of await runNode(aliasHostnames(settings.port))) aliases.add(alias);
+    return aliases.has(hostname);
+  };
+
   /** Who the daemon is, which the CLI checks, and what it can do for a page, which a page checks. */
   const describe = async (): Promise<DaemonInfo & DaemonCapabilities> => ({
     pid: process.pid,
@@ -979,6 +1019,11 @@ export const runDaemon = async () => {
 
   const handle = async (request: Request): Promise<Response> => {
     try {
+      if (!(await answersTo(request.headers.get('host')))) {
+        return json({
+          error: `This daemon answers only at 127.0.0.1:${settings.port}, localhost:${settings.port} and its portless name.`,
+        }, 403);
+      }
       const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/api/daemon') return json(await describe());
       if (request.method === 'GET' && url.pathname === '/api/events') {

@@ -1,12 +1,23 @@
 # Records
 
-The session root holds the five stage directories, a `.gitignore` of exactly `*`,
-and, when the user has set standing rules for the session, `RULES.md` (see the
-skill's Rules section). Supporting context lives in `context/` when needed.
-`ignore/` and `archive/` hold inactive history and are not ordinary agent
-context. Existing
-supporting files should be migrated deliberately, preserving evidence and links
-rather than discarding them because their names differ from the new convention.
+The session root is closed. It holds exactly:
+
+- the five stage directories;
+- a `.gitignore` of exactly `*`;
+- `RULES.md`, when the user has set standing rules for the session (see the
+  skill's Rules section);
+- `context/`, supporting material for agents;
+- `ledger/`, the session's shared log;
+- `archive/` and `ignore/`, inactive history that is not ordinary agent context.
+
+Entries whose name starts with `.` are outside this rule, as they are in the
+stage directories. `check` reports any other entry by name with its fix: move it
+under `context/` or delete it, or, when only its case differs from one of these,
+rename it. Each must also be its own kind: the stages, `context/`, `ledger/`,
+`archive/` and `ignore/` directories, and `RULES.md` and `.gitignore` files.
+Existing supporting files should be migrated deliberately, preserving evidence
+and links rather than discarding them because their names differ from the new
+convention.
 
 Each item is one file. Its first line is `## ID — Short title`, with an em dash,
 and the rest is the body: a short lead paragraph, then the stage's meaningful
@@ -88,6 +99,72 @@ own name. Content can be clarified without expanding the selected item set.
 `session done` is the way out for finished work and `session archive` for work
 that is abandoned; both file the item under `archive/`.
 
+## Context
+
+`context/` is for agents: any file, in any layout, with no lifecycle, and
+`check` does not look inside it. `archive` and `ignore` are names of the root
+only, so a directory called either inside `context/` is an ordinary one. Material about one item lives under
+`context/<ID>/` and is linked from that item's `### Evidence`, so the item stays
+the one place its outcome is read. Nothing that needs the user goes here; that
+is a stage move.
+
+## Ledger
+
+`ledger/` is the session's shared log: what another agent, or the user, must
+know to act correctly in this session and would not learn from the items, such
+as a design pivot, a batch abandoned, a rule learned, a decision taken outside
+any item, or `RULES.md` changed. Routine progress is not an entry, and neither
+is anything that needs the user, which is a stage move. Each entry is one file,
+so agents writing at once never share one, and it is never edited or deleted: a
+mistake is corrected by a later entry. The engine writes none of its own.
+
+```
+ledger/
+  2026-09-23 14-02-11Z — Pivot to per-item evidence.md
+  2026-09-23 16-40-05Z — Batch "Email backend peel" abandoned.md
+```
+
+An entry is YAML frontmatter, then the body:
+
+```markdown
+---
+date: 2026-09-23T14:02:11Z
+title: Pivot to per-item evidence
+by: claude session_0135i3KrKC2ekfxKBAPee12d
+branch: feat/agents
+commit: 8d287cf
+batch: Email backend peel
+---
+
+Reports and the inbox are dropped; evidence lives with its item.
+```
+
+- The frontmatter is the record. `date`, `title` and `by` are required;
+  `branch`, `commit` and `batch` are the other keys, and there are no others.
+  `date` is a UTC instant to the second, `by` names the writer as `claude
+  <session id>`, `codex <thread id>` or a person's name, `branch` and `commit`
+  are Git's when the entry was written, and `batch` is the batch Execute was
+  running.
+- The frontmatter is flat: one `key: value` line per key, and each value one
+  line of text. A value written without quotes must read back exactly as
+  written, so one that YAML would read otherwise, such as `0123456`, `true`, or
+  `Fix #12`, whose `#` starts a comment, goes in double quotes.
+- The file's name comes from the frontmatter, so the two always agree: `date`
+  with `-` for `:` and a space for `T`, then ` — `, then `title` with any `/` as
+  `-`, then `.md`.
+- The body is Markdown with no headings: it is read the way the board renders
+  it, and a heading of any level anywhere, in a quote or a list item too, breaks
+  the rule. That covers a line opening with `#` marks and a line underlined with
+  `=` or `-`; code, fenced or indented, is not read as Markdown. The body may be
+  empty.
+- The ledger holds its entries itself: `ledger/` is a directory, not a link to
+  one, and every entry in it is a regular file, not a link or a directory.
+  Names starting with `.` are skipped, as in the stages.
+
+`session log "<by>" "<title>"` writes an entry in this form, and an agent may
+also write one by hand with the same keys and no others. `check` rejects
+anything in `ledger/` that breaks one of these rules.
+
 ## Archive
 
 `archive/` is flat: one file per archived item, named for the day it was
@@ -106,7 +183,11 @@ that was rejected, and `(execute)` a started item that was abandoned. A `/` in
 the title becomes `-` in the file name, and an existing archive file is never
 overwritten. The content is the item's chunk exactly as its own file held it.
 Like `ignore/`, the directory is outside agent context: a refresh skips it, and
-it is never loaded as a stage.
+it is never loaded as a stage. It is still viewable: the board serves a listing
+of its records and each record, read-only, which is for a person looking back,
+not context for an agent. A record is read by its name, and only a name exactly
+as the engine writes it counts: one renamed by hand is listed as it is, and a
+commit trailer naming its item no longer finds it archived.
 
 ## Executing agent
 
@@ -160,7 +241,7 @@ QUEUE/
 
 ## Evidence and migration
 
-Use normal Markdown links to relevant files under `context/`, or put long
+Use normal Markdown links to relevant files under `context/<ID>/`, or put long
 technical context under `### Evidence`, which the board collapses by default.
 Keep completion criteria visible when they determine whether the work is ready
 or done.

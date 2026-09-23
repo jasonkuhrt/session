@@ -10,7 +10,7 @@ session [-C <worktree-or-.session>] <command>
 
 init                       create whatever the session is missing and print it; for handing off to your editor
 check                      validate; prints "OK <revision>, <n> items" or "OK <revision>, empty", or the first error and exits 1
-refresh [--previous F]     JSON path/hash inventory
+refresh [--previous F]     JSON path/hash inventory, and what it skipped
 ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, batch, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
 mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute
@@ -18,6 +18,7 @@ batch "<name>" <ID...>     compose a named batch from Batch items and append it 
 start                      move the first Queue batch into Execute
 done <ID>                  finish an Execute item into archive/
 archive <ID>               archive an item from any stage into archive/, recording the stage
+log "<by>" "<title>"       write a ledger entry, body on stdin; prints "Logged <date> — <title>"
 open                       ensure the daemon and this worktree, then open its board
 ```
 
@@ -29,9 +30,14 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 ```
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
-or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` is
-the only command that reads stdin: it takes the new item's body there, in full,
-trimmed, and rejects an empty one.
+or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` and
+`log` are the commands that read stdin, in full and trimmed. `add` takes the new
+item's body there, reads it to its end whatever stdin is, and rejects an empty
+one. `log` takes the entry's body, which may be empty: a terminal gives none; a
+pipe or a file is read to its end; and a socket, which is what a program that
+spawns the CLI hands it, is read to its end once it starts sending within half
+a second. A socket that stays silent, like the one an agent's shell tool holds
+open without writing to it, gives no body instead of a wait that never ends.
 
 ## Move and batch rules
 
@@ -53,16 +59,18 @@ and keeps the batch's name.
 
 `done <ID>` finishes an item in Execute. `archive <ID>` files an item from any
 stage, Execute included, when the work is not going to happen. Both write the
-item into `.session/archive/` and then delete its file, both refuse when that
-name is already taken, and neither has a button on the board.
+item into `.session/archive/` and then delete its file, and both refuse when
+that name is already taken. On the board, "Complete work" runs `done`; `archive`
+has no button.
 
 An archive file is named for the day it was archived, the item, and the state it
 left: `2026-09-13 BE-16 — Peel the email backend (done).md`. The state is `done`
 for a finished item and the lowercase stage otherwise, so `(batch)` is settled
 work that never ran and `(triage)` a rejected candidate.
 [records.md](records.md) has the rest of the format. Like `ignore/`, `archive/`
-stays out of agent context: a refresh skips it, the board does not serve files
-from it, and it is never loaded as a stage.
+stays out of agent context: a refresh skips it, and it is never loaded as a
+stage. The board does serve it, read-only, for a person looking back: a listing
+of its records, and each record through the files route.
 
 ### Close an item from a commit
 
@@ -84,7 +92,9 @@ Execute that `done` insists on does not apply. The item's text gains a
 says later why the item left. Git's own trailer parser reads the message, and
 the key matches without regard to case, as Git's does. The daemon also reads
 again when the session changes and when a push moves a remote-tracking ref, so
-a report clears the moment its commit is pushed.
+a report clears the moment its commit is pushed. A change under `context/` or
+`ledger/` is not such a change: nothing there can make an item exist or bring
+one back, so it never starts a pass.
 
 Only this branch's commits that no remote has yet are read, first parent only,
 so a merged branch contributes none of its own claims. That range is also the
@@ -101,12 +111,36 @@ sentence per commit, and as a count beside its name on the index:
 - the `Session-Done:` line is outside the last paragraph, so Git does not read
   it as a trailer and nothing was closed;
 - filing the item away failed, for instance because a record of that name
-  already exists that day; this is tried again whenever the session or the
-  branch changes.
+  already exists that day; this is tried again whenever the session changes
+  outside `context/` and `ledger/`, or the branch changes.
 
 The fix for the first two is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
 amended without rewriting published history.
+
+## Log to the ledger
+
+`session log "<by>" "<title>"` writes one entry into `ledger/`, the session's
+shared log, which [records.md](records.md) describes: something another agent,
+or the user, must know to act correctly here and would not learn from the
+items. `<by>` is who is writing, `claude <session id>`, `codex <thread id>` or a
+person's name. The body comes on stdin and may be empty. The command reads the
+clock for `date`, to the second, and adds what it can observe: `branch` and
+`commit` from Git, and `batch`, the batch Execute is running. A key it cannot
+observe is left out: both Git keys outside a repository, `branch` on a detached
+HEAD, `commit` before the first commit, and `batch` while Execute is empty. It
+takes no flags, and on success prints one line, `Logged 2026-09-23 14-02-11Z —
+Pivot to per-item evidence`, which is the entry's file name without `.md`.
+
+The entry is checked by the rules `check` applies before it is written, so a
+body with a heading or a title too long for a file name is refused and nothing
+is written. It is refused too when `ledger` is a link rather than a directory,
+so an entry is never written outside the session. An entry is never
+overwritten: a second one with the same title in the same second is refused.
+Only the name of Execute's batch directory is read for `batch`, so a broken
+item elsewhere does not stop an entry. There is no board button and no HTTP
+route for it, because the board never writes content; an agent may also write
+an entry by hand, in the same form.
 
 ## Set up
 
@@ -131,24 +165,42 @@ will write. When the session is sound it prints one line, the revision and the
 item count, or `empty` when no stage holds an item; that line answers whether
 everything is done. No command creates `RULES.md`; standing rules are written
 from the user's words when the user states them, and the inventory reports the
-file like any other.
+file like any other. `ledger/` appears with its first entry, and `context/`
+when an agent first writes there.
 
 ## Refresh context
 
 `refresh` returns a JSON path/hash inventory and added, changed, and deleted
 paths. It does not return file contents. On the first refresh, read `RULES.md`
-when it exists, the five stage records, and relevant supporting context. On later
-turns, compare inventories and read only changed relevant files. Preserve the
-inventory in conversation context. For a deterministic comparison, pass a
-previous refresh output saved outside the session directory:
+when it exists, then the ledger, then the five stage records, and relevant
+supporting context. On later turns, compare inventories and read only changed
+relevant files; a new ledger entry arrives as an added path, which is how
+agents in one session hear from each other. Preserve the inventory in
+conversation context. For a deterministic comparison, pass a previous refresh
+output saved outside the session directory:
 
 ```sh
 session refresh --previous /tmp/session-previous.json
 ```
 
-`ignore/` and `archive/` are excluded before traversal. The inventory does not
-make linked history part of current context. Resolve deleted or moved references
+The root's `ignore/` and `archive/` are excluded before traversal, and those
+two only: `archive` and `ignore` are names of the root, and a directory of
+either name further down, such as `context/SES-1/archive/`, is read like any
+other, and listed on the board's context page alike. The inventory does not make
+linked history part of current context. Resolve deleted or moved references
 instead of retaining an older item as if it were still live.
+
+Outside the five stages, an entry the inventory cannot take in does not fail
+the refresh. It is listed under `skipped`, each with its `path` and `reason`,
+and the rest of the inventory stands: a link that resolves outside the session
+directory, a link that leads nowhere or back into a directory that holds it,
+or an entry that could not be read. The stages themselves must load first, as
+for every command, so a broken item file still fails the refresh with the
+error `check` would name.
+
+```json
+"skipped": [{ "path": "context/out.md", "reason": "resolves outside the session directory" }]
+```
 
 ## Open the board
 
@@ -177,6 +229,11 @@ portless writes its own URLs. If the alias cannot be used, `open` prints
 proxy that is not running or the alias that could not be registered. Nothing
 about the address is guessed, because a printed address that does not reach the
 board is worse than a plain one.
+
+The daemon answers only at those addresses: its port on `127.0.0.1` and on
+`localhost`, and the portless alias routed to that port. A request naming any
+other host is refused, so a web page elsewhere that points a name of its own at
+this machine cannot read a board.
 
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one
@@ -271,12 +328,25 @@ there is no way to type a body or create an item in it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and resolves
 Markdown links inside the body against the session directory; the path copies
-the absolute file, which is what a terminal beside the page can open. It is an
+the absolute file, which is what a terminal beside the page can open. An id
+with a dot in it, such as `BE-1.2`, has its page like any other: a path under
+a board that is not one of its routes gets the app, dots and all, except an
+unknown `/api/` path, which is an error, and a path ending in the name of one of
+the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
 stage; unavailable destinations explain what is needed first. "Complete work" is
 there for an item in Execute, and returns you to the board. Settle missing content with the agent
 or in the editor.
+
+The Markdown links in an item resolve through the board's files route,
+`/w/<key>/files/<path>`, which serves any regular file under the session:
+Markdown as Markdown, PNG, JPEG, GIF, WebP and SVG images as images, and
+anything else as plain text. Nothing under the root's `ignore/` is served,
+whether asked for by path or reached through a link, and neither is anything
+that resolves outside the session; `archive/` is served, and a directory named
+`ignore` further down is an ordinary one. What the route serves never runs: it
+is sent sandboxed and is never sniffed into another type.
 
 Select ready items in the Batch lane and use "Queue batch", which appears once
 something is selected, to name them and append the batch to Queue. The Queue
@@ -288,9 +358,23 @@ only be completed, which files them under `archive/`. Nothing drops into Queue
 or Execute; a Queue card can be reordered inside its own batch or dragged back
 to Batch, Design, or Triage.
 
+Beside the session, each board serves three read-only listings. `GET
+/w/<key>/api/ledger` is the ledger's entries, newest first by date and then by
+name, with a notice naming each file in `ledger/` that breaks the ledger's
+rules and is left out. `GET /w/<key>/api/context` is every file and directory
+under `context/`, depth first, each with when it was written, and a notice for
+an entry left out, such as a link that resolves outside the session. It lists
+what refresh reads there: a directory named `archive` or `ignore` under
+`context/` is an ordinary one, and only a link into the root's `archive/` or
+`ignore/` is left out. Names starting with a dot are left out as well.
+`GET /w/<key>/api/archive` is the archive's records as their names give them,
+the day, the item, the title and the state it left in, newest first; a name the
+engine did not write is listed as it is.
+
 The board follows the files. The daemon watches that worktree's `.session` and
-pushes an event when anything under it changes, and the board refetches the
-session; it never polls. Refetching pauses while a card is being dragged.
+pushes an event when anything under it changes, `context/` and `ledger/`
+included, and the board refetches; it never polls. Refetching pauses while a
+card is being dragged.
 
 Every mutation checks the revision, a digest over every item file's path and
 content, so a stale tab cannot overwrite a later edit on disk; reload and repeat
@@ -441,8 +525,20 @@ carry the whole record and remove its old file; never leave duplicate IDs.
 `check` rejects malformed records, duplicate IDs, missing stage-specific
 sections, `# ` headings inside item files, Queue or Execute items belonging to no
 batch, entries whose names break the numbering pattern, a missing `.gitignore`, a
-`.session` that is a symlink, and a leftover `STAGE.md`. It does not judge
-acceptance criteria or user approval. An empty stage is an empty directory.
+`.session` that is a symlink, and a leftover `STAGE.md`. It closes the session
+root: any entry other than the five stages, `archive/`, `ignore/`, `context/`,
+`ledger/`, `RULES.md`, `.gitignore` and names starting with a dot is an error
+that names it and says to move it under `context/` or delete it, or to rename
+it when only its case differs from one of these. The directories must be
+directories, and `RULES.md` and `.gitignore` files. In `ledger/` it rejects a
+directory, a link, and a `ledger` that is itself a link, and an entry whose
+frontmatter is missing `date`, `title` or `by`, carries any other key, holds
+anything but one line of text per key or a value YAML reads differently from
+how it is written, or has a `date` that is not a UTC instant to the second;
+whose name is not the one its date and title give; or whose body, read the way
+the board renders it, has a heading. It does not look inside `context/`. It does
+not judge acceptance criteria or user approval. An empty stage is an empty
+directory.
 
 ## App development
 

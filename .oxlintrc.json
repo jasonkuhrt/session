@@ -64,6 +64,15 @@
       }
     },
     {
+      "files": ["app/server/repository.ts"],
+      "rules": {
+        // The repository is the one serialized transaction boundary over the
+        // files: it composes the stage layout, the archive, the ledger and the
+        // model, and every Effect service counts as a dependency of its own.
+        "import/max-dependencies": "off"
+      }
+    },
+    {
       "files": ["app/server/agents/**/*.ts"],
       "rules": {
         // Every Effect namespace counts as one dependency, so a source that

@@ -4,6 +4,7 @@ import * as Console from 'effect/Console';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
@@ -21,6 +22,7 @@ import { makeRepository } from '../../../app/server/repository.ts';
 import {
   encodeWorktreeKey,
   ensureSession,
+  headCommit,
   resolveWorktreeSession,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
@@ -41,6 +43,7 @@ const commands = {
   start: { operands: '', least: 0, most: 0 },
   done: { operands: '<ID>', least: 1, most: 1 },
   archive: { operands: '<ID>', least: 1, most: 1 },
+  log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
   open: { operands: '', least: 0, most: 0 },
 } as const;
 
@@ -58,6 +61,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   start                                 move the first queued batch into EXECUTE
   done <ID>                             complete an EXECUTE item
   archive <ID>                          file an item away, from any stage
+  log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
   open                                  ensure the daemon and open this worktree's board`;
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
@@ -141,16 +145,55 @@ const cliTry = <A>(operation: () => A) =>
       new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
   });
 
-const readBody = Effect.tryPromise({
-  try: () => Bun.stdin.text(),
-  catch: () => new SessionCliError({ message: 'Could not read the body from stdin.' }),
-}).pipe(
+const unreadable = () => new SessionCliError({ message: 'Could not read the body from stdin.' });
+
+const readBody = Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable }).pipe(
   Effect.map((text) => text.trim()),
   Effect.filterOrFail(
     (body) => body !== '',
     () => new SessionCliError({ message: 'The item body is empty.' }),
   ),
 );
+
+/** How long a socket on stdin has to start sending before a ledger entry is taken to have no body. */
+const socketGrace = '500 millis';
+
+/**
+ * Everything a socket on stdin sends once it has started within the grace,
+ * and nothing when it stays silent, which is what the socket an agent's shell
+ * tool holds open without writing to it does.
+ */
+const socketText = Effect.gen(function*() {
+  const reader = Bun.stdin.stream().getReader();
+  const decoder = new TextDecoder();
+  const first = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable }).pipe(
+    Effect.timeoutOption(socketGrace),
+  );
+  if (Option.isNone(first)) {
+    // Letting go of the reader is what lets the process end with stdin still open.
+    yield* Effect.promise(() => reader.cancel());
+    return '';
+  }
+  let text = '';
+  for (let chunk = first.value; !chunk.done; chunk = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable })) {
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  return text + decoder.decode();
+});
+
+/**
+ * A ledger entry's body, which may be empty: none from a terminal or another
+ * device; everything a pipe or a file holds, read to its end; and from a
+ * socket, which is what a program spawning the CLI hands it, whatever it sends
+ * once it starts within the grace.
+ */
+const entryBody = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
+  if (Option.isNone(info) || info.value.type === 'CharacterDevice' || info.value.type === 'BlockDevice') return '';
+  if (info.value.type === 'Socket') return (yield* socketText).trim();
+  return (yield* Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable })).trim();
+});
 
 const itemCount = (session: Session): number =>
   session.stages.reduce((total, stage) => total + stage.items.length, 0);
@@ -195,7 +238,7 @@ const openBoard = (resolved: WorktreeSession) =>
 
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
   Effect.gen(function*() {
-    const inventory = yield* repository.inventory;
+    const { inventory, skipped } = yield* repository.inventory;
     let previous: FileInventory = {};
     if (options.previous !== undefined) {
       const fs = yield* FileSystem.FileSystem;
@@ -204,7 +247,7 @@ const refresh = (options: Options, repository: SessionRepository, directory: str
     }
     yield* Console.log(
       JSON.stringify(
-        { directory, inventory, changes: changesFrom(previous, inventory) },
+        { directory, inventory, changes: changesFrom(previous, inventory), skipped },
         null,
         2,
       ),
@@ -292,6 +335,24 @@ const archive = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Archived ${id}`);
   });
 
+/**
+ * One ledger entry. The body is whatever stdin carries, as `entryBody` reads
+ * it; the branch and commit are Git's, and the batch is the one Execute is
+ * running.
+ */
+const log = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const body = yield* entryBody;
+    const entry = yield* repository.appendLedger({
+      by: options.operands[0]!,
+      title: options.operands[1]!,
+      body,
+      branch: resolved.worktree.branch,
+      commit: resolved.git === null ? null : yield* headCommit(resolved.worktree.path),
+    });
+    yield* Console.log(`Logged ${entry.name.slice(0, -'.md'.length)}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -331,6 +392,7 @@ const runCommand = (options: Options) =>
       case 'batch': { yield* queue(options, repository); break; }
       case 'start': { yield* start(repository); break; }
       case 'done': { yield* complete(options, repository); break; }
+      case 'log': { yield* log(options, repository, resolved); break; }
     }
   });
 

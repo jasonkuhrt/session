@@ -1,4 +1,4 @@
-import { basename, join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -37,6 +37,23 @@ const FocusSession = Schema.Struct({
 const OpenTerminal = Schema.Struct({
   path: Schema.String,
 });
+
+/**
+ * What the files route says each file is: Markdown as Markdown, the image
+ * types by extension, and everything else as plain text, which a browser shows
+ * instead of running or downloading it.
+ */
+const fileTypes: ReadonlyMap<string, string> = new Map([
+  ['.md', 'text/markdown; charset=utf-8'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.svg', 'image/svg+xml'],
+]);
+
+const fileTypeOf = (path: string): string => fileTypes.get(extname(path).toLowerCase()) ?? 'text/plain; charset=utf-8';
 
 const json = (value: unknown, init?: ResponseInit) =>
   Response.json(value, {
@@ -292,6 +309,18 @@ export const makeRequestHandler = (options: {
           }));
         }
 
+        if (request.method === 'GET' && url.pathname === '/api/ledger') {
+          return json(await run(repository.ledgerListing));
+        }
+
+        if (request.method === 'GET' && url.pathname === '/api/context') {
+          return json(await run(repository.contextListing));
+        }
+
+        if (request.method === 'GET' && url.pathname === '/api/archive') {
+          return json(await run(repository.archiveListing));
+        }
+
         if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
           let relativePath: string;
           try {
@@ -299,9 +328,16 @@ export const makeRequestHandler = (options: {
           } catch {
             return json({ error: 'Not found.' }, { status: 404 });
           }
-          const markdown = await run(repository.readMarkdownFile(relativePath));
-          return new Response(markdown, {
-            headers: { 'cache-control': 'no-store', 'content-type': 'text/markdown; charset=utf-8' },
+          return new Response(file(await run(repository.servedFile(relativePath))), {
+            headers: {
+              'cache-control': 'no-store',
+              'content-type': fileTypeOf(relativePath),
+              // The session's files are data, served from the board's own
+              // origin: nothing among them runs there, and none is sniffed
+              // into a type that would.
+              'content-security-policy': 'sandbox',
+              'x-content-type-options': 'nosniff',
+            },
           });
         }
 
@@ -329,22 +365,25 @@ export const makeRequestHandler = (options: {
           return json({ error: 'Method not allowed.' }, { status: 405 });
         }
 
+        // An API a board does not have is an error, never the app's page.
+        if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
+
         const requestedPath = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
         const staticPath = resolve(distDirectory, requestedPath);
         if (staticPath !== distDirectory && !staticPath.startsWith(`${distDirectory}/`)) {
           return json({ error: 'Not found.' }, { status: 404 });
         }
         let staticFile = file(staticPath);
-        if (!(await staticFile.exists()) && !requestedPath.includes('.')) {
-          staticFile = file(join(distDirectory, 'index.html'));
-        }
-        // A page nested under the board (`item/<ID>`) resolves `./app.js` against
-        // its own directory. The bundle is one flat set of files at the root of
-        // dist, so a nested asset is that same file; `basename` is what keeps
-        // this from reaching anywhere else.
+        // A page nested under the board (`item/<ID>`, `file/<path>`) resolves
+        // `./app.js` against its own directory. The bundle is one flat set of
+        // files at the root of dist, so a nested asset is that same file;
+        // `basename` is what keeps this from reaching anywhere else.
         if (!(await staticFile.exists()) && requestedPath.includes('/')) {
           staticFile = file(join(distDirectory, basename(requestedPath)));
         }
+        // Every other path is one of the app's pages, whatever it holds: an item
+        // id or a file's path can carry a dot, and gets the page all the same.
+        if (!(await staticFile.exists())) staticFile = file(join(distDirectory, 'index.html'));
         if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
         return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);
       } catch (error) {

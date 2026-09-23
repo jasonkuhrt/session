@@ -176,6 +176,24 @@ const addressIn = (state: State, port: number, ownPort: string): BoardAddress =>
   return { origin: originOf(state.route.hostname, state.listening, state.tls), notice: null };
 };
 
+/**
+ * The hostnames portless routes to this daemon under its alias, such as
+ * `session.localhost`, from the route table as it is now; empty when portless
+ * is not on this machine or its table cannot be read. These are the only names
+ * besides its own port that the daemon answers to.
+ */
+export const aliasHostnames = (port: number): Effect.Effect<ReadonlySet<string>, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const contents = yield* fs.readFileString(join(yield* stateDirectory, routesFile));
+    const routes = yield* Schema.decodeEffect(RoutesJson)(contents);
+    const hostnames = new Set<string>();
+    for (const route of routes) {
+      if (route.port === port && route.hostname.split('.')[0] === aliasName) hostnames.add(route.hostname.toLowerCase());
+    }
+    return hostnames;
+  }).pipe(Effect.orElseSucceed(() => new Set<string>()));
+
 export const publicOrigin = (
   port: number,
 ): Effect.Effect<BoardAddress, never, FileSystem.FileSystem> => {

@@ -1,11 +1,8 @@
-import * as DateTime from 'effect/DateTime';
-import * as Effect from 'effect/Effect';
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage } from '../contract.ts';
+import { isBatchedStage, stageNames } from '../contract.ts';
 import {
   fail,
   type ItemDraft,
-  itemIdSource,
   parseItemFile,
   quote,
   renderItem,
@@ -14,14 +11,16 @@ import {
 } from './model.ts';
 
 /**
- * Directory-layout rules. A stage directory holds numbered entries: item files
- * in a flat stage, batch directories of item files in QUEUE and EXECUTE. The
- * numeric prefix is the order, so the files alone answer "what comes next".
+ * Directory-layout rules. The session root holds a closed set of entries. A
+ * stage directory holds numbered entries: item files in a flat stage, batch
+ * directories of item files in QUEUE and EXECUTE. The numeric prefix is the
+ * order, so the files alone answer "what comes next".
  */
 
 /** Gap between generated prefixes, leaving room to insert without renumbering. */
 const numberStep = 10;
-const entryName = /^(\d+)-(.+)$/u;
+/** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a batch's name. */
+export const entryName = /^(\d+)-(.+)$/u;
 
 /** One file of a stage, addressed relative to the session root. */
 export type StageFileEntry = {
@@ -46,50 +45,55 @@ const formatPrefix = (value: number): string => String(value).padStart(3, '0');
 /** Archived items live here, outside the agent's context like `ignore/`. */
 export const archiveDirectory = 'archive';
 
-/** The archive day, in the machine's own zone: this is a human's filing. */
-export const archiveDay = DateTime.now.pipe(
-  Effect.map((now) => DateTime.formatIsoDate(now.pipe(DateTime.setZone(DateTime.zoneMakeLocal())))),
-);
+/** Whatever `ignore/` holds, at any depth, no reader of the session looks at. */
+export const ignoreDirectory = 'ignore';
 
-/** A name that reads on its own: the day, the item, and the state it left. */
-export const archiveFilePath = (input: {
-  readonly day: string;
-  readonly id: string;
-  readonly title: string;
-  readonly state: string;
-}): string =>
-  `${archiveDirectory}/${input.day} ${input.id} — ${input.title.replaceAll('/', '-')} (${input.state}).md`;
+/** Supporting material for agents: any file, any layout, no lifecycle. */
+export const contextDirectory = 'context';
 
-const archivedName = new RegExp(`^\\d{4}-\\d{2}-\\d{2} (${itemIdSource}) — `, 'u');
+/** The session's shared log, one immutable entry per file. */
+export const ledgerDirectory = 'ledger';
+
+/** The user's standing rules for the session. */
+export const rulesFile = 'RULES.md';
 
 /**
- * The item an archived record belongs to, read back from its name; null for a
- * file that was not named by `archiveFilePath`.
+ * The session root is closed: it holds the stages, these directories and
+ * `RULES.md`, each as its own kind, and entries whose name starts with a dot,
+ * which are ignored here as everywhere.
  */
-export const archivedItemId = (name: string): string | null => archivedName.exec(name)?.[1] ?? null;
+const rootEntries: ReadonlyMap<string, 'directory' | 'file'> = new Map([
+  ...stageNames.map((stage) => [stage, 'directory'] as const),
+  [archiveDirectory, 'directory'],
+  [ignoreDirectory, 'directory'],
+  [contextDirectory, 'directory'],
+  [ledgerDirectory, 'directory'],
+  [rulesFile, 'file'],
+]);
 
-const closedHeading = '### Closed by commit';
+const shownEntry = (entry: { readonly name: string; readonly type: string }): string =>
+  entry.type === 'directory' ? `${entry.name}/` : entry.name;
 
 /**
- * The note a commit that closed an item leaves in the item's own text: the
- * commit's full hash and its subject, under a heading of its own. It travels
- * with the item wherever the file goes, into the archive and back out of it.
+ * Why an entry of the session root does not belong there, with the fix, or
+ * null when it does. `other` is anything that is neither a file nor a
+ * directory, such as a link that leads nowhere.
  */
-export const closedByCommitNote = (commit: { readonly hash: string; readonly subject: string }): string =>
-  `${closedHeading}\n\n\`${commit.hash}\` ${commit.subject}`;
-
-const closedLine = /^`([0-9a-f]{40,64})` /u;
-
-/** The commits whose notes an item's text carries: the reader of `closedByCommitNote`. */
-export const commitsThatClosed = (text: string): ReadonlySet<string> => {
-  const hashes = new Set<string>();
-  const lines = text.split('\n');
-  for (const [index, line] of lines.entries()) {
-    if (line.trimEnd() !== closedHeading) continue;
-    const hash = closedLine.exec(lines[index + 2] ?? '')?.[1];
-    if (hash !== undefined) hashes.add(hash);
+export const rootEntryProblem = (
+  entry: { readonly name: string; readonly type: 'directory' | 'file' | 'other' },
+): string | null => {
+  if (entry.name.startsWith('.')) return null;
+  const expected = rootEntries.get(entry.name);
+  if (expected === undefined) {
+    const meant = [...rootEntries].find(([name]) => name.toLowerCase() === entry.name.toLowerCase());
+    return meant === undefined
+      ? `${shownEntry(entry)} does not belong in the session root; move it under ${contextDirectory}/ or delete it.`
+      : `${shownEntry(entry)} does not belong in the session root; rename it to ${shownEntry({ name: meant[0], type: meant[1] })}.`;
   }
-  return hashes;
+  if (entry.type === expected) return null;
+  return expected === 'directory'
+    ? `${entry.name} must be a directory; rename it, then move it under ${contextDirectory}/ or delete it.`
+    : `${entry.name} must be a file; move this ${entry.type === 'directory' ? 'directory' : 'entry'} under ${contextDirectory}/ or delete it.`;
 };
 
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {

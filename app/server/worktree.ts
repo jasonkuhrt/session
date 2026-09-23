@@ -82,6 +82,15 @@ export const refreshWorktreeMetadata = (metadata: WorktreeMetadata) =>
   });
 
 /**
+ * The commit a worktree's HEAD names, abbreviated the way Git abbreviates it,
+ * or null when there is none to name: outside Git, or before the first commit.
+ */
+export const headCommit = (worktreePath: string) =>
+  runGit(worktreePath, ['rev-parse', '--short', '--verify', '--quiet', 'HEAD']).pipe(
+    Effect.map((result) => (result.exitCode === 0 && result.stdout !== '' ? result.stdout : null)),
+  );
+
+/**
  * Where Git puts a path: the worktree it belongs to, that worktree's own Git
  * state, and the state it shares with the repository's other worktrees. One
  * question, three answers, one per line, all absolute; null outside Git.
