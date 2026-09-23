@@ -100,7 +100,9 @@ In Queue and Execute every item is in a group, and there the group is a batch.
   surrounding spaces and no `/`, and unique within its stage. The same name in
   two lanes is two groups.
 - A group directory holds item files only; groups do not nest.
-- Emptying a group removes its directory on the next write.
+- Emptying a group removes its directory on the next write, with anything left
+  in it whose name starts with a dot, such as Finder's `.DS_Store`: no reader
+  sees those, so they cannot keep a group alive.
 
 `session group "<name>" <ID...>` gathers items of one lane into a group, and
 `session ungroup <ID...>` takes them out to the end of their lane. An item that
@@ -268,8 +270,8 @@ QUEUE/
 - Prefixes step by 10 and pad to three digits. The engine keeps existing numbers
   when it can fit an entry between them and renumbers the whole directory from
   `010` otherwise, so gaps are normal and hand-renumbering is unnecessary.
-- Emptying a group, a batch included, removes its directory on the next write;
-  the stage directory itself stays, empty.
+- Emptying a group, a batch included, removes its directory on the next write,
+  dot entries and all; the stage directory itself stays, empty.
 
 ## Evidence and migration
 

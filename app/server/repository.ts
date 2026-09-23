@@ -371,16 +371,23 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
-    /** A stage directory keeps itself; the group directories it empties do not. */
+    /**
+     * A stage directory keeps itself; the group directories it empties do not.
+     * Every reader skips an entry whose name starts with a dot, so a group
+     * directory holding only such entries, like Finder's `.DS_Store`, holds
+     * nothing and goes with them; left behind, it would keep its prefix and its
+     * name from the next group or item. A directory whose own name starts with
+     * a dot is no group, and is left alone as every reader leaves it.
+     */
     const pruneEmptyDirectories = Effect.gen(function*() {
       for (const stage of stageNames) {
         const stageDirectory = absolute(stage);
         if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
         for (const name of yield* fs.readDirectory(stageDirectory)) {
+          if (name.startsWith('.')) continue;
           const child = join(stageDirectory, name);
           if ((yield* pathType(child)) !== 'Directory') continue;
-          // `remove` needs `recursive` for a directory even when it is empty.
-          if ((yield* fs.readDirectory(child)).length === 0) {
+          if ((yield* fs.readDirectory(child)).every((entry) => entry.startsWith('.'))) {
             yield* fs.remove(child, { recursive: true });
           }
         }
