@@ -17,6 +17,8 @@ const MoveItem = Schema.Struct({
   id: Schema.String,
   to: Stage,
   beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
+  /** A group the item, landing in no group, goes in front of; given instead of `beforeId`. */
+  beforeGroup: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
   /** The drop target's group, or null for none; left out, as `session mv` leaves it out. */
   group: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
   revision: Schema.String,

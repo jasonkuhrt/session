@@ -13,7 +13,7 @@ check                      validate; prints "OK <revision>, <n> items" or "OK <r
 refresh [--previous F]     JSON path/hash inventory, and what it skipped
 ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, group, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
-mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute; another stage drops the group
+mv <ID> <STAGE> [--before ID|GROUP]   refuses into Queue or Execute and out of Execute; another stage drops the group
 group "<name>" <ID...>     gather items of one stage into a named group; refuses Queue and Execute
 ungroup <ID...>            take items out of their groups, to the end of their stage; refuses Queue and Execute
 batch "<name>" <ID...>     compose a named batch from Batch items, grouped or not, and append it to Queue
@@ -64,7 +64,14 @@ leaves its batch, and lands in no group there. Inside its own stage it keeps
 its group. Without `--before`, an item lands at the end of its group, or at the
 end of the stage when it is in none. `--before` names the item it goes in front
 of, which must be in the same group, or in none for an item in none; that is how
-an item is reordered inside its Queue batch, or inside a group anywhere.
+an item is reordered inside its Queue batch, or inside a group anywhere. In
+Triage, Design and Batch, `--before` may name a group of the target stage
+instead: a group is an entry of its stage beside the items in no group, ordered
+by the same prefixes, so the item leaves any group it is in and goes just
+before the group's directory, in no group. A name that is both an item's and a
+group's in that stage is read as the item's. An item that is all its group
+holds and goes in front of that group leaves it where it is, and the emptied
+group goes.
 
 `group "<name>" <ID...>` gathers items that are all in one of Triage, Design, and
 Batch into the group of that name there. A group the stage does not hold yet
@@ -86,11 +93,16 @@ Execute to be empty and keeps the batch's name.
 The board makes the same changes through its own routes, each checked against
 the revision and answered with the session:
 
-- `POST /w/<key>/api/move {id, to, beforeId?, group?, revision}` moves as `mv`
-  does. `group` is the drop target's group: one the target stage already holds,
-  or `null` for none. Left out, the item keeps its group inside its own stage
-  and has none in another, as with `mv`. A group the target stage does not hold
-  is refused rather than started, because starting one is `group`'s to do.
+- `POST /w/<key>/api/move {id, to, beforeId?, beforeGroup?, group?, revision}`
+  moves as `mv` does. `group` is the drop target's group: one the target stage
+  already holds, or `null` for none. Left out, the item keeps its group inside
+  its own stage and has none in another, as with `mv`. A group the target stage
+  does not hold is refused rather than started, because starting one is
+  `group`'s to do. `beforeGroup` names a group of the target stage that the
+  item goes in front of, as `--before` does when it names a group, and puts the
+  item in no group when `group` is left out; it is refused together with
+  `beforeId`, with a `group` that is not `null`, and for a group the stage does
+  not hold.
 - `POST /w/<key>/api/group {ids, name, revision}` is `group`.
 - `POST /w/<key>/api/ungroup {ids, revision}` is `ungroup`.
 
