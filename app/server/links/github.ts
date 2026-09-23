@@ -14,6 +14,11 @@ import { capture } from '../command.ts';
 /** What gh said, or the sentence saying why it said nothing. */
 export type PullRequestAnswer = {
   readonly pr: PullRequest | null;
+  /**
+   * The pull request's description as gh gave it, which is read for the
+   * issues it names and never sent to a page; empty without a pull request.
+   */
+  readonly body: string;
   readonly notice: string | null;
 };
 
@@ -25,7 +30,7 @@ const budget = '15 seconds';
 /** Nobody is there to answer a prompt, and an upgrade notice is not an answer. */
 const quiet = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
 
-const fields = ['number', 'url', 'title', 'state', 'isDraft', 'reviewDecision', 'statusCheckRollup'].join(',');
+const fields = ['number', 'url', 'title', 'body', 'state', 'isDraft', 'reviewDecision', 'statusCheckRollup'].join(',');
 
 /**
  * The two refusals that are answers: the branch has no pull request, or the
@@ -51,6 +56,7 @@ const ViewJson = Schema.Struct({
   number: Schema.Int,
   url: Schema.String,
   title: Schema.String,
+  body: Schema.String,
   state: Schema.Literals(['OPEN', 'MERGED', 'CLOSED']),
   isDraft: Schema.Boolean,
   // gh writes an empty string when there is no decision.
@@ -100,7 +106,7 @@ export const pullRequestOf = (worktree: string): Effect.Effect<PullRequestAnswer
     });
     if (result.exitCode !== 0) {
       const answered = nothingToShow.some((sentence) => result.stderr.includes(sentence));
-      return { pr: null, notice: answered ? null : unavailable } satisfies PullRequestAnswer;
+      return { pr: null, body: '', notice: answered ? null : unavailable } satisfies PullRequestAnswer;
     }
     const view = yield* Schema.decodeEffect(ViewJson)(result.stdout);
     return {
@@ -113,6 +119,7 @@ export const pullRequestOf = (worktree: string): Effect.Effect<PullRequestAnswer
         reviewDecision: view.reviewDecision === null || view.reviewDecision === '' ? null : view.reviewDecision,
         checks: countChecks(view.statusCheckRollup),
       },
+      body: view.body,
       notice: null,
     } satisfies PullRequestAnswer;
-  }).pipe(Effect.catchCause(() => Effect.succeed<PullRequestAnswer>({ pr: null, notice: unavailable })));
+  }).pipe(Effect.catchCause(() => Effect.succeed<PullRequestAnswer>({ pr: null, body: '', notice: unavailable })));

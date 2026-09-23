@@ -319,6 +319,11 @@ export type LinearIssue = {
 export type Links = {
   /** Null when the branch has no pull request, and when the worktree is on no branch. */
   pr: PullRequest | null;
+  /**
+   * The issues the branch and its pull request's title and body name, in the
+   * order first named, each one confirmed by `linear issue view`; empty when
+   * they name none and when linear could not say, which a notice then names.
+   */
   issues: readonly LinearIssue[];
   /** One sentence per source that could not answer; empty when every source did. */
   notices: readonly string[];

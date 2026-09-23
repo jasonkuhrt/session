@@ -80,9 +80,9 @@ function App() {
     }
   }, [])
 
-  // The links are the daemon's last answer from gh, read on their own for the
-  // same reason as the agents: a source that cannot be reached must not take
-  // the board down, and a failed read keeps the chip it last had.
+  // The links are the daemon's last answer from gh and linear, read on their
+  // own for the same reason as the agents: a source that cannot be reached
+  // must not take the board down, and a failed read keeps the chips it last had.
   const loadLinks = React.useCallback(async (signal?: AbortSignal) => {
     try {
       const next = await SessionApi.links(signal)
@@ -91,7 +91,7 @@ function App() {
       setLinksError(null)
     } catch (error) {
       if (signal?.aborted) return
-      setLinksError(error instanceof Error ? error.message : 'The pull request could not be read')
+      setLinksError(error instanceof Error ? error.message : 'The pull request and issues could not be read')
     }
   }, [])
 
