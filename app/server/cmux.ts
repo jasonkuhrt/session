@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import { which } from 'bun';
 import * as Config from 'effect/Config';
 import * as Effect from 'effect/Effect';
@@ -47,16 +46,6 @@ export const cmuxOnPath = Effect.gen(function*() {
   return which('cmux', { PATH: yield* Config.String('PATH') }) !== null;
 }).pipe(Effect.orElseSucceed(() => false));
 
-/** One socket per uid. Without it cmux is not running for this user. */
-const runningSocket = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem;
-  const uid = process.getuid?.();
-  if (uid === undefined) return null;
-  const home = yield* Config.String('HOME');
-  const path = join(home, '.local/state/cmux', `cmux-${uid}.sock`);
-  return (yield* fs.exists(path)) ? path : null;
-}).pipe(Effect.orElseSucceed(() => null));
-
 type Node = { readonly kind: string; readonly parent: string };
 
 /**
@@ -101,18 +90,29 @@ const terminalOf = (tree: ReadonlyMap<string, Node>, pid: number): Terminal | nu
   return null;
 };
 
-const runningTree = Effect.gen(function*() {
-  const socket = yield* runningSocket;
-  if (socket === null) return null;
-  const listing = yield* capture({
-    command: 'cmux',
-    args: ['top', '--all', '--processes', '--format', 'tsv'],
-    env: quiet,
-    timeout: budget,
-  }).pipe(Effect.orElseSucceed(() => null));
-  if (listing === null || listing.exitCode !== 0) return null;
-  return parseTree(listing.stdout);
-});
+/** What cmux said went wrong, verbatim, or the plainest true sentence about it. */
+const refusal = (
+  command: string,
+  result: { readonly stderr: string; readonly exitCode: number },
+): string => {
+  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
+  return line ?? `${command} exited ${result.exitCode}.`;
+};
+
+/**
+ * The running tree, or the line cmux refused with. cmux finds its own socket,
+ * which has moved between releases, so nothing here guesses at where it is: a
+ * cmux that is not running is a listing that fails, and says why.
+ */
+const runningTree = capture({
+  command: 'cmux',
+  args: ['top', '--all', '--processes', '--format', 'tsv'],
+  env: quiet,
+  timeout: budget,
+}).pipe(
+  Effect.map((listing) => (listing.exitCode === 0 ? parseTree(listing.stdout) : refusal('cmux top', listing))),
+  Effect.catchTag('CommandError', (error) => Effect.succeed(error.message)),
+);
 
 /**
  * The terminal holding each of these pids. A pid cmux does not know, a cmux
@@ -127,22 +127,13 @@ export const terminalsFor = (
     const found = new Map<number, Terminal>();
     if (pids.length === 0) return found;
     const tree = yield* runningTree;
-    if (tree === null) return found;
+    if (typeof tree === 'string') return found;
     for (const pid of pids) {
       const terminal = terminalOf(tree, pid);
       if (terminal !== null) found.set(pid, terminal);
     }
     return found;
   });
-
-/** What cmux said went wrong, verbatim, or the plainest true sentence about it. */
-const refusal = (
-  command: string,
-  result: { readonly stderr: string; readonly exitCode: number },
-): string => {
-  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
-  return line ?? `${command} exited ${result.exitCode}.`;
-};
 
 /**
  * One command, and what it printed: its first line when it worked, the line
@@ -178,7 +169,7 @@ const focused: FocusResult = { ok: true };
 export const focus = (pid: number): Effect.Effect<FocusResult, never, Services> =>
   Effect.gen(function*() {
     const tree = yield* runningTree;
-    if (tree === null) return refuse('cmux is not running on this machine.');
+    if (typeof tree === 'string') return refuse(tree);
     const terminal = terminalOf(tree, pid);
     if (terminal === null) return refuse(`cmux has no terminal for pid ${pid}.`);
 

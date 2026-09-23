@@ -234,7 +234,6 @@
               "app/server/agents/app-server.ts",
               "app/server/agents/claude.ts",
               "app/server/agents/codex.ts",
-              "app/server/cmux.ts",
               "app/server/daemon.ts",
               "app/server/http.ts",
               "app/server/portless.ts",
