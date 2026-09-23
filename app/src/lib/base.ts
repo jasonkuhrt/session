@@ -66,5 +66,15 @@ export const filePageHref = (path: string) => `${basePath}/file/${encodedPath(pa
 /** One file of this session as it is on disk, served by the board's files route. */
 export const rawFileHref = (path: string) => `${basePath}/files/${encodedPath(path)}`
 
+/**
+ * An address on this page as the absolute URL a tab is named for, or null when
+ * the URL parser rejects it, as it rejects `http://localhost:PORT/` written in
+ * prose. Such a link is still drawn, as the browser draws it; it only has no
+ * tab to be opened once in. Resolving it never throws, because it runs while
+ * a page renders and a throw there blanks the page.
+ */
+export const absoluteHref = (href: string): string | null =>
+  URL.canParse(href, window.location.href) ? new URL(href, window.location.href).href : null
+
 /** Whether a file is one the file page renders: the files route serves `.md`, in any case, as Markdown. */
 export const isMarkdownPath = (path: string) => /\.md$/iu.test(path)

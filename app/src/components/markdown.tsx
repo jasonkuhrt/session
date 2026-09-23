@@ -1,7 +1,7 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { basePath, isMarkdownPath } from '../lib/base'
+import { absoluteHref, basePath, isMarkdownPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
 import { copyLabel, useCopy } from './copyable'
 import { Button } from './ui/button'
@@ -60,14 +60,16 @@ function MarkdownLink({ href, children }: { href: string | undefined; children: 
   if (href.startsWith('#') || /^mailto:/iu.test(href)) return <a href={href}>{children}</a>
 
   // Everything else opens beside the page, once: a second click brings back
-  // the tab the first one opened.
+  // the tab the first one opened. An address the URL parser rejects has no tab
+  // to name, so the browser is left to do with it what it does with any link.
   const target = linkHref(href)
+  const absolute = absoluteHref(target)
   return (
     <a
       href={target}
       target="_blank"
       rel="noreferrer"
-      onClick={openOnceOnClick(new URL(target, window.location.href).href)}
+      onClick={absolute === null ? undefined : openOnceOnClick(absolute)}
     >
       {children}
     </a>

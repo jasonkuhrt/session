@@ -7,7 +7,7 @@ import { useCopy } from './components/copyable'
 import { Button } from './components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { filePageHref, isMarkdownPath, rawFileHref } from './lib/base'
+import { absoluteHref, filePageHref, isMarkdownPath, rawFileHref } from './lib/base'
 import { useNow } from './lib/clock'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
@@ -183,6 +183,7 @@ function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
   const { path, writtenAt } = node.entry
   const markdown = isMarkdownPath(path)
   const href = markdown ? filePageHref(path) : rawFileHref(path)
+  const absolute = absoluteHref(href)
   return (
     <div className={cn(rowClass, 'group/file pl-8 hover:bg-muted')}>
       {markdown
@@ -198,7 +199,7 @@ function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
             rel="noreferrer"
             target="_blank"
             title={`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`}
-            onClick={openOnceOnClick(new URL(href, window.location.href).href)}
+            onClick={absolute === null ? undefined : openOnceOnClick(absolute)}
           >
             {node.name}
           </a>

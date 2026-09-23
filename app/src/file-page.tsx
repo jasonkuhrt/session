@@ -5,7 +5,7 @@ import { BoardPageFrame, PageLoading } from './components/board-page'
 import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { ApiError, problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { isMarkdownPath, listingHref, rawFileHref } from './lib/base'
+import { absoluteHref, isMarkdownPath, listingHref, rawFileHref } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
 import { openOnceOnClick } from './lib/open-once'
@@ -123,6 +123,7 @@ function FileContent({ path, markdown, text }: { path: string; markdown: boolean
 /** What the page says of a file it does not render, and the way to see the file as it is. */
 function NotMarkdown({ path }: { path: string }) {
   const href = rawFileHref(path)
+  const absolute = absoluteHref(href)
   return (
     <p className="text-sm text-muted-foreground">
       {path} is not a Markdown file, so this page does not render it.{' '}
@@ -132,7 +133,7 @@ function NotMarkdown({ path }: { path: string }) {
         rel="noreferrer"
         target="_blank"
         title={`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`}
-        onClick={openOnceOnClick(new URL(href, window.location.href).href)}
+        onClick={absolute === null ? undefined : openOnceOnClick(absolute)}
       >
         Open it as it is on disk
       </a>
