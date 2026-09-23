@@ -156,8 +156,6 @@ export type ClaudeSession = {
    * same status for a while, never that it is stale or gone.
    */
   statusChangedAt: string | null;
-  /** `https://claude.ai/code/<id>` when a Remote Control id was recorded; it proves the session was bridged, not that it is now. */
-  web: string | null;
   /** The cmux refs holding this pid, or null when it runs in no cmux tab (a normal state). */
   terminal: { surface: string; workspace: string; window: string } | null;
   /** `claude --resume <sessionId>` or `claude attach <id>`; null when neither handle exists. */
@@ -204,7 +202,6 @@ export const ClaudeSessionSchema = Schema.Struct({
   waitingFor: Schema.NullOr(Schema.String),
   startedAt: Schema.String,
   statusChangedAt: Schema.NullOr(Schema.String),
-  web: Schema.NullOr(Schema.String),
   terminal: Schema.NullOr(Schema.Struct({
     surface: Schema.String,
     workspace: Schema.String,

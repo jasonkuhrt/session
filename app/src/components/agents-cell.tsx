@@ -212,7 +212,6 @@ function SessionPill({ pill }: { pill: Pill }) {
                     <a
                       aria-label={`${action.label}: ${pill.name}`}
                       href={action.href}
-                      {...(action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
                       onClick={openOnceOnClick(action.href)}
                     />
                   }

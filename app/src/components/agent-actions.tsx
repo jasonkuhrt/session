@@ -77,7 +77,7 @@ function FocusAction({ action, name, onFocus, onFailure }: {
   )
 }
 
-/** Somewhere else this session already lives: a page, or another app, opened once. */
+/** The app this thread already lives in, handed the thread once. */
 function LinkAction({ action, name }: {
   action: Extract<Action, { kind: 'link' }>
   name: string
@@ -94,7 +94,6 @@ function LinkAction({ action, name }: {
               <a
                 aria-label={`${action.label}: ${name}`}
                 href={action.href}
-                {...(action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
                 onClick={openOnceOnClick(action.href)}
               />
             }

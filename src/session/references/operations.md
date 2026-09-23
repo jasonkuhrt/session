@@ -361,16 +361,11 @@ it started. Both carry the exact moment.
 
 "Focus terminal" focuses the cmux tab holding the session's process, and appears
 only when the process is in one; when cmux refuses, the chip shows the line cmux
-returned. "Open on claude.ai" appears only when a Remote Control link was
-recorded for the session, and opens it the way the pull request chip opens its
-page. claude.ai answers with a cross-origin opener policy that cuts its tab off
-from the board as it loads, so the board cannot find that tab again, and each
-click on this action opens another. When there is no terminal to focus, the
-chip offers "Copy resume command" instead, if the session has one:
-`claude --resume <session id>` for an interactive session, `claude attach <id>`
-for a background one. "Copy session id" is there whenever the listing carries
-one. Names are never acted on, so nothing on the board says where a name came
-from.
+returned. When there is no terminal to focus, the chip offers "Copy resume
+command" instead, if the session has one: `claude --resume <session id>` for an
+interactive session, `claude attach <id>` for a background one. "Copy session
+id" is there whenever the listing carries one. Names are never acted on, so
+nothing on the board says where a name came from.
 
 A Codex chip carries the thread's origin, its name or, failing that, its first
 line, and how long ago it was last active. "Open in Codex" hands
@@ -417,10 +412,8 @@ status; a thread is loaded in an app or it is not, and whether it is mid-turn is
 knowable only inside the process that owns it. No count is a count of all your
 agents: agent-team teammates, in-process subagents, bare sessions, and cloud
 sessions never register, so what you see is what registered under this worktree.
-A name is never a resume handle, which is why the command is there to copy. The
-claude.ai link records that the session was bridged at some point, not that it
-is bridged now, so it may open a page that is disconnected. And not every
-session has a terminal to focus; that is ordinary, not a fault.
+A name is never a resume handle, which is why the command is there to copy. And
+not every session has a terminal to focus; that is ordinary, not a fault.
 
 A source that cannot be reached says so, in a sentence that carries the
 consequence. "Claude Code did not answer, so its sessions are not listed" means

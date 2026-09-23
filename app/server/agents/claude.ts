@@ -15,9 +15,8 @@ import { ownerOf, realPaths } from '../paths.ts';
  * The Claude Code sessions under a worktree, from Claude Code's own listing.
  * `claude agents --json` is the supported way to read session state from
  * outside, and it already drops sessions whose process is gone, so nothing here
- * second-guesses liveness. The registry files beside it are read for the two
- * facts the listing omits: the Remote Control link, and whether the name is a
- * handle or a label.
+ * second-guesses liveness. The registry file beside each session is read for
+ * the one fact the listing omits: when its status last changed.
  */
 
 type Services = FileSystem.FileSystem | ChildProcessSpawner;
@@ -53,20 +52,11 @@ const RowSchema = Schema.Struct({
 type Row = typeof RowSchema.Type;
 const ListingJson = RowSchema.pipe(Schema.Array, Schema.fromJsonString);
 
-/** The registry holds a session's whole state; the board reads three fields. */
+/** The registry holds a session's whole state; the board reads its two stamps. */
 const RegistryJson = Schema.Struct({
-  bridgeSessionId: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
   statusUpdatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
   updatedAt: Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey),
 }).pipe(Schema.fromJsonString);
-
-/** What a row is enriched with once its registry file has been read. */
-type Enrichment = {
-  readonly web: string | null;
-  readonly statusChangedAt: string | null;
-};
-
-const nothingKnown: Enrichment = { web: null, statusChangedAt: null };
 
 /**
  * `~/.claude/sessions`, or the same directory under `CLAUDE_CONFIG_DIR`. The
@@ -94,15 +84,6 @@ const isoFrom = (value: number | null | undefined): string | null =>
     : null;
 
 /**
- * A recorded Remote Control id proves the session was bridged once, never that
- * it is bridged now, so the link is offered and nothing is claimed about it.
- */
-const webLink = (bridgeSessionId: string | null | undefined): string | null =>
-  typeof bridgeSessionId === 'string' && bridgeSessionId.startsWith('session_')
-    ? `https://claude.ai/code/${bridgeSessionId}`
-    : null;
-
-/**
  * A background session is reattached by its listing id; every other kind is
  * resumed by its session id. A name is never a handle: half of them are derived.
  */
@@ -111,26 +92,26 @@ const resumeCommand = (row: Row): string | null => {
   return row.sessionId === undefined ? null : `claude --resume ${row.sessionId}`;
 };
 
-const enrichmentFor = (directory: string | null, pid: number) =>
+/**
+ * When a session's status last changed, from its registry file. `updatedAt` is
+ * the wider stamp the registry always carries, so it stands in when the
+ * narrower one is absent; neither is a heartbeat. A file that cannot be read
+ * knows nothing.
+ */
+const statusChangedAtFor = (directory: string | null, pid: number) =>
   Effect.gen(function*() {
-    if (directory === null) return nothingKnown;
+    if (directory === null) return null;
     const fs = yield* FileSystem.FileSystem;
     const record = yield* Schema.decodeEffect(RegistryJson)(
       yield* fs.readFileString(join(directory, `${pid}.json`)),
     );
-    return {
-      web: webLink(record.bridgeSessionId),
-      // When the status last changed. `updatedAt` is the wider stamp the
-      // registry always carries, so it stands in when the narrower one is
-      // absent; neither is a heartbeat.
-      statusChangedAt: isoFrom(record.statusUpdatedAt) ?? isoFrom(record.updatedAt),
-    } satisfies Enrichment;
-  }).pipe(Effect.orElseSucceed(() => nothingKnown));
+    return isoFrom(record.statusUpdatedAt) ?? isoFrom(record.updatedAt);
+  }).pipe(Effect.orElseSucceed(() => null));
 
 const describe = (
   row: Row,
   moment: string,
-  enrichment: Enrichment,
+  statusChangedAt: string | null,
   terminal: Terminal | undefined,
 ): ClaudeSession => ({
   kind: row.kind,
@@ -142,8 +123,7 @@ const describe = (
   state: row.state ?? null,
   waitingFor: row.waitingFor ?? null,
   startedAt: moment,
-  statusChangedAt: enrichment.statusChangedAt,
-  web: enrichment.web,
+  statusChangedAt,
   terminal: terminal ?? null,
   resume: resumeCommand(row),
 });
@@ -172,12 +152,14 @@ export const claudeSessions = (
 
     const directory = yield* registryDirectory;
     const pids = [...new Set(owned.flatMap((entry) => entry.row.pid ?? []))];
-    const [terminals, enrichments] = yield* Effect.all(
+    const [terminals, statusChanges] = yield* Effect.all(
       [
         terminalsFor(pids),
-        Effect.forEach(pids, (pid) => enrichmentFor(directory, pid).pipe(Effect.map((found) => [pid, found] as const)), {
-          concurrency: 8,
-        }).pipe(Effect.map((entries) => new Map(entries))),
+        Effect.forEach(
+          pids,
+          (pid) => statusChangedAtFor(directory, pid).pipe(Effect.map((changedAt) => [pid, changedAt] as const)),
+          { concurrency: 8 },
+        ).pipe(Effect.map((entries) => new Map(entries))),
       ],
       { concurrency: 2 },
     );
@@ -185,9 +167,9 @@ export const claudeSessions = (
     const byWorktree = new Map<string, ClaudeSession[]>();
     for (const { owner, row, startedAt: moment } of owned) {
       const pid = row.pid;
-      const enrichment = pid === undefined ? nothingKnown : enrichments.get(pid) ?? nothingKnown;
+      const changedAt = pid === undefined ? null : statusChanges.get(pid) ?? null;
       const sessions = byWorktree.get(owner) ?? [];
-      sessions.push(describe(row, moment, enrichment, pid === undefined ? undefined : terminals.get(pid)));
+      sessions.push(describe(row, moment, changedAt, pid === undefined ? undefined : terminals.get(pid)));
       byWorktree.set(owner, sessions);
     }
     return { byWorktree, notice: null };
