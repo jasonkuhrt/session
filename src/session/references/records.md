@@ -102,7 +102,9 @@ In Queue and Execute every item is in a group, and there the group is a batch.
 - A group directory holds item files only; groups do not nest.
 - Emptying a group removes its directory on the next write, with anything left
   in it whose name starts with a dot, such as Finder's `.DS_Store`: no reader
-  sees those, so they cannot keep a group alive.
+  sees those, so they cannot keep a group alive. Until that write, no reader
+  counts the directory as a group either, so one left behind by a write that
+  was interrupted breaks nothing.
 
 `session group "<name>" <ID...>` gathers items of one lane into a group, and
 `session ungroup <ID...>` takes them out to the end of their lane. An item that
@@ -257,7 +259,8 @@ QUEUE/
 - Every entry is a number, a hyphen, then the rest: for a file the rest is
   `<ID>.md`, for a directory the rest is the group's name. Entries whose name
   starts with `.` are ignored, which is also how a write in progress stays
-  invisible until it is renamed into place. Anything else is an error, as are a
+  invisible until it is renamed into place, and so is a directory that holds
+  nothing but such entries, or nothing. Anything else is an error, as are a
   missing prefix, two entries sharing a prefix in one directory, and a
   directory inside a group directory.
 - Ascending numeric prefix is the order, and that order is card order. A group

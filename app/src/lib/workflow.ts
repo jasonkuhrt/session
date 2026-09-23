@@ -16,6 +16,40 @@ export const stageMeta: Record<Stage, { label: string; hint: string }> = {
   EXECUTE: { label: 'Execute', hint: 'The batch under way; its items leave only by being completed.' },
 }
 
+/**
+ * What a group is called in each stage and what it is there: in Queue and
+ * Execute every item is in one, and a group there is a batch. The heading
+ * sentence hangs off a group's heading on the board, the field sentence off the
+ * label the item page gives the group's name.
+ */
+export const groupMeta: Record<Stage, { label: 'Group' | 'Batch'; heading: string; field: string }> = {
+  TRIAGE: {
+    label: 'Group',
+    heading: 'A group: candidates in Triage gathered under one name.',
+    field: 'The group this item is gathered in, in Triage.',
+  },
+  DESIGN: {
+    label: 'Group',
+    heading: 'A group: work in Design gathered under one name.',
+    field: 'The group this item is gathered in, in Design.',
+  },
+  BATCH: {
+    label: 'Group',
+    heading: 'A proposed batch: settled items gathered under one name, so the batch they could make shows before it is queued.',
+    field: 'The proposed batch this item is gathered in, in Batch.',
+  },
+  QUEUE: {
+    label: 'Batch',
+    heading: 'A batch waiting to start: these items start together, under this name.',
+    field: 'The batch this item was queued in.',
+  },
+  EXECUTE: {
+    label: 'Batch',
+    heading: 'The batch under way: these items were started together.',
+    field: 'The batch this item was started in.',
+  },
+}
+
 export function isStage(value: unknown): value is Stage {
   return stageNames.some(stage => stage === value)
 }

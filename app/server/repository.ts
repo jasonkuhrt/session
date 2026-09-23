@@ -197,21 +197,31 @@ const placeName = (stage: Stage, group: string | null): string =>
  * An item placed among a stage's other items, in file order, in the group its
  * draft names, or in none. `beforeId` names the item it goes in front of,
  * which must sit in the same group, or in none for an item in none, so a group
- * is never split. Without it the item goes at the end of its group, and an
- * item in no group at the end of the stage. A group the other items do not
- * hold starts at `start`: the end of the stage, unless the caller keeps the
- * place of a group it has just emptied.
+ * is never split. `beforeGroup` names a group that an item in no group goes in
+ * front of instead: a group is an entry of the stage beside its items, so the
+ * item goes just before the group's first item. Without either the item goes
+ * at the end of its group, and an item in no group at the end of the stage. A
+ * group the other items do not hold starts at `start`: the end of the stage,
+ * unless the caller keeps the place of a group it has just emptied, which is
+ * also where an item goes in front of the group it alone held.
  */
 const placeItem = (input: {
   readonly stage: Stage;
   readonly items: ReadonlyArray<ItemDraft>;
   readonly item: ItemDraft;
   readonly beforeId?: string | null | undefined;
+  readonly beforeGroup?: string | null | undefined;
   readonly start?: number | undefined;
 }): ItemDraft[] => {
-  const { stage, items, item, beforeId } = input;
+  const { stage, items, item, beforeId, beforeGroup } = input;
   const { group } = item;
   const insertAt = (index: number) => [...items.slice(0, index), item, ...items.slice(index)];
+
+  if (beforeGroup !== undefined && beforeGroup !== null) {
+    const first = items.findIndex((candidate) => candidate.group === beforeGroup);
+    if (first !== -1) return insertAt(first);
+    return input.start === undefined ? fail(`${stage} has no group ${quote(beforeGroup)}.`) : insertAt(input.start);
+  }
 
   if (beforeId === undefined || beforeId === null) {
     if (group === null) return [...items, item];
@@ -371,12 +381,17 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
+    /** Whether a directory holds anything a reader sees: an entry whose name does not start with a dot. */
+    const holdsVisibleEntry = (path: string) =>
+      fs.readDirectory(path).pipe(Effect.map((names) => names.some((name) => !name.startsWith('.'))));
+
     /**
      * A stage directory keeps itself; the group directories it empties do not.
      * Every reader skips an entry whose name starts with a dot, so a group
      * directory holding only such entries, like Finder's `.DS_Store`, holds
-     * nothing and goes with them; left behind, it would keep its prefix and its
-     * name from the next group or item. A directory whose own name starts with
+     * nothing and goes with them. Readers pass over such a directory too, so
+     * one left behind by a write interrupted before this ran fails nothing
+     * until the next write removes it. A directory whose own name starts with
      * a dot is no group, and is left alone as every reader leaves it.
      */
     const pruneEmptyDirectories = Effect.gen(function*() {
@@ -387,9 +402,7 @@ export const makeRepository = (directory: string) =>
           if (name.startsWith('.')) continue;
           const child = join(stageDirectory, name);
           if ((yield* pathType(child)) !== 'Directory') continue;
-          if ((yield* fs.readDirectory(child)).every((entry) => entry.startsWith('.'))) {
-            yield* fs.remove(child, { recursive: true });
-          }
+          if (!(yield* holdsVisibleEntry(child))) yield* fs.remove(child, { recursive: true });
         }
       }
     }).pipe(
@@ -722,9 +735,15 @@ export const makeRepository = (directory: string) =>
       readonly to: Stage;
       readonly beforeId?: string | null | undefined;
       /**
+       * A group of the target stage the item goes in front of, which puts it
+       * in no group: groups do not nest. Given instead of `beforeId`.
+       */
+      readonly beforeGroup?: string | null | undefined;
+      /**
        * The group it lands in, which the target stage must already hold, or
        * null for none. Left out, an item keeps its group inside its own stage
-       * and has none in another, as leaving QUEUE drops the batch.
+       * and has none in another, as leaving QUEUE drops the batch, and none
+       * when it goes in front of a group.
        */
       readonly group?: string | null | undefined;
       readonly revision: string;
@@ -752,7 +771,10 @@ export const makeRepository = (directory: string) =>
           }
 
           const inPlace = found.stage === input.to;
-          const group = input.group === undefined ? (inPlace ? found.item.group : null) : input.group;
+          const beforeGroup = input.beforeGroup ?? null;
+          const group = input.group === undefined
+            ? (inPlace && beforeGroup === null ? found.item.group : null)
+            : input.group;
           const staysInGroup = inPlace && group === found.item.group;
           // Inside QUEUE an item keeps its batch and only changes place in it.
           if (input.to === 'QUEUE' && !staysInGroup) {
@@ -767,6 +789,26 @@ export const makeRepository = (directory: string) =>
               kind: 'not-found',
               message: `${input.to} has no group ${quote(group)}; \`session group\` starts one.`,
             });
+          }
+          if (beforeGroup !== null) {
+            if (input.beforeId !== undefined && input.beforeId !== null) {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: `${input.to}: ${input.id} goes in front of one neighbour, an item or a group; name one.`,
+              });
+            }
+            if (group !== null) {
+              return yield* new RepositoryError({
+                kind: 'validation',
+                message: `${input.to}: cannot place ${input.id} before the group ${quote(beforeGroup)}; ${input.id} goes in ${placeName(input.to, group)}, and groups do not nest.`,
+              });
+            }
+            if (!target.items.some((candidate) => candidate.group === beforeGroup)) {
+              return yield* new RepositoryError({
+                kind: 'not-found',
+                message: `${input.to} has no group ${quote(beforeGroup)}.`,
+              });
+            }
           }
           if (input.beforeId === input.id && !staysInGroup) {
             return yield* new RepositoryError({
@@ -786,21 +828,24 @@ export const makeRepository = (directory: string) =>
           if (inPlace) {
             // Placed before itself, an item stays where it is.
             if (input.beforeId === input.id) return [];
+            // An item alone in its group keeps the group's place, whether it
+            // stays in the group or goes in front of it, out of it.
+            const keepsPlace = staysInGroup || (beforeGroup !== null && beforeGroup === found.item.group);
             const items = yield* attempt(() =>
               placeItem({
                 stage: input.to,
                 items: remaining,
                 item,
                 beforeId: input.beforeId,
-                // An item alone in its group keeps the group's place.
-                start: staysInGroup ? source.items.findIndex((candidate) => candidate.id === input.id) : undefined,
+                beforeGroup,
+                start: keepsPlace ? source.items.findIndex((candidate) => candidate.id === input.id) : undefined,
               })
             );
             return yield* attempt(() => stageChanges(source, items));
           }
 
           const items = yield* attempt(() =>
-            placeItem({ stage: input.to, items: target.items, item, beforeId: input.beforeId }),
+            placeItem({ stage: input.to, items: target.items, item, beforeId: input.beforeId, beforeGroup }),
           );
           return yield* attempt(() => [
             ...stageChanges(source, remaining),
@@ -1337,6 +1382,9 @@ export const makeRepository = (directory: string) =>
       for (const name of yield* fs.readDirectory(execute)) {
         const match = name.startsWith('.') ? null : entryName.exec(name);
         if (match === null || (yield* pathType(join(execute, name))) !== 'Directory') continue;
+        // A batch directory holding nothing a reader sees is no batch, as the
+        // stage's own reading of it has it.
+        if (!(yield* holdsVisibleEntry(join(execute, name)))) continue;
         batches.push({ prefix: Number(match[1]!), name: match[2]! });
       }
       return batches.toSorted((left, right) => left.prefix - right.prefix)[0]?.name ?? null;

@@ -11,6 +11,7 @@ import { Button } from './components/ui/button'
 import { eventsUrl, SessionApi } from './lib/api'
 import { basePath } from './lib/base'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
+import { groupMeta } from './lib/workflow'
 
 const boardHref = `${basePath}/`
 
@@ -38,14 +39,16 @@ export function ItemPage({ id }: { id: string }) {
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
 
-  const load = React.useCallback(async (signal?: AbortSignal) => {
+  const load = React.useCallback(async (signal?: AbortSignal): Promise<Session | null> => {
     try {
       const next = await SessionApi.read(signal)
-      if (signal?.aborted) return
+      if (signal?.aborted) return null
       setSession(next)
       setLoadError(null)
+      return next
     } catch (error) {
       if (!signal?.aborted) setLoadError(error instanceof Error ? error.message : 'Could not load the session')
+      return null
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
@@ -55,7 +58,7 @@ export function ItemPage({ id }: { id: string }) {
     await load()
   }, [load])
 
-  const { pending, failure, refreshed, mutate, settle } = useSessionMutations({
+  const { pending, failure, refreshed, mutate, follow } = useSessionMutations({
     session,
     onSession: setSession,
     reload,
@@ -74,8 +77,7 @@ export function ItemPage({ id }: { id: string }) {
   React.useEffect(() => {
     const source = new EventSource(eventsUrl(['changed']))
     const refetch = () => {
-      settle()
-      void load()
+      void follow(load)
     }
     let dropped = false
     source.addEventListener('changed', refetch)
@@ -88,7 +90,7 @@ export function ItemPage({ id }: { id: string }) {
       refetch()
     })
     return () => source.close()
-  }, [load, settle])
+  }, [follow, load])
 
   const found = locate(session, id)
   // A write that failed and a read that failed are both problems to look at;
@@ -164,12 +166,13 @@ function Detail({
 }) {
   return (
     <article>
-      {/* A batch name on its own is a phrase nobody can place, so it is
-          labelled the way the header labels a branch. */}
+      {/* A group's name on its own is a phrase nobody can place, so it is
+          labelled the way the header labels a branch: a batch in Queue and
+          Execute, where every group is one, and a group everywhere else. */}
       {item.group
         ? (
           <dl className="mb-3 flex items-baseline gap-2 text-sm">
-            <dt className="text-muted-foreground" title="The batch this item was queued in.">Batch</dt>
+            <dt className="text-muted-foreground" title={groupMeta[stage].field}>{groupMeta[stage].label}</dt>
             <dd className="font-medium">{item.group}</dd>
           </dl>
         )

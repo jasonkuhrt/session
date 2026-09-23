@@ -143,8 +143,11 @@ export const parseStageDirectory = (
   const files: StageFileEntry[] = [];
   const groups = new Set<string>();
   const noun = groupNoun(stage);
+  // A directory holding nothing a reader sees, nothing or only dot entries, is no group: the next write
+  // removes it and no reader counts it meanwhile, so one an interrupted write leaves behind breaks nothing.
+  const held = entries.filter((entry) => entry.type === 'file' || entry.children.some((child) => !child.name.startsWith('.')));
 
-  for (const { entry, remainder } of orderEntries(stage, entries)) {
+  for (const { entry, remainder } of orderEntries(stage, held)) {
     if (entry.type === 'file') {
       if (isBatchedStage(stage)) fail(`${stage}/${entry.name}: ${stage} items live inside a batch directory.`);
       const id = itemIdOf(stage, entry.name, remainder);

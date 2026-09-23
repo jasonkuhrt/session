@@ -59,7 +59,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   refresh [--previous <inventory.json>] print the file inventory as JSON
   ls [STAGE]                            list items as ID, file, title
   add <STAGE> <ID> "<title>"            add an item, body on stdin
-  mv <ID> <STAGE> [--before ID]         move an item, or reorder it where it is
+  mv <ID> <STAGE> [--before ID|GROUP]   move an item, or reorder it where it is
   group "<name>" <ID...>                gather items of one stage into a named group
   ungroup <ID...>                       take items out of their groups
   batch "<name>" <ID...>                queue BATCH items as a named batch
@@ -334,10 +334,17 @@ const move = (options: Options, repository: SessionRepository) =>
     const id = options.operands[0]!;
     const stage = yield* cliTry(() => asStage(options.operands[1]!));
     const session = yield* repository.load;
+    // `--before` names an item of the target stage, or else one of its groups:
+    // a group is an entry of the stage beside its items.
+    const target = stageIn(session, stage).items;
+    const before = options.before;
+    const namesGroup = before !== undefined && !target.some((entry) => entry.id === before) &&
+      target.some((entry) => entry.group === before);
     const moved = yield* repository.moveItem({
       id,
       to: stage,
-      beforeId: options.before,
+      beforeId: namesGroup ? undefined : before,
+      beforeGroup: namesGroup ? before : undefined,
       revision: session.revision,
     });
     const item = stageIn(moved, stage).items.find((entry) => entry.id === id)!;

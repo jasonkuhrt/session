@@ -13,7 +13,7 @@ check                      validate; prints "OK <revision>, <n> items" or "OK <r
 refresh [--previous F]     JSON path/hash inventory, and what it skipped
 ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, group, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
-mv <ID> <STAGE> [--before ID]   refuses into Queue or Execute and out of Execute; another stage drops the group
+mv <ID> <STAGE> [--before ID|GROUP]   refuses into Queue or Execute and out of Execute; another stage drops the group
 group "<name>" <ID...>     gather items of one stage into a named group; refuses Queue and Execute
 ungroup <ID...>            take items out of their groups, to the end of their stage; refuses Queue and Execute
 batch "<name>" <ID...>     compose a named batch from Batch items, grouped or not, and append it to Queue
@@ -64,7 +64,14 @@ leaves its batch, and lands in no group there. Inside its own stage it keeps
 its group. Without `--before`, an item lands at the end of its group, or at the
 end of the stage when it is in none. `--before` names the item it goes in front
 of, which must be in the same group, or in none for an item in none; that is how
-an item is reordered inside its Queue batch, or inside a group anywhere.
+an item is reordered inside its Queue batch, or inside a group anywhere. In
+Triage, Design and Batch, `--before` may name a group of the target stage
+instead: a group is an entry of its stage beside the items in no group, ordered
+by the same prefixes, so the item leaves any group it is in and goes just
+before the group's directory, in no group. A name that is both an item's and a
+group's in that stage is read as the item's. An item that is all its group
+holds and goes in front of that group leaves it where it is, and the emptied
+group goes.
 
 `group "<name>" <ID...>` gathers items that are all in one of Triage, Design, and
 Batch into the group of that name there. A group the stage does not hold yet
@@ -86,11 +93,16 @@ Execute to be empty and keeps the batch's name.
 The board makes the same changes through its own routes, each checked against
 the revision and answered with the session:
 
-- `POST /w/<key>/api/move {id, to, beforeId?, group?, revision}` moves as `mv`
-  does. `group` is the drop target's group: one the target stage already holds,
-  or `null` for none. Left out, the item keeps its group inside its own stage
-  and has none in another, as with `mv`. A group the target stage does not hold
-  is refused rather than started, because starting one is `group`'s to do.
+- `POST /w/<key>/api/move {id, to, beforeId?, beforeGroup?, group?, revision}`
+  moves as `mv` does. `group` is the drop target's group: one the target stage
+  already holds, or `null` for none. Left out, the item keeps its group inside
+  its own stage and has none in another, as with `mv`. A group the target stage
+  does not hold is refused rather than started, because starting one is
+  `group`'s to do. `beforeGroup` names a group of the target stage that the
+  item goes in front of, as `--before` does when it names a group, and puts the
+  item in no group when `group` is left out; it is refused together with
+  `beforeId`, with a `group` that is not `null`, and for a group the stage does
+  not hold.
 - `POST /w/<key>/api/group {ids, name, revision}` is `group`.
 - `POST /w/<key>/api/ungroup {ids, revision}` is `ungroup`.
 
@@ -399,7 +411,9 @@ The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
 there is no way to type a body or create an item in it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
-reading width, shows the item's id and its path under the session, and resolves
+reading width, shows the item's id and its path under the session, and above
+its title the name of its group when it has one, labelled Batch in Queue and
+Execute and Group elsewhere, and resolves
 Markdown links inside the body against the session directory; the path copies
 the absolute file, which is what a terminal beside the page can open. An id
 with a dot in it, such as `BE-1.2`, has its page like any other: a path under
@@ -427,15 +441,48 @@ served, and a directory named `ignore` further down is an ordinary one. What the
 route serves never runs: it is sent sandboxed and is never sniffed into another
 type.
 
-Select ready items in the Batch lane and use "Queue batch", which appears once
-something is selected, to name them and append the batch to Queue. The Queue
-lane groups cards under their batch in file order and offers "Start next
-batch" while there is a batch to start and Execute is empty. Neither button is
+Every lane draws its groups as they are filed: a group is a heading over its
+cards, in its place in the lane's file order among the cards in no group. The
+heading's tooltip says what a group is in that lane: candidates or work
+gathered under one name in Triage and Design, a proposed batch in Batch, and a
+batch in Queue and Execute. Select cards in Triage, Design or Batch and
+"Group (n)" appears, which names them as a group of that lane in the dialog
+"Queue batch" uses; a name the lane already has adds them to that group, as
+`group` does. In Batch, "Queue batch (n)" appears beside it, to name the
+selected items as a batch and append it to Queue. Selected items join the group
+or the batch in the order the lane shows them. A group's heading in Batch offers
+"Queue batch" too: the dialog starts from the group's name, and it queues
+exactly that group's items, which takes the group with them. A group's heading
+in Triage, Design or Batch offers "Ungroup", which takes its items out of the
+group, each to the end of its lane, as `ungroup` does. A batch's heading in
+Queue and Execute offers nothing, because a batch is composed in Batch and a
+queued card leaves it only by leaving Queue. The Queue lane offers "Start next
+batch" while there is a batch to start and Execute is empty. None of these is
 ever drawn disabled with a reason: an empty selection and an occupied Execute
 are already visible in the lanes themselves. Execute is frozen: its cards can
-only be completed, which files them under `archive/`. Nothing drops into Queue
-or Execute; a Queue card can be reordered inside its own batch or dragged back
-to Batch, Design, or Triage.
+only be completed, which files them under `archive/`.
+
+A card is dragged by its whole self, and picking it up moves nothing. While it
+is held, the board draws it where the move would write it and outlines the list
+it would land in: one group, or the lane's cards in no group. Held over a card,
+it goes in front of that card while its own centre is above the card's centre
+and right after it once below, whichever list either is in, and it follows as it
+moves. Right after a card in no group it goes in front of whatever follows that
+card, a group included, so it lands just where it is drawn. Held over a group's
+heading or edge it joins the group, at its start over the group's top half and
+at its end over the bottom half, and a group the drag has emptied is still there
+to take it back until the drop. Held over the lane's heading it leaves any group
+for the start of the lane, in front of its first entry, a group included, and
+held over the space that runs on below the lane's last entry it leaves any group
+for the end of the lane. So a card dropped among a group's cards joins that
+group, one dropped among the lane's cards in no group leaves its group, and one
+dropped in another lane lands in no group there unless it was dropped among one
+of that lane's groups. `POST /api/move` carries that as `group`, the group it
+lands in or `null`, and names the card or, for a card in no group, the group it
+goes in front of. Nothing drops into Queue or Execute; a Queue card can be
+reordered inside its own batch or dragged back to Batch, Design, or Triage, into
+a group there or not. Escape puts the held card back, and so does a move the
+engine refuses.
 
 Beside the session, each board serves three read-only listings. `GET
 /w/<key>/api/ledger` is the ledger's entries, newest first by date and then by
@@ -642,7 +689,10 @@ how it is written, or has a `date` that is not a UTC instant to the second;
 whose name is not the one its date and title give; or whose body, read the way
 the board renders it, has a heading. It does not look inside `context/`. It does
 not judge acceptance criteria or user approval. An empty stage is an empty
-directory.
+directory. A directory in a stage that holds nothing, or nothing but names
+starting with a dot, is no group to `check` or to any other reader, whatever
+its name, and the next write removes it; so one that an interrupted write
+leaves beside the entry that took its prefix or its name fails nothing.
 
 ## App development
 

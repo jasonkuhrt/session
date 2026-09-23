@@ -1,14 +1,12 @@
 import * as React from 'react'
 
 import type { Session } from '../../contract'
+import type { SessionMutation } from './api'
 import { ApiError, SessionApi } from './api'
 
 /** A conflict is not a failure: nothing was lost and the surface caught up. */
 export const refreshedNotice =
   'The Markdown changed on disk. The board was refreshed; please try again.'
-
-/** Every route that moves the records. The board and the item page share them. */
-export type SessionMutation = '/api/move' | '/api/batch' | '/api/start' | '/api/complete'
 
 /**
  * The one way a surface changes the records, so the board and the item page
@@ -39,7 +37,7 @@ export function useSessionMutations(input: {
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
-          // `reload` settles this on the way through, so it is set after it.
+          // The notice stands on the session the reload reads, so it follows it.
           await reload()
           setRefreshed(true)
         } else {
@@ -53,11 +51,33 @@ export function useSessionMutations(input: {
     [onSession, reload, session],
   )
 
-  /** A surface calls this when a fresh read has made both messages stale. */
-  const settle = React.useCallback(() => {
+  const clear = React.useCallback(() => {
     setFailure(null)
     setRefreshed(false)
   }, [])
+  const follow = useFollow(session, clear)
 
-  return { pending, failure, refreshed, mutate, settle }
+  return { pending, failure, refreshed, mutate, follow }
+}
+
+/**
+ * A fresh read after a pushed change, which makes a surface's messages stale
+ * only when it moved past what the surface shows: the push for a write the
+ * surface already reloaded after a conflict arrives just after that reload,
+ * and must not take away the notice that says the surface caught up.
+ */
+function useFollow(session: Session | null, clear: () => void) {
+  // The revision on screen, so a fresh read can tell whether it moved past it.
+  const shown = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    shown.current = session?.revision ?? null
+  }, [session])
+  return React.useCallback(
+    async (read: () => Promise<Session | null>) => {
+      const before = shown.current
+      const next = await read()
+      if (next !== null && next.revision !== before) clear()
+    },
+    [clear],
+  )
 }
