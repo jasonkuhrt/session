@@ -166,11 +166,11 @@ function Detail({
     <article>
       {/* A batch name on its own is a phrase nobody can place, so it is
           labelled the way the header labels a branch. */}
-      {item.batch
+      {item.group
         ? (
           <dl className="mb-3 flex items-baseline gap-2 text-sm">
             <dt className="text-muted-foreground" title="The batch this item was queued in.">Batch</dt>
-            <dd className="font-medium">{item.batch}</dd>
+            <dd className="font-medium">{item.group}</dd>
           </dl>
         )
         : null}

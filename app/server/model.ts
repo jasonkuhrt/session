@@ -17,7 +17,7 @@ export const itemIdSource = '[A-Za-z0-9][A-Za-z0-9._-]*';
 
 const itemHeading = new RegExp(`^## (${itemIdSource}) — (\\S(?:.*\\S)?)$`, 'u');
 const itemIdExactly = new RegExp(`^${itemIdSource}$`, 'u');
-const batchHeading = /^# (\S(?:.*\S)?)$/u;
+const groupHeading = /^# (\S(?:.*\S)?)$/u;
 
 export const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
@@ -25,9 +25,6 @@ export const fail = (message: string): never => {
 
 /** Quote a name inside a message without reaching for JSON. */
 export const quote = (value: string): string => `"${value}"`;
-
-/** The fix a flat stage names when it meets a batch heading. */
-const batchFix = 'batches live in QUEUE: run `session batch "<name>" <ID...>`';
 
 const summarize = (body: string, title: string): string => {
   const line = body
@@ -38,12 +35,21 @@ const summarize = (body: string, title: string): string => {
   return line.replace(/^[-*>\d.\s]+/u, '').slice(0, 180);
 };
 
-export const validateBatchName = (stage: Stage, name: string): string => {
+/** What a stage calls its groups: in QUEUE and EXECUTE a group is a batch. */
+export const groupNoun = (stage: Stage): 'batch' | 'group' => (isBatchedStage(stage) ? 'batch' : 'group');
+
+/**
+ * A group's name is the rest of its directory's name, so it must survive
+ * being one: non-empty, without surrounding spaces, and without `/`. `where`
+ * is what a refusal names, the directory itself when one is being read.
+ */
+export const validateGroupName = (stage: Stage, name: string, where: string = stage): string => {
+  const noun = groupNoun(stage);
   if (name.trim() !== name || name === '') {
-    fail(`${stage}: batch names must be non-empty and free of surrounding spaces.`);
+    fail(`${where}: ${noun} names must be non-empty and free of surrounding spaces.`);
   }
   if (name.includes('/')) {
-    fail(`${stage}: batch name ${quote(name)} must not contain "/".`);
+    fail(`${where}: ${noun} name ${quote(name)} must not contain "/".`);
   }
   return name;
 };
@@ -55,12 +61,8 @@ export const validateItem = (stage: Stage, item: ItemDraft): void => {
   }
   if (item.title.trim() === '') fail(`${stage}/${item.id}: title is empty.`);
   if (item.body.trim() === '') fail(`${stage}/${item.id}: body is empty.`);
-  if (isBatchedStage(stage)) {
-    if (item.batch === null) fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
-    else validateBatchName(stage, item.batch);
-  } else if (item.batch !== null) {
-    fail(`${stage}/${item.id}: ${batchFix}.`);
-  }
+  if (item.group !== null) validateGroupName(stage, item.group);
+  else if (isBatchedStage(stage)) fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
 };
 
 /**
@@ -81,7 +83,7 @@ export const makeItem = (input: {
   readonly id: string;
   readonly title: string;
   readonly body: string;
-  readonly batch: string | null;
+  readonly group: string | null;
 }): ItemDraft => {
   const body = input.body.trim();
   return {
@@ -89,7 +91,7 @@ export const makeItem = (input: {
     title: input.title,
     body,
     summary: summarize(body, input.title),
-    batch: input.batch,
+    group: input.group,
   };
 };
 
@@ -97,12 +99,12 @@ export const makeItem = (input: {
 export const renderItem = (item: ItemDraft): string =>
   `## ${item.id} — ${item.title}\n\n${item.body.trim()}`;
 
-/** One item file of a stage directory: the batch comes from the directory name. */
+/** One item file of a stage directory: its group, when it has one, comes from the directory name. */
 export const parseItemFile = (input: {
   readonly stage: Stage;
   readonly path: string;
   readonly id: string;
-  readonly batch: string | null;
+  readonly group: string | null;
   readonly content: string;
 }): Item => {
   const lines = input.content.replaceAll('\r\n', '\n').split('\n');
@@ -114,8 +116,8 @@ export const parseItemFile = (input: {
 
   for (const [index, line] of scanFences(lines.slice(1)).entries()) {
     if (line.place !== 'prose') continue;
-    if (batchHeading.test(line.text)) {
-      fail(`${input.path}:${index + 2}: batch headings live in the directory name.`);
+    if (groupHeading.test(line.text)) {
+      fail(`${input.path}:${index + 2}: a group, a batch included, is named by its directory, not by a \`# \` heading.`);
     }
     if (itemHeading.test(line.text)) {
       fail(`${input.path}:${index + 2}: an item file holds exactly one item.`);
@@ -126,7 +128,7 @@ export const parseItemFile = (input: {
     id: input.id,
     title: heading[2]!,
     body: lines.slice(1).join('\n'),
-    batch: input.batch,
+    group: input.group,
   });
   validateItem(input.stage, draft);
   return { ...draft, path: input.path };

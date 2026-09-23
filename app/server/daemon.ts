@@ -908,7 +908,7 @@ export const runDaemon = async () => {
       // The batch in Execute names the work under way; a batch with no name is
       // nothing to render, so it reads as an empty Execute rather than a blank.
       const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
-      const batch = execute?.items[0]?.batch ?? null;
+      const batch = execute?.items[0]?.group ?? null;
       return {
         ...base,
         branch: metadata.branch,

@@ -40,6 +40,8 @@ const commands = {
   ls: { operands: '[STAGE]', least: 0, most: 1 },
   add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3 },
   mv: { operands: '<ID> <STAGE>', least: 2, most: 2 },
+  group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
+  ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY },
   batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
   start: { operands: '', least: 0, most: 0 },
   done: { operands: '<ID>', least: 1, most: 1 },
@@ -58,6 +60,8 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   ls [STAGE]                            list items as ID, file, title
   add <STAGE> <ID> "<title>"            add an item, body on stdin
   mv <ID> <STAGE> [--before ID]         move an item, or reorder it where it is
+  group "<name>" <ID...>                gather items of one stage into a named group
+  ungroup <ID...>                       take items out of their groups
   batch "<name>" <ID...>                queue BATCH items as a named batch
   start                                 move the first queued batch into EXECUTE
   done <ID>                             complete an EXECUTE item
@@ -340,6 +344,24 @@ const move = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Moved ${id} to ${item.path}`);
   });
 
+/** It says where the items went: the directory they now share. */
+const group = (options: Options, repository: SessionRepository) =>
+  Effect.gen(function*() {
+    const name = options.operands[0]!;
+    const ids = options.operands.slice(1);
+    const session = yield* repository.load;
+    const grouped = yield* repository.groupItems({ name, ids, revision: session.revision });
+    const item = grouped.stages.flatMap((stage) => stage.items).find((entry) => entry.id === ids[0])!;
+    yield* Console.log(`Grouped ${counted(ids.length, 'item')} in ${item.path.slice(0, item.path.lastIndexOf('/'))}`);
+  });
+
+const ungroup = (options: Options, repository: SessionRepository) =>
+  Effect.gen(function*() {
+    const session = yield* repository.load;
+    yield* repository.ungroupItems({ ids: options.operands, revision: session.revision });
+    yield* Console.log(`Ungrouped ${counted(options.operands.length, 'item')}`);
+  });
+
 const queue = (options: Options, repository: SessionRepository) =>
   Effect.gen(function*() {
     const name = options.operands[0]!;
@@ -355,7 +377,7 @@ const start = (repository: SessionRepository) =>
     const started = yield* repository.startBatch({ revision: session.revision });
     const execute = stageIn(started, 'EXECUTE');
     yield* Console.log(
-      `Started ${quote(execute.items[0]?.batch ?? '')} (${counted(execute.items.length, 'item')})`,
+      `Started ${quote(execute.items[0]?.group ?? '')} (${counted(execute.items.length, 'item')})`,
     );
   });
 
@@ -433,6 +455,8 @@ const runCommand = (options: Options) =>
       case 'ls': { yield* list(options, repository); break; }
       case 'add': { yield* add(options, repository); break; }
       case 'mv': { yield* move(options, repository); break; }
+      case 'group': { yield* group(options, repository); break; }
+      case 'ungroup': { yield* ungroup(options, repository); break; }
       case 'batch': { yield* queue(options, repository); break; }
       case 'start': { yield* start(repository); break; }
       case 'done': { yield* complete(options, repository); break; }

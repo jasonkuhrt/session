@@ -2,24 +2,26 @@ import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, stageNames } from '../contract.ts';
 import {
   fail,
+  groupNoun,
   type ItemDraft,
   parseItemFile,
   quote,
   renderItem,
-  validateBatchName,
+  validateGroupName,
   validateItem,
 } from './model.ts';
 
 /**
  * Directory-layout rules. The session root holds a closed set of entries. A
- * stage directory holds numbered entries: item files in a flat stage, batch
- * directories of item files in QUEUE and EXECUTE. The numeric prefix is the
- * order, so the files alone answer "what comes next".
+ * stage directory holds numbered entries: item files and group directories of
+ * item files side by side in TRIAGE, DESIGN and BATCH, and group directories
+ * only in QUEUE and EXECUTE, where each group is a batch. The numeric prefix is
+ * the order, so the files alone answer "what comes next".
  */
 
 /** Gap between generated prefixes, leaving room to insert without renumbering. */
 const numberStep = 10;
-/** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a batch's name. */
+/** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a group's name. */
 export const entryName = /^(\d+)-(.+)$/u;
 
 /** One file of a stage, addressed relative to the session root. */
@@ -139,33 +141,29 @@ export const parseStageDirectory = (
 ): { items: Item[]; files: StageFileEntry[] } => {
   const items: Item[] = [];
   const files: StageFileEntry[] = [];
-  const batches = new Set<string>();
+  const groups = new Set<string>();
+  const noun = groupNoun(stage);
 
   for (const { entry, remainder } of orderEntries(stage, entries)) {
-    if (!isBatchedStage(stage)) {
-      if (entry.type !== 'file') {
-        fail(`${stage}/${entry.name}: batches live in QUEUE: run \`session batch "<name>" <ID...>\`.`);
-      }
+    if (entry.type === 'file') {
+      if (isBatchedStage(stage)) fail(`${stage}/${entry.name}: ${stage} items live inside a batch directory.`);
       const id = itemIdOf(stage, entry.name, remainder);
       const path = `${stage}/${entry.name}`;
-      items.push(parseItemFile({ stage, path, id, batch: null, content: entry.content }));
+      items.push(parseItemFile({ stage, path, id, group: null, content: entry.content }));
       files.push({ path, content: entry.content });
       continue;
     }
 
-    if (entry.type !== 'directory') {
-      fail(`${stage}/${entry.name}: ${stage} items live inside a batch directory.`);
-    }
-    const batch = validateBatchName(stage, remainder);
-    if (batches.has(batch)) fail(`${stage}: two directories name the batch ${quote(batch)}.`);
-    batches.add(batch);
     const directory = `${stage}/${entry.name}`;
+    const group = validateGroupName(stage, remainder, directory);
+    if (groups.has(group)) fail(`${stage}: two directories name the ${noun} ${quote(group)}; merge them into one or rename one.`);
+    groups.add(group);
     for (const inner of orderEntries(directory, entry.children)) {
       const child = inner.entry;
-      if (child.type !== 'file') fail(`${directory}/${child.name}: a batch directory holds item files.`);
+      if (child.type !== 'file') fail(`${directory}/${child.name}: a ${noun} directory holds item files only; ${noun}s do not nest.`);
       const id = itemIdOf(directory, child.name, inner.remainder);
       const path = `${directory}/${child.name}`;
-      items.push(parseItemFile({ stage, path, id, batch, content: child.content }));
+      items.push(parseItemFile({ stage, path, id, group, content: child.content }));
       files.push({ path, content: child.content });
     }
   }
@@ -217,34 +215,37 @@ const insertBetween = (existing: ReadonlyArray<number | null>): number[] | undef
   return result;
 };
 
-/** Items grouped into their batches, in file order. */
-const groupByBatch = (
-  stage: Stage,
-  items: ReadonlyArray<ItemDraft>,
-): Array<{ batch: string; items: ItemDraft[] }> => {
-  const groups: Array<{ batch: string; items: ItemDraft[] }> = [];
+/** One entry of a stage directory to render: an item file, or a group's directory with its items. */
+type TopLevelEntry =
+  | { readonly kind: 'item'; readonly item: ItemDraft }
+  | { readonly kind: 'group'; readonly name: string; readonly items: ItemDraft[] };
+
+/**
+ * A stage's items, in file order, as the entries of its directory: an item in
+ * no group is a file of its own, and a group's consecutive items one directory.
+ */
+const topLevelEntries = (stage: Stage, items: ReadonlyArray<ItemDraft>): TopLevelEntry[] => {
+  const entries: TopLevelEntry[] = [];
   for (const item of items) {
     validateItem(stage, item);
-    const batch: string = item.batch ??
-      fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
-    const last = groups.at(-1);
-    if (last !== undefined && last.batch === batch) {
-      last.items.push(item);
-      continue;
-    }
-    if (groups.some((group) => group.batch === batch)) {
-      fail(`${stage}: batch ${quote(batch)} is split apart; keep its items together.`);
-    }
-    groups.push({ batch, items: [item] });
+    const last = entries.at(-1);
+    if (item.group === null) entries.push({ kind: 'item', item });
+    else if (last?.kind === 'group' && last.name === item.group) last.items.push(item);
+    else if (entries.some((entry) => entry.kind === 'group' && entry.name === item.group)) {
+      fail(`${stage}: ${groupNoun(stage)} ${quote(item.group)} is split apart; keep its items together.`);
+    } else entries.push({ kind: 'group', name: item.group, items: [item] });
   }
-  return groups;
+  return entries;
 };
 
-/** Prefixes on disk today, so a mutation renumbers as little as possible. */
+/**
+ * Prefixes on disk today, so a mutation renumbers as little as possible: a
+ * group's by its name, an item's by its id, or `<group>/<id>` inside a group.
+ */
 const currentPrefixes = (
   current: ReadonlyArray<StageFileEntry>,
-): { batches: Map<string, number>; items: Map<string, number> } => {
-  const batches = new Map<string, number>();
+): { groups: Map<string, number>; items: Map<string, number> } => {
+  const groups = new Map<string, number>();
   const items = new Map<string, number>();
   for (const entry of current) {
     const segments = entry.path.split('/').slice(1);
@@ -257,16 +258,19 @@ const currentPrefixes = (
       items.set(id, Number(parsedLeaf[1]!));
       continue;
     }
-    const parsedBatch = entryName.exec(segments[0]!);
-    if (parsedBatch === null) continue;
-    const batch = parsedBatch[2]!;
-    batches.set(batch, Number(parsedBatch[1]!));
-    items.set(`${batch}/${id}`, Number(parsedLeaf[1]!));
+    const parsedGroup = entryName.exec(segments[0]!);
+    if (parsedGroup === null) continue;
+    const group = parsedGroup[2]!;
+    groups.set(group, Number(parsedGroup[1]!));
+    items.set(`${group}/${id}`, Number(parsedLeaf[1]!));
   }
-  return { batches, items };
+  return { groups, items };
 };
 
-/** The item files a stage directory should hold for these items, in this order. */
+/**
+ * The item files a stage directory should hold for these items, in this order:
+ * item files and group directories share one sequence of prefixes.
+ */
 export const renderStageDirectory = (input: {
   readonly stage: Stage;
   readonly items: ReadonlyArray<ItemDraft>;
@@ -279,19 +283,15 @@ export const renderStageDirectory = (input: {
     content: `${renderItem(item)}\n`,
   });
 
-  if (!isBatchedStage(stage)) {
-    for (const item of input.items) validateItem(stage, item);
-    const prefixes = numberEntries(input.items.map((item) => known.items.get(item.id) ?? null));
-    return input.items.map((item, index) => file(stage, prefixes[index]!, item));
-  }
-
-  const groups = groupByBatch(stage, input.items);
-  const batchPrefixes = numberEntries(groups.map((group) => known.batches.get(group.batch) ?? null));
-  return groups.flatMap((group, groupIndex) => {
-    const directory = `${stage}/${formatPrefix(batchPrefixes[groupIndex]!)}-${group.batch}`;
-    const prefixes = numberEntries(
-      group.items.map((item) => known.items.get(`${group.batch}/${item.id}`) ?? null),
-    );
-    return group.items.map((item, index) => file(directory, prefixes[index]!, item));
+  const entries = topLevelEntries(stage, input.items);
+  const prefixes = numberEntries(
+    entries.map((entry) => (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null),
+  );
+  return entries.flatMap((entry, index) => {
+    const prefix = prefixes[index]!;
+    if (entry.kind === 'item') return [file(stage, prefix, entry.item)];
+    const directory = `${stage}/${formatPrefix(prefix)}-${entry.name}`;
+    const inner = numberEntries(entry.items.map((item) => known.items.get(`${entry.name}/${item.id}`) ?? null));
+    return entry.items.map((item, position) => file(directory, inner[position]!, item));
   });
 };
