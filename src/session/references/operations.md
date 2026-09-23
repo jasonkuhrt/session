@@ -239,24 +239,28 @@ loads another site; that tab can therefore reach back to the board's.
 The daemon asks with `gh pr view` in the worktree and keeps only the last
 answer. A board is served it while it is under a minute old and no
 remote-tracking ref has moved since it was asked; otherwise the board's request
-asks again. While a board or an item page of that worktree is open, the daemon
-also asks again once the answer is a minute old, and at once when a push or a
-fetch moves a remote-tracking ref; with none open it spawns nothing. Every ask
-pushes a `links` event to that worktree's open pages. The pull request is the
-one gh reports for the branch when it is asked, and nothing about it is
-inferred: no state is concluded from a timestamp, and no check outcome is one gh
-did not report. The index keeps no pull request column.
+asks again. While a board of that worktree is open, the daemon also asks again
+once the answer is a minute old, and at once when a push or a fetch moves a
+remote-tracking ref; with none open it spawns nothing. A page's stream carries
+only the events that page names, and an item page names only `changed`, so an
+open item page keeps nothing asking. Every ask pushes a `links` event to that
+worktree's open boards. The pull request is the one gh reports for the branch
+when it is asked, and nothing about it is inferred: no state is concluded from a
+timestamp, and no check outcome is one gh did not report. The index keeps no
+pull request column.
 
 The terminal icon, in the header and beside each name on the index, asks the
 daemon for a terminal in that worktree with `POST /api/terminal`. The daemon
 lists cmux's windows and each window's workspaces, and brings forward the
 workspace working in that worktree: one whose directory is the worktree itself
 first, else one inside it, where a directory belongs to the longest tracked
-worktree holding it, as an agent's does. When cmux names none, it runs
-`cmux <path>`, which opens a new workspace there and starts cmux if it is not
-running, so asking again brings back the workspace it opened rather than
-opening another. When cmux refuses, the line cmux printed shows beside the
-icon. The
+worktree holding it, as an agent's does. When the listing works and names
+none, it runs `cmux <path>`, which opens a new workspace there, so asking again
+brings back the workspace it opened rather than opening another. A listing that
+fails is not an empty one: when cmux cannot list its windows, or one of them,
+nothing opens and the line cmux printed shows beside the icon, unless
+`cmux ping` fails too, which means cmux is not running, and then `cmux <path>`
+starts it. When cmux refuses any step, its line shows beside the icon. The
 icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
 reports as `terminal`, so a daemon started from a shell without cmux on its
 PATH draws none.

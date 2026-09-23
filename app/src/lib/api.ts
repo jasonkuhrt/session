@@ -3,6 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
+import type { StreamEvent } from '../../contract'
 import {
   AgentsSummarySchema,
   DaemonCapabilitiesSchema,
@@ -61,10 +62,11 @@ async function run<A, E>(program: Effect.Effect<A, E, HttpClient.HttpClient>, si
 
 /**
  * The stream this page listens to: a board's under its own prefix, the index's
- * at the root. Both carry the events their surface refetches on, so where the
- * bundle is served decides which one it subscribes to.
+ * at the root, so where the bundle is served decides which one it opens. It
+ * carries only the events the page names, because the daemon re-reads some
+ * sources only while a page is listening for them.
  */
-export const eventsUrl = `${basePath}/api/events`
+export const eventsUrl = (events: ReadonlyArray<StreamEvent>) => `${basePath}/api/events?events=${events.join(',')}`
 
 export const SessionApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get(`${basePath}/api/session`), decodeSession), signal),

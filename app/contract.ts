@@ -64,6 +64,19 @@ export const SessionSchema = Schema.Struct({
   })).pipe(Schema.mutable),
 });
 
+/**
+ * The events a page's stream can carry, by the name each is written under. A
+ * page names the ones it reads, and its stream carries only those: the daemon
+ * re-reads some sources only while a page is listening for them.
+ *
+ * - `changed`: a file under the worktree's `.session` was written
+ * - `agents`: the Claude Code registry or a Codex writer lock changed
+ * - `trailers`: the unpushed commits' trailer problems changed
+ * - `links`: the worktree's links were asked for again
+ * - `worktrees`: the set of tracked worktrees changed
+ */
+export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees';
+
 /** The one daemon per user listens here; `session open` upserts it. */
 export const daemonPort = 53045;
 

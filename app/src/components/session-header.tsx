@@ -29,36 +29,12 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
   /** Whether the daemon can run cmux. */
   terminal: boolean
 }) {
-  const notices = [...(links?.notices ?? []), ...(linksError === null ? [] : [linksError])]
-  const pr = links?.pr ?? null
   return (
     <TooltipProvider>
       {/* The header wraps rather than pushing the page wider than the window. */}
       <header className="flex flex-wrap items-center gap-8 border-b px-6 py-5">
-        {worktree ? (
-          <dl className="flex gap-8 text-sm">
-            <div>
-              <dt className="text-muted-foreground" title="The Git branch checked out in this worktree.">Branch</dt>
-              <dd className="font-medium">
-                {worktree.branch === null
-                  ? 'No branch'
-                  : <Copyable value={worktree.branch}>{worktree.branch}</Copyable>}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground" title="The worktree whose session this board shows; switch to another below.">Worktree</dt>
-              <dd>
-                <WorktreePicker current={worktree} />
-              </dd>
-            </div>
-          </dl>
-        ) : null}
-        {pr === null && notices.length === 0 ? null : (
-          <div className="flex flex-wrap items-center gap-2">
-            {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.reportedAt} />}
-            {notices.length === 0 ? null : <span className="text-xs text-muted-foreground">{notices.join(' · ')}</span>}
-          </div>
-        )}
+        {worktree ? <WorktreeFields worktree={worktree} /> : null}
+        <LinksGroup links={links} linksError={linksError} />
         {terminal && worktree ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
         <Button
           variant="ghost"
@@ -72,5 +48,45 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
         </Button>
       </header>
     </TooltipProvider>
+  )
+}
+
+/** The branch checked out here, and the worktree, with the way to switch to another. */
+function WorktreeFields({ worktree }: { worktree: NonNullable<Session['worktree']> }) {
+  return (
+    <dl className="flex gap-8 text-sm">
+      <div>
+        <dt className="text-muted-foreground" title="The Git branch checked out in this worktree.">Branch</dt>
+        <dd className="font-medium">
+          {worktree.branch === null
+            ? 'No branch'
+            : <Copyable value={worktree.branch}>{worktree.branch}</Copyable>}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-muted-foreground" title="The worktree whose session this board shows; switch to another below.">Worktree</dt>
+        <dd>
+          <WorktreePicker current={worktree} />
+        </dd>
+      </div>
+    </dl>
+  )
+}
+
+/**
+ * Where the work lives outside the files: the pull request, and what each
+ * source that could not answer said, in the place its chips would be. Nothing
+ * is drawn when there is no pull request, no issue and no notice.
+ */
+function LinksGroup({ links, linksError }: { links: Links | null; linksError: string | null }) {
+  const notices = [...(links?.notices ?? []), ...(linksError === null ? [] : [linksError])]
+  const pr = links?.pr ?? null
+  const issues = links?.issues ?? []
+  if (pr === null && issues.length === 0 && notices.length === 0) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.reportedAt} />}
+      {notices.length === 0 ? null : <span className="text-xs text-muted-foreground">{notices.join(' · ')}</span>}
+    </div>
   )
 }

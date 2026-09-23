@@ -4,7 +4,7 @@ import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { stageNames } from '../contract.ts';
-import type { AgentsSummary, FocusResult, Links, Session, TerminalResult, TrailerProblem } from '../contract.ts';
+import type { AgentsSummary, FocusResult, Links, Session, StreamEvent, TerminalResult, TrailerProblem } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
@@ -139,8 +139,23 @@ const keepAliveMilliseconds = 5_000;
 
 /** One named event on a stream, and the source that fires it. */
 export type EventChannel = {
-  readonly name: string;
+  readonly name: StreamEvent;
   readonly events: SessionEvents | undefined;
+};
+
+/**
+ * The channels a page asked for in `?events=`, or all of them when it named
+ * none. A page names what it reads, so a source the daemon re-reads only for
+ * a listening page is not kept busy by a page that ignores it.
+ */
+export const namedChannels = ({ url, channels }: {
+  readonly url: URL;
+  readonly channels: ReadonlyArray<EventChannel>;
+}): ReadonlyArray<EventChannel> => {
+  const named = url.searchParams.get('events');
+  if (named === null) return channels;
+  const wanted = new Set(named.split(','));
+  return channels.filter((channel) => wanted.has(channel.name));
 };
 
 /**
@@ -267,12 +282,15 @@ export const makeRequestHandler = (options: {
         }
 
         if (request.method === 'GET' && url.pathname === '/api/events') {
-          return eventStream([
-            { name: 'changed', events: options.events },
-            { name: 'agents', events: options.agents.events },
-            { name: 'trailers', events: options.trailers.events },
-            { name: 'links', events: options.links.events },
-          ]);
+          return eventStream(namedChannels({
+            url,
+            channels: [
+              { name: 'changed', events: options.events },
+              { name: 'agents', events: options.agents.events },
+              { name: 'trailers', events: options.trailers.events },
+              { name: 'links', events: options.links.events },
+            ],
+          }));
         }
 
         if (request.method === 'GET' && url.pathname.startsWith('/files/')) {

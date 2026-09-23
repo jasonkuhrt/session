@@ -123,7 +123,7 @@ function App() {
   const droppedRef = React.useRef(false)
 
   React.useEffect(() => {
-    const source = new EventSource(eventsUrl)
+    const source = new EventSource(eventsUrl(['changed', 'agents', 'trailers', 'links']))
     const refetch = () => {
       if (busyRef.current) missedRef.current = true
       else {

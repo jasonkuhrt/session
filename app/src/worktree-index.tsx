@@ -101,7 +101,7 @@ export function WorktreeIndex() {
   // and came back refetches too, since changes land while it is down and the
   // index otherwise never polls.
   React.useEffect(() => {
-    const source = new EventSource(eventsUrl)
+    const source = new EventSource(eventsUrl(['agents', 'worktrees']))
     const dropped = { value: false }
     const refetch = () => void load()
     source.addEventListener('agents', refetch)

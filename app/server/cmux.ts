@@ -1,22 +1,19 @@
-import { which } from 'bun';
-import * as Config from 'effect/Config';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { FocusResult, TerminalResult } from '../contract.ts';
 import { capture, type Command } from './command.ts';
-import { ownerOf, realPaths } from './paths.ts';
 
 /**
- * cmux, the one window manager the board knows: where a session's terminal
- * is and how to bring it forward, and how to reach a terminal in a worktree.
- * A session running anywhere else simply has no terminal, which is an ordinary
- * state and never a failure.
+ * cmux, the one window manager the board knows: the calls every use of it
+ * shares, and where a session's terminal is and how to bring it forward. A
+ * session running anywhere else simply has no terminal, which is an ordinary
+ * state and never a failure. The terminal action for a worktree is in
+ * `terminal.ts`.
  */
 
-/** A filesystem to find the socket and resolve directories with, and a way to spawn the CLI. */
-type Services = FileSystem.FileSystem | ChildProcessSpawner;
+/** A way to spawn the CLI, which finds cmux's socket for itself. */
+type Services = ChildProcessSpawner;
 
 /** The cmux refs that name one panel: the surface, and where it is docked. */
 export type Terminal = {
@@ -28,23 +25,11 @@ export type Terminal = {
 /** cmux is a local socket call; nothing here should ever take seconds. */
 const budget = '5 seconds';
 
-/** Opening a directory goes through LaunchServices and may start the app, which cmux allows ten seconds. */
-const openBudget = '15 seconds';
-
 /** Its CLI prints a banner on first contact, and a notice on a legacy verb, unless it is asked not to. */
 const quiet = { CMUX_QUIET: '1' };
 
 /** A window holds a workspace holds a pane holds a surface holds a process. */
 const depthLimit = 8;
-
-/**
- * Whether the terminal action can run: the daemon spawns `cmux` from its own
- * PATH, so that is where it has to be, looked up in the same environment a
- * spawn reads. Read when asked; nothing is remembered.
- */
-export const cmuxOnPath = Effect.gen(function*() {
-  return which('cmux', { PATH: yield* Config.String('PATH') }) !== null;
-}).pipe(Effect.orElseSucceed(() => false));
 
 type Node = { readonly kind: string; readonly parent: string };
 
@@ -140,7 +125,11 @@ export const terminalsFor = (
  * it complained with when it did not, and the plainest true sentence when it
  * never ran or never finished.
  */
-const say = (command: string, args: ReadonlyArray<string>, timeout: Command['timeout'] = budget) =>
+export const say = ({ command, args, timeout = budget }: {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly timeout?: Command['timeout'];
+}) =>
   capture({ command, args, env: quiet, timeout }).pipe(
     Effect.map((result): TerminalResult =>
       result.exitCode === 0
@@ -152,7 +141,7 @@ const say = (command: string, args: ReadonlyArray<string>, timeout: Command['tim
 
 /** One command of the focus sequence: `null` when it worked, else why not. */
 const step = (command: string, args: ReadonlyArray<string>) =>
-  say(command, args).pipe(Effect.map((result) => (result.ok ? null : result.line)));
+  say({ command, args }).pipe(Effect.map((result) => (result.ok ? null : result.line)));
 
 /** The two answers the focus route can give, built where their shape is checked. */
 const refuse = (reason: string): FocusResult => ({ ok: false, reason });
@@ -186,104 +175,26 @@ export const focus = (pid: number): Effect.Effect<FocusResult, never, Services> 
     return focused;
   }).pipe(Effect.catchCause(() => Effect.succeed(refuse('The terminal could not be reached.'))));
 
-/** A window, as `cmux --json list-windows` lists it. */
-const WindowsJson = Schema.Array(Schema.Struct({ id: Schema.String })).pipe(Schema.fromJsonString);
+/** A cmux listing as it came back: what it listed, or the line that says why it did not. */
+export type Listing<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly line: string };
 
 /**
- * A window's workspaces, as `cmux --json list-workspaces` describes them: the
- * directory is the one the workspace is working in, and a remote workspace's
- * is a directory on another machine.
+ * One cmux listing, decoded. When cmux refuses, the answer is the line it
+ * refused with; when it answers in a shape this build does not read, a
+ * sentence that says so. Neither is ever read as an empty listing.
  */
-const WorkspacesJson = Schema.Struct({
-  workspaces: Schema.Array(Schema.Struct({
-    id: Schema.String,
-    current_directory: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
-    remote: Schema.Struct({ enabled: Schema.Boolean.pipe(Schema.optionalKey) }).pipe(Schema.NullOr, Schema.optionalKey),
-  })),
-}).pipe(Schema.fromJsonString);
-
-/** A workspace and the window it is in, by the ids cmux lists them under. */
-type Workspace = { readonly window: string; readonly workspace: string; readonly directory: string };
-
-/** One cmux listing, decoded; null when cmux could not give it, or gave it in a shape this does not know. */
-const list = <A>(args: ReadonlyArray<string>, schema: Schema.Codec<A, string>) =>
+export const list = <A>({ args, schema }: {
+  readonly args: ReadonlyArray<string>;
+  readonly schema: Schema.Codec<A, string>;
+}): Effect.Effect<Listing<A>, never, Services> =>
   Effect.gen(function*() {
     const result = yield* capture({ command: 'cmux', args, env: quiet, timeout: budget });
-    if (result.exitCode !== 0) return null;
-    return yield* Schema.decodeEffect(schema)(result.stdout);
-  }).pipe(Effect.orElseSucceed(() => null));
-
-/**
- * The workspace a person would call this worktree's. Its directory belongs to
- * the worktree the way an agent's does, by the longest tracked path holding
- * it, so a workspace in a nested worktree is that worktree's and not its
- * parent's. One whose directory is the worktree itself comes first; failing
- * that, one working somewhere inside it; the first of either in cmux's own
- * order. Each window is listed on its own, because a listing without a window
- * names only the caller's, and a daemon has no window of its own to be in.
- */
-const workspaceIn = (path: string, worktrees: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    const windows = yield* list(['--json', 'list-windows'], WindowsJson);
-    if (windows === null) return null;
-    const workspaces: Workspace[] = [];
-    for (const window of windows) {
-      const listing = yield* list(['--json', 'list-workspaces', '--window', window.id], WorkspacesJson);
-      for (const workspace of listing?.workspaces ?? []) {
-        const directory = workspace.current_directory;
-        if (workspace.remote?.enabled === true || directory === undefined || directory === null || directory === '') {
-          continue;
-        }
-        workspaces.push({ window: window.id, workspace: workspace.id, directory });
-      }
-    }
-    const roots = yield* realPaths([path, ...worktrees]);
-    const directories = yield* realPaths(workspaces.map((entry) => entry.directory));
-    const root = roots.get(path) ?? path;
-    let inside: Workspace | null = null;
-    for (const entry of workspaces) {
-      const real = directories.get(entry.directory) ?? entry.directory;
-      if (ownerOf({ roots, directory: real }) !== path) continue;
-      if (real === root) return entry;
-      inside ??= entry;
-    }
-    return inside;
-  });
-
-/**
- * Bring a workspace forward: its window, then the workspace in it, then cmux
- * itself, because selecting inside an app that is not frontmost changes
- * nothing on screen. The answer carries the last line cmux printed.
- */
-const focusWorkspace = (found: Workspace) =>
-  Effect.gen(function*() {
-    const sequence: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
-      ['cmux', ['focus-window', '--window', found.window]],
-      ['cmux', ['select-workspace', '--workspace', found.workspace, '--window', found.window]],
-      ['open', ['-b', 'com.cmuxterm.app']],
-    ];
-    let line = '';
-    for (const [command, args] of sequence) {
-      const result = yield* say(command, args);
-      if (!result.ok) return result;
-      if (command === 'cmux' && result.line !== '') line = result.line;
-    }
-    return { ok: true, line } satisfies TerminalResult;
-  });
-
-/**
- * A terminal in a worktree: its workspace brought forward when cmux can name
- * one, else a new workspace opened there with `cmux <path>`, which starts cmux
- * when it is not running. Either way the answer carries cmux's own line, so a
- * refusal reads the way cmux put it. `worktrees` is every tracked path, which
- * is what says whether a workspace inside this one belongs to a worktree
- * nested in it instead.
- */
-export const openTerminal = ({ path, worktrees }: {
-  readonly path: string;
-  readonly worktrees: ReadonlyArray<string>;
-}): Effect.Effect<TerminalResult, never, Services> =>
-  Effect.gen(function*() {
-    const found = yield* workspaceIn(path, worktrees);
-    return found === null ? yield* say('cmux', [path], openBudget) : yield* focusWorkspace(found);
-  }).pipe(Effect.catchCause(() => Effect.succeed<TerminalResult>({ ok: false, line: 'The terminal could not be reached.' })));
+    if (result.exitCode !== 0) return { ok: false, line: refusal(`cmux ${args.join(' ')}`, result) } as const;
+    return { ok: true, value: yield* Schema.decodeEffect(schema)(result.stdout) } as const;
+  }).pipe(
+    Effect.catchTags({
+      CommandError: (error) => Effect.succeed({ ok: false, line: error.message } as const),
+      SchemaError: () =>
+        Effect.succeed({ ok: false, line: `cmux ${args.join(' ')} answered in a shape this build does not read.` } as const),
+    }),
+  );
