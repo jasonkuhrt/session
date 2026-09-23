@@ -28,27 +28,27 @@ export const archiveFilePath = (input: {
 const archiveStates = ['done', ...stageNames.map((stage) => stage.toLowerCase())];
 
 const archivedName = new RegExp(
-  `^(\\d{4}-\\d{2}-\\d{2}) (${itemIdSource}) — (?:(\\S(?:.*\\S)?) \\((${archiveStates.join('|')})\\)\\.md$)?`,
+  `^(\\d{4}-\\d{2}-\\d{2}) (${itemIdSource}) — (\\S(?:.*\\S)?) \\((${archiveStates.join('|')})\\)\\.md$`,
   'u',
 );
 
-/**
- * What an archived record's name says: the day it was filed and the item, and,
- * when the rest of the name is the one `archiveFilePath` writes, the title and
- * the state it left in.
- */
+/** What an archived record's name says: the day it was filed, the item, its title, and the state it left in. */
 export type ArchiveName = {
   readonly day: string;
   readonly id: string;
-  readonly title: string | null;
-  readonly state: string | null;
+  readonly title: string;
+  readonly state: string;
 };
 
-/** The one reader of archive names; null for a name that does not start the way `archiveFilePath` writes one. */
+/**
+ * The one reader of archive names, whole or not at all: null for any name that
+ * is not exactly one `archiveFilePath` writes, so a record renamed by hand is
+ * listed as it is and is not taken for the item's record.
+ */
 export const parseArchiveName = (name: string): ArchiveName | null => {
   const match = archivedName.exec(name);
   if (match === null) return null;
-  return { day: match[1]!, id: match[2]!, title: match[3] ?? null, state: match[4] ?? null };
+  return { day: match[1]!, id: match[2]!, title: match[3]!, state: match[4]! };
 };
 
 const closedHeading = '### Closed by commit';

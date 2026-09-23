@@ -22,6 +22,7 @@ import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, par
 import {
   archiveDirectory,
   contextDirectory,
+  entryName,
   ignoreDirectory,
   ledgerDirectory,
   parseStageDirectory,
@@ -39,7 +40,6 @@ import {
   renderLedgerEntry,
 } from './ledger.ts';
 import {
-  executingBatch,
   fail,
   findRequiredItem,
   type ItemDraft,
@@ -234,16 +234,20 @@ const ensureInsideRoot = (realRoot: string, candidate: string, relativePath: str
   }
 };
 
-/** Whether a resolved path inside the session passes through a directory of one of these names. */
+/** Whether a resolved path inside the session passes through a directory of one of these names, at any depth. */
 const passesThrough = (realRoot: string, candidate: string, names: ReadonlySet<string>): boolean =>
   relative(realRoot, candidate)
     .split(sep)
     .some((segment) => names.has(segment));
 
+/** Whether a resolved path inside the session lies under one of these directories of the root. */
+const liesUnder = (realRoot: string, candidate: string, names: ReadonlySet<string>): boolean =>
+  names.has(relative(realRoot, candidate).split(sep)[0] ?? '');
+
 /** What the files route never serves, at any depth. */
 const unserved: ReadonlySet<string> = new Set([ignoreDirectory]);
 
-/** What a refresh leaves out of agent context, at any depth. */
+/** The root's directories a refresh leaves out of agent context; one of these names deeper down is read like any other. */
 const outOfContext: ReadonlySet<string> = new Set([ignoreDirectory, archiveDirectory]);
 
 /** A modification time as the contract writes times, or null when the platform gave none. */
@@ -291,6 +295,10 @@ export const makeRepository = (directory: string) =>
         if (!(yield* fs.exists(path))) return null;
         return (yield* fs.stat(path)).type;
       });
+
+    /** Whether a path is itself a link, whatever it leads to. */
+    const isLink = (path: string) =>
+      fs.readLink(path).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }));
 
     /** Why a path's real location could not be had: a link can be read even when what it names cannot. */
     const unresolvedReason = (path: string) =>
@@ -556,32 +564,28 @@ export const makeRepository = (directory: string) =>
 
     /**
      * Every file of `ledger/`, in name order, read as an entry or as the rule
-     * it breaks. Names starting with a dot are skipped, as everywhere.
+     * it breaks. Names starting with a dot are skipped, as in the stages. The
+     * ledger holds its entries itself: `ledger` is a directory, not a link to
+     * one, and each entry is a regular file, never a link.
      */
     const ledgerReads = Effect.gen(function*() {
       const ledger = absolute(ledgerDirectory);
       if ((yield* pathType(ledger)) !== 'Directory') return [];
-      const realRoot = yield* fs.realPath(root);
       const reads: Array<{ readonly path: string; readonly read: LedgerRead }> = [];
       const refuse = (path: string, text: string) => reads.push({ path, read: { problem: { line: null, text } } });
-      if (!isInsideRoot(realRoot, yield* fs.realPath(ledger))) {
-        refuse(`${ledgerDirectory}/`, 'it resolves outside the session directory; make it a directory of its own.');
+      if (yield* isLink(ledger)) {
+        refuse(`${ledgerDirectory}/`, 'it is a link; make it a directory of its own.');
         return reads;
       }
       for (const name of (yield* fs.readDirectory(ledger)).toSorted()) {
         if (name.startsWith('.')) continue;
         const path = `${ledgerDirectory}/${name}`;
-        const real = yield* fs.realPath(join(ledger, name)).pipe(Effect.option);
-        if (Option.isNone(real)) {
-          const reason = yield* unresolvedReason(join(ledger, name));
-          refuse(path, `it ${reason}; ${reason === 'could not be read' ? 'make it readable or delete it' : 'delete it'}.`);
+        const entry = join(ledger, name);
+        if (yield* isLink(entry)) {
+          refuse(path, 'it is a link, and the ledger holds its entries as files; put the entry itself here.');
           continue;
         }
-        if (!isInsideRoot(realRoot, real.value)) {
-          refuse(path, 'it resolves outside the session directory; put the entry itself here, or delete the link.');
-          continue;
-        }
-        const info = yield* fs.stat(real.value).pipe(Effect.option);
+        const info = yield* fs.stat(entry).pipe(Effect.option);
         if (Option.isSome(info) && info.value.type === 'Directory') {
           refuse(`${path}/`, `the ledger holds entry files only; move this directory under ${contextDirectory}/ or delete it.`);
           continue;
@@ -592,7 +596,7 @@ export const makeRepository = (directory: string) =>
         }
         const content = Option.isNone(info)
           ? Option.none<string>()
-          : yield* fs.readFileString(real.value).pipe(Effect.option);
+          : yield* fs.readFileString(entry).pipe(Effect.option);
         if (Option.isNone(content)) {
           refuse(path, 'it could not be read; make it readable or delete it.');
           continue;
@@ -635,13 +639,17 @@ export const makeRepository = (directory: string) =>
           const problem = rootEntryProblem({ name, type });
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
         }
-        const hasGitignore = yield* fs.exists(absolute(gitignorePath)).pipe(
-          Effect.mapError(asRepositoryError),
-        );
-        if (!hasGitignore) {
+        const gitignore = yield* pathType(absolute(gitignorePath)).pipe(Effect.mapError(asRepositoryError));
+        if (gitignore === null) {
           return yield* new RepositoryError({
             kind: 'validation',
             message: 'Session is missing .gitignore. Run any session command to write it.',
+          });
+        }
+        if (gitignore !== 'File') {
+          return yield* new RepositoryError({
+            kind: 'validation',
+            message: '.gitignore must be a file holding `*`; replace it with one.',
           });
         }
         yield* attempt(() => {
@@ -1110,10 +1118,16 @@ export const makeRepository = (directory: string) =>
             notices: [`${contextDirectory} resolves outside the session directory, so nothing is listed.`],
           } satisfies ContextListing;
         }
-        const visited = new Set<string>();
-        const walk = (relativeDirectory: string, realDirectory: string): Effect.Effect<void> =>
+        // A directory is followed once along each path, so two links to one
+        // directory both show it, and only a link back into a directory that
+        // holds it is cut.
+        const walk = (
+          relativeDirectory: string,
+          realDirectory: string,
+          above: ReadonlySet<string>,
+        ): Effect.Effect<void> =>
           Effect.gen(function*() {
-            visited.add(realDirectory);
+            const holding = new Set([...above, realDirectory]);
             const names = yield* fs.readDirectory(realDirectory).pipe(Effect.option);
             if (Option.isNone(names)) {
               notices.push(`What ${relativeDirectory}/ holds is not listed: it could not be read.`);
@@ -1139,12 +1153,12 @@ export const makeRepository = (directory: string) =>
                 continue;
               }
               if (info.value.type === 'Directory') {
-                if (visited.has(real.value)) {
-                  notices.push(`${path} is not listed: it leads back to a directory that is already listed.`);
+                if (holding.has(real.value)) {
+                  notices.push(`${path} is not listed: it leads back into a directory that holds it.`);
                   continue;
                 }
                 entries.push({ path, kind: 'directory', writtenAt });
-                yield* walk(path, real.value);
+                yield* walk(path, real.value, holding);
               } else if (info.value.type === 'File') {
                 entries.push({ path, kind: 'file', writtenAt });
               } else {
@@ -1152,7 +1166,7 @@ export const makeRepository = (directory: string) =>
               }
             }
           });
-        yield* walk(contextDirectory, realTop);
+        yield* walk(contextDirectory, realTop, new Set());
         return { entries, notices } satisfies ContextListing;
       }).pipe(Effect.mapError(asRepositoryError)),
     );
@@ -1163,6 +1177,23 @@ export const makeRepository = (directory: string) =>
         Effect.map((records) => ({ records: records.toSorted(byDateThenName) }) satisfies ArchiveListing),
       ),
     );
+
+    /**
+     * The batch Execute is running, read from the name of its batch directory
+     * alone, so writing a ledger entry never depends on every item file
+     * loading. Null while Execute holds no batch directory.
+     */
+    const executingBatchName = Effect.gen(function*() {
+      const execute = absolute('EXECUTE' satisfies Stage);
+      if ((yield* pathType(execute)) !== 'Directory') return null;
+      const batches: Array<{ readonly prefix: number; readonly name: string }> = [];
+      for (const name of yield* fs.readDirectory(execute)) {
+        const match = name.startsWith('.') ? null : entryName.exec(name);
+        if (match === null || (yield* pathType(join(execute, name))) !== 'Directory') continue;
+        batches.push({ prefix: Number(match[1]!), name: match[2]! });
+      }
+      return batches.toSorted((left, right) => left.prefix - right.prefix)[0]?.name ?? null;
+    }).pipe(Effect.mapError(asRepositoryError));
 
     /**
      * Create a file that must not exist yet, atomically: write a dot-prefixed
@@ -1214,21 +1245,27 @@ export const makeRepository = (directory: string) =>
           if (by === '') {
             return yield* new RepositoryError({ kind: 'validation', message: 'Not logged: the entry does not say who wrote it.' });
           }
-          const ledger = yield* pathType(absolute(ledgerDirectory)).pipe(Effect.mapError(asRepositoryError));
-          if (ledger !== null && ledger !== 'Directory') {
+          const ledger = absolute(ledgerDirectory);
+          if (yield* isLink(ledger)) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `Not logged: ${ledgerDirectory} is a link; make it a directory of its own, then log again.`,
+            });
+          }
+          const type = yield* pathType(ledger).pipe(Effect.mapError(asRepositoryError));
+          if (type !== null && type !== 'Directory') {
             return yield* new RepositoryError({
               kind: 'validation',
               message: `Not logged: ${ledgerDirectory} is not a directory; \`session check\` names the fix.`,
             });
           }
-          const loaded = yield* loadUnlocked;
           const fields = {
             date: yield* ledgerNow,
             title,
             by,
             branch: input.branch,
             commit: input.commit,
-            batch: executingBatch(loaded.stages),
+            batch: yield* executingBatchName,
             body: input.body.trim(),
           };
           const name = ledgerFileName(fields);
@@ -1249,25 +1286,29 @@ export const makeRepository = (directory: string) =>
       );
 
     /**
-     * A path and content hash for every file an agent's refresh reads, with
-     * `ignore/` and `archive/` left out before traversal. An entry that cannot
-     * be taken in, a link that resolves outside the session or to nothing, or
-     * one that cannot be read, is listed under `skipped` with the reason, and
-     * the rest of the inventory stands.
+     * A path and content hash for every file an agent's refresh reads, with the
+     * root's `ignore/` and `archive/` left out before traversal; a directory of
+     * either name deeper down is read like any other. An entry that cannot be
+     * taken in, a link that resolves outside the session, leads nowhere or
+     * back into a directory that holds it, or anything that cannot be read, is
+     * listed under `skipped` with the reason, and the rest of the inventory
+     * stands. The stages themselves must load first, as for every command.
      */
     const inventory = semaphore.withPermit(
       Effect.gen(function*() {
         yield* loadUnlocked;
         const realRoot = yield* fs.realPath(root).pipe(Effect.mapError(asRepositoryError));
-        const visited = new Set<string>();
         const skipped: SkippedEntry[] = [];
+        // A directory is followed once along each path, so one reached by two
+        // paths is listed under both, and only a link back into a directory
+        // that holds it is cut.
         const walk = (
           relativeDirectory: string,
           realDirectory: string,
+          above: ReadonlySet<string>,
         ): Effect.Effect<Array<readonly [string, string]>, RepositoryError> =>
           Effect.gen(function*() {
-            if (visited.has(realDirectory)) return [];
-            visited.add(realDirectory);
+            const holding = new Set([...above, realDirectory]);
             const names = yield* fs.readDirectory(realDirectory).pipe(Effect.option);
             if (Option.isNone(names)) {
               if (relativeDirectory === '') {
@@ -1278,7 +1319,7 @@ export const makeRepository = (directory: string) =>
             }
             const entries: Array<readonly [string, string]> = [];
             for (const name of names.value.toSorted()) {
-              if (outOfContext.has(name)) continue;
+              if (relativeDirectory === '' && outOfContext.has(name)) continue;
               const relativePath = relativeDirectory === '' ? name : join(relativeDirectory, name);
               const candidate = join(realDirectory, name);
               const realCandidate = yield* fs.realPath(candidate).pipe(Effect.option);
@@ -1290,14 +1331,18 @@ export const makeRepository = (directory: string) =>
                 skipped.push({ path: relativePath, reason: 'resolves outside the session directory' });
                 continue;
               }
-              if (passesThrough(realRoot, realCandidate.value, outOfContext)) continue;
+              if (liesUnder(realRoot, realCandidate.value, outOfContext)) continue;
               const info = yield* fs.stat(realCandidate.value).pipe(Effect.option);
               if (Option.isNone(info)) {
                 skipped.push({ path: relativePath, reason: 'could not be read' });
                 continue;
               }
               if (info.value.type === 'Directory') {
-                entries.push(...(yield* walk(relativePath, realCandidate.value)));
+                if (holding.has(realCandidate.value)) {
+                  skipped.push({ path: relativePath, reason: 'leads back into a directory that holds it' });
+                  continue;
+                }
+                entries.push(...(yield* walk(relativePath, realCandidate.value, holding)));
               } else if (info.value.type === 'File') {
                 const content = yield* fs.readFile(realCandidate.value).pipe(Effect.option);
                 if (Option.isNone(content)) {
@@ -1309,7 +1354,7 @@ export const makeRepository = (directory: string) =>
             }
             return entries;
           });
-        const files = yield* walk('', realRoot);
+        const files = yield* walk('', realRoot, new Set());
         return { inventory: Object.fromEntries(files) as FileInventory, skipped };
       }),
     );

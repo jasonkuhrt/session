@@ -145,28 +145,55 @@ const cliTry = <A>(operation: () => A) =>
       new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
   });
 
-/**
- * What stdin holds, trimmed, when it is a pipe or a file, which is how a shell
- * hands a command a body. Anything else holds none and is never waited on: a
- * terminal, and the socket an agent's shell tool holds open without writing.
- */
-const stdinText = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem;
-  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
-  if (Option.isNone(info) || (info.value.type !== 'FIFO' && info.value.type !== 'File')) return '';
-  const text = yield* Effect.tryPromise({
-    try: () => Bun.stdin.text(),
-    catch: () => new SessionCliError({ message: 'Could not read the body from stdin.' }),
-  });
-  return text.trim();
-});
+const unreadable = () => new SessionCliError({ message: 'Could not read the body from stdin.' });
 
-const readBody = stdinText.pipe(
+const readBody = Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable }).pipe(
+  Effect.map((text) => text.trim()),
   Effect.filterOrFail(
     (body) => body !== '',
-    () => new SessionCliError({ message: 'The item body is empty; pipe it on stdin.' }),
+    () => new SessionCliError({ message: 'The item body is empty.' }),
   ),
 );
+
+/** How long a socket on stdin has to start sending before a ledger entry is taken to have no body. */
+const socketGrace = '500 millis';
+
+/**
+ * Everything a socket on stdin sends once it has started within the grace,
+ * and nothing when it stays silent, which is what the socket an agent's shell
+ * tool holds open without writing to it does.
+ */
+const socketText = Effect.gen(function*() {
+  const reader = Bun.stdin.stream().getReader();
+  const decoder = new TextDecoder();
+  const first = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable }).pipe(
+    Effect.timeoutOption(socketGrace),
+  );
+  if (Option.isNone(first)) {
+    // Letting go of the reader is what lets the process end with stdin still open.
+    yield* Effect.promise(() => reader.cancel());
+    return '';
+  }
+  let text = '';
+  for (let chunk = first.value; !chunk.done; chunk = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable })) {
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  return text + decoder.decode();
+});
+
+/**
+ * A ledger entry's body, which may be empty: none from a terminal or another
+ * device; everything a pipe or a file holds, read to its end; and from a
+ * socket, which is what a program spawning the CLI hands it, whatever it sends
+ * once it starts within the grace.
+ */
+const entryBody = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
+  if (Option.isNone(info) || info.value.type === 'CharacterDevice' || info.value.type === 'BlockDevice') return '';
+  if (info.value.type === 'Socket') return (yield* socketText).trim();
+  return (yield* Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable })).trim();
+});
 
 const itemCount = (session: Session): number =>
   session.stages.reduce((total, stage) => total + stage.items.length, 0);
@@ -309,13 +336,13 @@ const archive = (options: Options, repository: SessionRepository) =>
   });
 
 /**
- * One ledger entry. The body is whatever stdin carries, and none when it is a
- * terminal or nothing was piped; the branch and commit are Git's, and the
- * batch is the one Execute is running.
+ * One ledger entry. The body is whatever stdin carries, as `entryBody` reads
+ * it; the branch and commit are Git's, and the batch is the one Execute is
+ * running.
  */
 const log = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
   Effect.gen(function*() {
-    const body = yield* stdinText;
+    const body = yield* entryBody;
     const entry = yield* repository.appendLedger({
       by: options.operands[0]!,
       title: options.operands[1]!,

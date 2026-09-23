@@ -10,8 +10,11 @@ The session root is closed. It holds exactly:
 - `ledger/`, the session's shared log;
 - `archive/` and `ignore/`, inactive history that is not ordinary agent context.
 
-Entries whose name starts with `.` are ignored, as everywhere. `check` reports
-any other entry by name with the fix: move it under `context/`, or delete it.
+Entries whose name starts with `.` are outside this rule, as they are in the
+stage directories. `check` reports any other entry by name with its fix: move it
+under `context/` or delete it, or, when only its case differs from one of these,
+rename it. Each must also be its own kind: the stages, `context/`, `ledger/`,
+`archive/` and `ignore/` directories, and `RULES.md` and `.gitignore` files.
 Existing supporting files should be migrated deliberately, preserving evidence
 and links rather than discarding them because their names differ from the new
 convention.
@@ -148,14 +151,18 @@ Reports and the inbox are dropped; evidence lives with its item.
 - The file's name comes from the frontmatter, so the two always agree: `date`
   with `-` for `:` and a space for `T`, then ` — `, then `title` with any `/` as
   `-`, then `.md`.
-- The body is Markdown with no headings outside code fences: no line opening
-  with one to six `#` and a space, in a quote or a list item too, and no line
-  of `=` or `-` directly under a paragraph line, which Markdown reads as that
-  paragraph's underline. It may be empty.
+- The body is Markdown with no headings: it is read the way the board renders
+  it, and a heading of any level anywhere, in a quote or a list item too, breaks
+  the rule. That covers a line opening with `#` marks and a line underlined with
+  `=` or `-`; code, fenced or indented, is not read as Markdown. The body may be
+  empty.
+- The ledger holds its entries itself: `ledger/` is a directory, not a link to
+  one, and every entry in it is a regular file, not a link or a directory.
+  Names starting with `.` are skipped, as in the stages.
 
 `session log "<by>" "<title>"` writes an entry in this form, and an agent may
-also write one by hand with the same keys and no others. `check` rejects a file
-that breaks any of these rules, and a directory in `ledger/`.
+also write one by hand with the same keys and no others. `check` rejects
+anything in `ledger/` that breaks one of these rules.
 
 ## Archive
 
@@ -177,7 +184,9 @@ overwritten. The content is the item's chunk exactly as its own file held it.
 Like `ignore/`, the directory is outside agent context: a refresh skips it, and
 it is never loaded as a stage. It is still viewable: the board serves a listing
 of its records and each record, read-only, which is for a person looking back,
-not context for an agent.
+not context for an agent. A record is read by its name, and only a name exactly
+as the engine writes it counts: one renamed by hand is listed as it is, and a
+commit trailer naming its item no longer finds it archived.
 
 ## Executing agent
 

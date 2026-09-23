@@ -135,8 +135,8 @@ export type ContextListing = {
   /**
    * Every file and directory under `context/`, depth first: a directory comes
    * right before what it holds, and entries that share a directory are sorted
-   * by name. Names starting with a dot, and anything named `ignore`, are left
-   * out, as everywhere in the session.
+   * by name. Names starting with a dot are left out, and so is anything named
+   * `ignore`, which the files route never serves.
    */
   entries: readonly ContextEntry[];
   /** One line per entry that is left out for a reason worth saying, such as a link that leads outside the session. */
@@ -156,14 +156,14 @@ export const ContextListingSchema = Schema.Struct({
 
 /**
  * One file under `archive/`, read from its name: the day it was filed, the
- * item, its title, and the state it left in. A name the engine did not write
- * is listed as it is, with whatever it does not say as null.
+ * item, its title, and the state it left in. A name that is not exactly one the
+ * engine writes is listed as it is, with all four null.
  */
 export type ArchiveRecord = {
   name: string;
   /** `archive/<name>`, relative to the session root. */
   path: string;
-  /** The day it was filed, `2026-09-13`; null when the name does not start with one. */
+  /** The day it was filed, `2026-09-13`; null when the name is not one the engine writes. */
   date: string | null;
   id: string | null;
   title: string | null;

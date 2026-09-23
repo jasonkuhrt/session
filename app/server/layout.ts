@@ -19,7 +19,8 @@ import {
 
 /** Gap between generated prefixes, leaving room to insert without renumbering. */
 const numberStep = 10;
-const entryName = /^(\d+)-(.+)$/u;
+/** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a batch's name. */
+export const entryName = /^(\d+)-(.+)$/u;
 
 /** One file of a stage, addressed relative to the session root. */
 export type StageFileEntry = {

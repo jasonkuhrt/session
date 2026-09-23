@@ -1,8 +1,10 @@
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
+import remarkGfm from 'remark-gfm';
+import remarkParse from 'remark-parse';
+import { unified } from 'unified';
 import type { LedgerEntry } from '../contract.ts';
-import { firstHeading } from '../stage-rules.ts';
 import { ledgerDirectory } from './layout.ts';
 
 /**
@@ -17,6 +19,10 @@ import { ledgerDirectory } from './layout.ts';
  * exactly what is written; anything YAML would read otherwise, a number, a
  * `#` comment, a tag, is quoted. The engine writes that form and reads no
  * other.
+ *
+ * Whether the body has a heading is the board's own answer: it is parsed as
+ * the board renders it, CommonMark with GitHub's extensions, and any heading
+ * the parser finds, at any depth, breaks the rule.
  */
 
 /** Every key an entry may carry, in the order the engine writes them. */
@@ -81,6 +87,34 @@ export type LedgerParse =
 const problem = (line: number | null, text: string): { readonly problem: LedgerProblem } => ({
   problem: { line, text },
 });
+
+/** The Markdown reader the board renders with: react-markdown's parser, with the board's one plugin. */
+const markdown = unified().use(remarkParse).use(remarkGfm);
+
+/** What the heading search reads of a parsed node: its kind, what it holds, and where it sits. */
+type MarkdownNode = {
+  readonly type: string;
+  readonly children?: ReadonlyArray<MarkdownNode> | undefined;
+  readonly position?:
+    | { readonly start: { readonly line: number }; readonly end: { readonly line: number } }
+    | undefined;
+};
+
+/**
+ * The first heading the board would draw in some Markdown, as the lines it
+ * spans, counted from 1; null when there is none. A heading written with `#`
+ * is one line; one made by underlining a paragraph ends on its underline.
+ */
+const firstHeading = (text: string): { readonly start: number; readonly end: number } | null => {
+  const pending: MarkdownNode[] = [markdown.parse(text)];
+  for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
+    if (node.type === 'heading' && node.position !== undefined) {
+      return { start: node.position.start.line, end: node.position.end.line };
+    }
+    pending.unshift(...(node.children ?? []));
+  }
+  return null;
+};
 
 const frontmatterLine = /^([A-Za-z][\w-]*):(.*)$/u;
 
@@ -193,14 +227,15 @@ export const parseLedgerEntry = (input: { readonly name: string; readonly conten
     return problem(null, `the name comes from its date and title, so it is "${name}"; rename the file.`);
   }
   const bodyLines = lines.slice(close + 1);
-  const heading = firstHeading(bodyLines);
+  const heading = firstHeading(bodyLines.join('\n'));
   if (heading !== null) {
-    return problem(
-      close + 2 + heading.line,
-      heading.form === 'hashes'
-        ? 'a ledger body has no headings; write this line as plain text or move it into a code fence.'
-        : 'this underline makes the line above it a heading, and a ledger body has none; put a blank line before it.',
-    );
+    // Body line n is file line close + 1 + n.
+    return heading.end === heading.start
+      ? problem(close + 1 + heading.start, 'a ledger body has no headings; write this line as plain text or move it into a code fence.')
+      : problem(
+          close + 1 + heading.end,
+          'this underline makes the lines above it a heading, and a ledger body has none; put a blank line before it.',
+        );
   }
   return {
     entry: {

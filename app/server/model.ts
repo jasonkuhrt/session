@@ -132,17 +132,6 @@ export const parseItemFile = (input: {
   return { ...draft, path: input.path };
 };
 
-/**
- * The batch Execute is running, named by its directory, or null while Execute
- * is empty. A batch with no name is nothing to show, so it reads as empty too.
- */
-export const executingBatch = (
-  stages: ReadonlyArray<{ readonly stage: Stage; readonly items: ReadonlyArray<ItemDraft> }>,
-): string | null => {
-  const batch = stages.find((stage) => stage.stage === 'EXECUTE')?.items[0]?.batch ?? null;
-  return batch === '' ? null : batch;
-};
-
 export const findRequiredItem = (
   stages: ReadonlyArray<{ stage: Stage; items: ReadonlyArray<Item> }>,
   id: string,

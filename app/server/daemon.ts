@@ -30,7 +30,7 @@ import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler } from './http.ts';
 import { contextDirectory, ledgerDirectory } from './layout.ts';
-import { executingBatch } from './model.ts';
+import { aliasHostnames } from './portless.ts';
 import { makeRepository, type SessionRepository } from './repository.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
@@ -741,11 +741,14 @@ export const runDaemon = async () => {
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
+      // The batch in Execute names the work under way; a batch with no name is
+      // nothing to render, so it reads as an empty Execute rather than a blank.
+      const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
+      const batch = execute?.items[0]?.batch ?? null;
       return {
         ...base,
         branch: metadata.branch,
-        // The batch in Execute names the work under way.
-        executing: executingBatch(loaded.session.stages),
+        executing: batch === null || batch === '' ? null : batch,
         counts,
         lastChange: loaded.lastChange,
         activity: activityOf(overlay, loaded.lastChange),
@@ -811,8 +814,34 @@ export const runDaemon = async () => {
     return method === 'HEAD' ? new Response(null) : new Response(candidate);
   };
 
+  /**
+   * The names portless routes to this daemon, kept once seen: an alias
+   * registered after the daemon started is answered from its first request.
+   */
+  const aliases = new Set<string>();
+
+  /**
+   * The addresses this daemon answers at: its own port on 127.0.0.1 and on
+   * localhost, and its portless alias. A request naming any other host is
+   * refused before any route runs, so a page elsewhere that points a name of
+   * its own at this machine can read nothing from it.
+   */
+  const answersTo = async (host: string | null): Promise<boolean> => {
+    if (host === null || !URL.canParse(`http://${host}`)) return false;
+    const { hostname, port } = new URL(`http://${host}`);
+    if ((hostname === '127.0.0.1' || hostname === 'localhost') && port === String(settings.port)) return true;
+    if (aliases.has(hostname)) return true;
+    for (const alias of await runNode(aliasHostnames(settings.port))) aliases.add(alias);
+    return aliases.has(hostname);
+  };
+
   const handle = async (request: Request): Promise<Response> => {
     try {
+      if (!(await answersTo(request.headers.get('host')))) {
+        return json({
+          error: `This daemon answers only at 127.0.0.1:${settings.port}, localhost:${settings.port} and its portless name.`,
+        }, 403);
+      }
       const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/api/daemon') {
         return json({ pid: process.pid, port: settings.port, startedAt, sourceStamp: stamp });

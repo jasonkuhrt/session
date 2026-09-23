@@ -31,11 +31,13 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
 or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` and
-`log` are the commands that read stdin, in full and trimmed: `add` takes the new
-item's body there and rejects an empty one, and `log` takes the entry's body,
-which may be empty. Stdin is read only when it is a pipe or a file, as `|` and a
-heredoc give; anything else, a terminal or the socket an agent's shell tool
-holds open without writing to it, gives no body and is never waited on.
+`log` are the commands that read stdin, in full and trimmed. `add` takes the new
+item's body there, reads it to its end whatever stdin is, and rejects an empty
+one. `log` takes the entry's body, which may be empty: a terminal gives none; a
+pipe or a file is read to its end; and a socket, which is what a program that
+spawns the CLI hands it, is read to its end once it starts sending within half
+a second. A socket that stays silent, like the one an agent's shell tool holds
+open without writing to it, gives no body instead of a wait that never ends.
 
 ## Move and batch rules
 
@@ -109,8 +111,8 @@ sentence per commit, and as a count beside its name on the index:
 - the `Session-Done:` line is outside the last paragraph, so Git does not read
   it as a trailer and nothing was closed;
 - filing the item away failed, for instance because a record of that name
-  already exists that day; this is tried again whenever the session or the
-  branch changes.
+  already exists that day; this is tried again whenever the session changes
+  outside `context/` and `ledger/`, or the branch changes.
 
 The fix for the first two is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
@@ -132,10 +134,13 @@ Pivot to per-item evidence`, which is the entry's file name without `.md`.
 
 The entry is checked by the rules `check` applies before it is written, so a
 body with a heading or a title too long for a file name is refused and nothing
-is written. An entry is never overwritten: a second one with the same title in
-the same second is refused. There is no board button and no HTTP route for it,
-because the board never writes content; an agent may also write an entry by
-hand, in the same form.
+is written. It is refused too when `ledger` is a link rather than a directory,
+so an entry is never written outside the session. An entry is never
+overwritten: a second one with the same title in the same second is refused.
+Only the name of Execute's batch directory is read for `batch`, so a broken
+item elsewhere does not stop an entry. There is no board button and no HTTP
+route for it, because the board never writes content; an agent may also write
+an entry by hand, in the same form.
 
 ## Set up
 
@@ -178,14 +183,19 @@ output saved outside the session directory:
 session refresh --previous /tmp/session-previous.json
 ```
 
-`ignore/` and `archive/` are excluded before traversal. The inventory does not
-make linked history part of current context. Resolve deleted or moved references
+The root's `ignore/` and `archive/` are excluded before traversal, and those
+two only: a directory of either name further down, such as
+`context/SES-1/archive/`, is read like any other. The inventory does not make
+linked history part of current context. Resolve deleted or moved references
 instead of retaining an older item as if it were still live.
 
-An entry the inventory cannot take in does not fail the refresh. It is listed
-under `skipped`, each with its `path` and `reason`, and the rest of the
-inventory stands: a link that resolves outside the session directory, a link
-that leads nowhere, or an entry that could not be read.
+Outside the five stages, an entry the inventory cannot take in does not fail
+the refresh. It is listed under `skipped`, each with its `path` and `reason`,
+and the rest of the inventory stands: a link that resolves outside the session
+directory, a link that leads nowhere or back into a directory that holds it,
+or an entry that could not be read. The stages themselves must load first, as
+for every command, so a broken item file still fails the refresh with the
+error `check` would name.
 
 ```json
 "skipped": [{ "path": "context/out.md", "reason": "resolves outside the session directory" }]
@@ -218,6 +228,11 @@ portless writes its own URLs. If the alias cannot be used, `open` prints
 proxy that is not running or the alias that could not be registered. Nothing
 about the address is guessed, because a printed address that does not reach the
 board is worse than a plain one.
+
+The daemon answers only at those addresses: its port on `127.0.0.1` and on
+`localhost`, and the portless alias routed to that port. A request naming any
+other host is refused, so a web page elsewhere that points a name of its own at
+this machine cannot read a board.
 
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one
@@ -257,8 +272,10 @@ to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and resolves
 Markdown links inside the body against the session directory; the path copies
 the absolute file, which is what a terminal beside the page can open. An id
-with a dot in it, such as `BE-1.2`, has its page like any other: every path
-under a board that is not one of its routes is the app. It is an
+with a dot in it, such as `BE-1.2`, has its page like any other: a path under
+a board that is not one of its routes gets the app, dots and all, except an
+unknown `/api/` path, which is an error, and a path ending in the name of one of
+the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
 stage; unavailable destinations explain what is needed first. "Complete work" is
@@ -289,7 +306,8 @@ name, with a notice naming each file in `ledger/` that breaks the ledger's
 rules and is left out. `GET /w/<key>/api/context` is every file and directory
 under `context/`, depth first, each with when it was written, and a notice for
 an entry left out, such as a link that resolves outside the session; names
-starting with a dot and anything named `ignore` are left out as everywhere.
+starting with a dot are left out, and so is anything named `ignore`, which the
+files route never serves.
 `GET /w/<key>/api/archive` is the archive's records as their names give them,
 the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
@@ -454,14 +472,17 @@ batch, entries whose names break the numbering pattern, a missing `.gitignore`, 
 `.session` that is a symlink, and a leftover `STAGE.md`. It closes the session
 root: any entry other than the five stages, `archive/`, `ignore/`, `context/`,
 `ledger/`, `RULES.md`, `.gitignore` and names starting with a dot is an error
-that names it and says to move it under `context/` or delete it, and each of
-those must be the kind it names, a directory or a file. It rejects a directory
-in `ledger/`, and an entry whose frontmatter is missing `date`, `title` or `by`,
-carries any other key, holds anything but one line of text per key or a value
-YAML reads differently from how it is written, or has a `date` that is not a UTC
-instant to the second; whose name is not the one its date and title give; or
-whose body has a heading. It does not look inside `context/`. It does not judge
-acceptance criteria or user approval. An empty stage is an empty directory.
+that names it and says to move it under `context/` or delete it, or to rename
+it when only its case differs from one of these. The directories must be
+directories, and `RULES.md` and `.gitignore` files. In `ledger/` it rejects a
+directory, a link, and a `ledger` that is itself a link, and an entry whose
+frontmatter is missing `date`, `title` or `by`, carries any other key, holds
+anything but one line of text per key or a value YAML reads differently from
+how it is written, or has a `date` that is not a UTC instant to the second;
+whose name is not the one its date and title give; or whose body, read the way
+the board renders it, has a heading. It does not look inside `context/`. It does
+not judge acceptance criteria or user approval. An empty stage is an empty
+directory.
 
 ## App development
 
