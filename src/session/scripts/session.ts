@@ -4,6 +4,7 @@ import * as Console from 'effect/Console';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
@@ -21,6 +22,7 @@ import { makeRepository } from '../../../app/server/repository.ts';
 import {
   encodeWorktreeKey,
   ensureSession,
+  headCommit,
   resolveWorktreeSession,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
@@ -41,6 +43,7 @@ const commands = {
   start: { operands: '', least: 0, most: 0 },
   done: { operands: '<ID>', least: 1, most: 1 },
   archive: { operands: '<ID>', least: 1, most: 1 },
+  log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
   open: { operands: '', least: 0, most: 0 },
 } as const;
 
@@ -58,6 +61,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   start                                 move the first queued batch into EXECUTE
   done <ID>                             complete an EXECUTE item
   archive <ID>                          file an item away, from any stage
+  log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
   open                                  ensure the daemon and open this worktree's board`;
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
@@ -141,14 +145,26 @@ const cliTry = <A>(operation: () => A) =>
       new SessionCliError({ message: cause instanceof Error ? cause.message : String(cause) }),
   });
 
-const readBody = Effect.tryPromise({
-  try: () => Bun.stdin.text(),
-  catch: () => new SessionCliError({ message: 'Could not read the body from stdin.' }),
-}).pipe(
-  Effect.map((text) => text.trim()),
+/**
+ * What stdin holds, trimmed, when it is a pipe or a file, which is how a shell
+ * hands a command a body. Anything else holds none and is never waited on: a
+ * terminal, and the socket an agent's shell tool holds open without writing.
+ */
+const stdinText = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
+  if (Option.isNone(info) || (info.value.type !== 'FIFO' && info.value.type !== 'File')) return '';
+  const text = yield* Effect.tryPromise({
+    try: () => Bun.stdin.text(),
+    catch: () => new SessionCliError({ message: 'Could not read the body from stdin.' }),
+  });
+  return text.trim();
+});
+
+const readBody = stdinText.pipe(
   Effect.filterOrFail(
     (body) => body !== '',
-    () => new SessionCliError({ message: 'The item body is empty.' }),
+    () => new SessionCliError({ message: 'The item body is empty; pipe it on stdin.' }),
   ),
 );
 
@@ -195,7 +211,7 @@ const openBoard = (resolved: WorktreeSession) =>
 
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
   Effect.gen(function*() {
-    const inventory = yield* repository.inventory;
+    const { inventory, skipped } = yield* repository.inventory;
     let previous: FileInventory = {};
     if (options.previous !== undefined) {
       const fs = yield* FileSystem.FileSystem;
@@ -204,7 +220,7 @@ const refresh = (options: Options, repository: SessionRepository, directory: str
     }
     yield* Console.log(
       JSON.stringify(
-        { directory, inventory, changes: changesFrom(previous, inventory) },
+        { directory, inventory, changes: changesFrom(previous, inventory), skipped },
         null,
         2,
       ),
@@ -292,6 +308,24 @@ const archive = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Archived ${id}`);
   });
 
+/**
+ * One ledger entry. The body is whatever stdin carries, and none when it is a
+ * terminal or nothing was piped; the branch and commit are Git's, and the
+ * batch is the one Execute is running.
+ */
+const log = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const body = yield* stdinText;
+    const entry = yield* repository.appendLedger({
+      by: options.operands[0]!,
+      title: options.operands[1]!,
+      body,
+      branch: resolved.worktree.branch,
+      commit: resolved.git === null ? null : yield* headCommit(resolved.worktree.path),
+    });
+    yield* Console.log(`Logged ${entry.name.slice(0, -'.md'.length)}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -331,6 +365,7 @@ const runCommand = (options: Options) =>
       case 'batch': { yield* queue(options, repository); break; }
       case 'start': { yield* start(repository); break; }
       case 'done': { yield* complete(options, repository); break; }
+      case 'log': { yield* log(options, repository, resolved); break; }
     }
   });
 

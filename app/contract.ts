@@ -1,5 +1,7 @@
 import { Schema } from 'effect';
 
+/* eslint-disable max-lines -- The wire contract is one file on purpose: every shape the server and the board share sits beside its schema, so neither side can read a different one. */
+
 export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
 export type Stage = typeof stageNames[number];
 
@@ -60,6 +62,132 @@ export const SessionSchema = Schema.Struct({
     path: Schema.String,
     items: Schema.Array(ItemSchema).pipe(Schema.mutable),
   })).pipe(Schema.mutable),
+});
+
+/**
+ * One entry of the session's ledger: something another agent, or the user,
+ * must know to act correctly here and would not learn from the items. Entries
+ * are files under `ledger/`, written once and never edited; the fields are the
+ * file's frontmatter, and the name is derived from `date` and `title`.
+ */
+export type LedgerEntry = {
+  /** The file's name, e.g. `2026-09-23 14-02-11Z — Pivot to per-item evidence.md`. */
+  name: string;
+  /** `ledger/<name>`, relative to the session root. */
+  path: string;
+  /** When it was written: ISO 8601 in UTC, to the second. */
+  date: string;
+  title: string;
+  /** Who wrote it: `claude <session id>`, `codex <thread id>`, or a person's name. */
+  by: string;
+  /**
+   * The Git branch it was written on. Null when the entry names none, as
+   * `session log` leaves it out outside a repository or on a detached HEAD.
+   */
+  branch: string | null;
+  /**
+   * The commit HEAD named when it was written, abbreviated. Null when the entry
+   * names none, as outside a repository or before the first commit.
+   */
+  commit: string | null;
+  /** The batch Execute was running when it was written; null when the entry names none, as while Execute was empty. */
+  batch: string | null;
+  /** The Markdown after the frontmatter, trimmed; it may be empty and holds no headings. */
+  body: string;
+};
+
+/** The ledger as the board reads it. */
+export type LedgerListing = {
+  /** Newest first by date, then by name. */
+  entries: readonly LedgerEntry[];
+  /** One line per file in `ledger/` that breaks the ledger's rules and is left out; `session check` names the fix. */
+  notices: readonly string[];
+};
+
+export const LedgerEntrySchema = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  date: Schema.String,
+  title: Schema.String,
+  by: Schema.String,
+  branch: Schema.NullOr(Schema.String),
+  commit: Schema.NullOr(Schema.String),
+  batch: Schema.NullOr(Schema.String),
+  body: Schema.String,
+});
+
+export const LedgerListingSchema = Schema.Struct({
+  entries: Schema.Array(LedgerEntrySchema),
+  notices: Schema.Array(Schema.String),
+});
+
+/** One file or directory under the session's `context/`, where agents keep supporting material. */
+export type ContextEntry = {
+  /** Relative to the session root: `context/SES-1/design.md`, or `context/SES-1` for a directory. */
+  path: string;
+  kind: 'file' | 'directory';
+  /** When it was last written: its modification time, ISO 8601 in UTC. */
+  writtenAt: string;
+};
+
+/** `context/` as the board reads it. */
+export type ContextListing = {
+  /**
+   * Every file and directory under `context/`, depth first: a directory comes
+   * right before what it holds, and entries that share a directory are sorted
+   * by name. Names starting with a dot, and anything named `ignore`, are left
+   * out, as everywhere in the session.
+   */
+  entries: readonly ContextEntry[];
+  /** One line per entry that is left out for a reason worth saying, such as a link that leads outside the session. */
+  notices: readonly string[];
+};
+
+export const ContextEntrySchema = Schema.Struct({
+  path: Schema.String,
+  kind: Schema.Literals(['file', 'directory']),
+  writtenAt: Schema.String,
+});
+
+export const ContextListingSchema = Schema.Struct({
+  entries: Schema.Array(ContextEntrySchema),
+  notices: Schema.Array(Schema.String),
+});
+
+/**
+ * One file under `archive/`, read from its name: the day it was filed, the
+ * item, its title, and the state it left in. A name the engine did not write
+ * is listed as it is, with whatever it does not say as null.
+ */
+export type ArchiveRecord = {
+  name: string;
+  /** `archive/<name>`, relative to the session root. */
+  path: string;
+  /** The day it was filed, `2026-09-13`; null when the name does not start with one. */
+  date: string | null;
+  id: string | null;
+  title: string | null;
+  /** `done` for finished work, or the lowercase stage it was filed from, such as `triage`. */
+  state: string | null;
+};
+
+/** `archive/` as the board reads it. */
+export type ArchiveListing = {
+  /** Newest first by date, then by name; names without a date come last, by name. Directories are not listed. */
+  records: readonly ArchiveRecord[];
+};
+
+export const ArchiveRecordSchema = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  date: Schema.NullOr(Schema.String),
+  id: Schema.NullOr(Schema.String),
+  title: Schema.NullOr(Schema.String),
+  state: Schema.NullOr(Schema.String),
+});
+
+export const ArchiveListingSchema = Schema.Struct({
+  records: Schema.Array(ArchiveRecordSchema),
 });
 
 /** The one daemon per user listens here; `session open` upserts it. */

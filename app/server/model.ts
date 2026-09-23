@@ -1,7 +1,7 @@
 import * as Data from 'effect/Data';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage } from '../contract.ts';
-import { requiredSections, sectionHasContent } from '../stage-rules.ts';
+import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
   readonly kind: 'conflict' | 'io' | 'not-found' | 'validation';
@@ -18,7 +18,6 @@ export const itemIdSource = '[A-Za-z0-9][A-Za-z0-9._-]*';
 const itemHeading = new RegExp(`^## (${itemIdSource}) — (\\S(?:.*\\S)?)$`, 'u');
 const itemIdExactly = new RegExp(`^${itemIdSource}$`, 'u');
 const batchHeading = /^# (\S(?:.*\S)?)$/u;
-const fenceMarker = /^\s*(`{3,}|~{3,})/u;
 
 export const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
@@ -113,20 +112,12 @@ export const parseItemFile = (input: {
     fail(`${input.path}:1: heading ID ${heading[1]!} does not match the file name ID ${input.id}.`);
   }
 
-  let fence: { marker: '`' | '~'; length: number } | undefined;
-  for (const [index, line] of lines.slice(1).entries()) {
-    const marker = fenceMarker.exec(line)?.[1];
-    if (marker !== undefined) {
-      const kind = marker[0] as '`' | '~';
-      if (fence === undefined) fence = { marker: kind, length: marker.length };
-      else if (kind === fence.marker && marker.length >= fence.length) fence = undefined;
-      continue;
-    }
-    if (fence !== undefined) continue;
-    if (batchHeading.test(line)) {
+  for (const [index, line] of scanFences(lines.slice(1)).entries()) {
+    if (line.place !== 'prose') continue;
+    if (batchHeading.test(line.text)) {
       fail(`${input.path}:${index + 2}: batch headings live in the directory name.`);
     }
-    if (itemHeading.test(line)) {
+    if (itemHeading.test(line.text)) {
       fail(`${input.path}:${index + 2}: an item file holds exactly one item.`);
     }
   }
@@ -139,6 +130,17 @@ export const parseItemFile = (input: {
   });
   validateItem(input.stage, draft);
   return { ...draft, path: input.path };
+};
+
+/**
+ * The batch Execute is running, named by its directory, or null while Execute
+ * is empty. A batch with no name is nothing to show, so it reads as empty too.
+ */
+export const executingBatch = (
+  stages: ReadonlyArray<{ readonly stage: Stage; readonly items: ReadonlyArray<ItemDraft> }>,
+): string | null => {
+  const batch = stages.find((stage) => stage.stage === 'EXECUTE')?.items[0]?.batch ?? null;
+  return batch === '' ? null : batch;
 };
 
 export const findRequiredItem = (

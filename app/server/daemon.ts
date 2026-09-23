@@ -29,6 +29,8 @@ import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, focus, notListed, watchedDirectories } from './agents/index.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler } from './http.ts';
+import { contextDirectory, ledgerDirectory } from './layout.ts';
+import { executingBatch } from './model.ts';
 import { makeRepository, type SessionRepository } from './repository.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
@@ -371,28 +373,44 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
 const trailerSettle = '500 millis';
 
 /**
+ * The parts of a session no trailer depends on: what agents keep in
+ * `context/` and the entries in `ledger/` can neither make an item exist nor
+ * bring one back, so a change there never asks for a pass that runs Git.
+ */
+const trailerQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory]);
+
+/** Whether a change under the session, by its path there, can affect a trailer pass. */
+const touchesItems = (event: FileSystem.WatchEvent): boolean =>
+  !trailerQuiet.has(event.path.split(/[\\/]/u)[0] ?? '');
+
+/** Every change to Git's logs can: a commit, an amend, a push. */
+const anyChange = (_event: FileSystem.WatchEvent): boolean => true;
+
+/**
  * When a worktree's trailers are worth reading again: once at the start, to
  * catch up on whatever landed while nothing was watching; on a change to its
- * session, which can make a named item exist or bring one back; on a commit,
- * which Git records in the worktree's own reflog; and on a push, which moves a
- * remote-tracking ref in the logs the repository shares and is what takes a
- * commit out of the unpushed range. A log that does not exist yet is not
- * watched.
+ * session outside `context/` and `ledger/`, which can make a named item exist
+ * or bring one back; on a commit, which Git records in the worktree's own
+ * reflog; and on a push, which moves a remote-tracking ref in the logs the
+ * repository shares and is what takes a commit out of the unpushed range. A
+ * log that does not exist yet is not watched.
  */
 const trailerTriggers = (session: WorktreeSession) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const watched = [
-      { directory: session.directory, recursive: true },
+      { directory: session.directory, recursive: true, relevant: touchesItems },
       ...(session.git === null ? [] : [
-        { directory: join(session.git.directory, 'logs'), recursive: false },
-        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true },
+        { directory: join(session.git.directory, 'logs'), recursive: false, relevant: anyChange },
+        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true, relevant: anyChange },
       ]),
     ];
     const streams: Array<Stream.Stream<null, PlatformError>> = [Stream.succeed(null)];
-    for (const { directory, recursive } of watched) {
+    for (const { directory, recursive, relevant } of watched) {
       if (yield* fs.exists(directory)) {
-        streams.push(fs.watch(directory, { recursive }).pipe(Stream.map(() => null)));
+        streams.push(
+          fs.watch(directory, { recursive }).pipe(Stream.filter((event) => relevant(event)), Stream.map(() => null)),
+        );
       }
     }
     return Stream.mergeAll(streams, { concurrency: 'unbounded' });
@@ -723,14 +741,11 @@ export const runDaemon = async () => {
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
-      // The batch in Execute names the work under way; a batch with no name is
-      // nothing to render, so it reads as an empty Execute rather than a blank.
-      const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
-      const batch = execute?.items[0]?.batch ?? null;
       return {
         ...base,
         branch: metadata.branch,
-        executing: batch === null || batch === '' ? null : batch,
+        // The batch in Execute names the work under way.
+        executing: executingBatch(loaded.session.stages),
         counts,
         lastChange: loaded.lastChange,
         activity: activityOf(overlay, loaded.lastChange),
