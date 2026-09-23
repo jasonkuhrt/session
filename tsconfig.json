@@ -233,7 +233,6 @@
             "include": [
               "app/server/agents/app-server.ts",
               "app/server/agents/claude.ts",
-              "app/server/agents/cmux.ts",
               "app/server/agents/codex.ts",
               "app/server/daemon.ts",
               "app/server/http.ts",

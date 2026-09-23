@@ -3,7 +3,17 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import { AgentsSummarySchema, SessionSchema, TrailerProblemSchema, WorktreeSummarySchema } from '../../contract'
+import type { StreamEvent } from '../../contract'
+import {
+  AgentsSummarySchema,
+  DaemonCapabilitiesSchema,
+  FocusResultSchema,
+  LinksSchema,
+  SessionSchema,
+  TerminalResultSchema,
+  TrailerProblemSchema,
+  WorktreeSummarySchema,
+} from '../../contract'
 import { basePath } from './base'
 
 export class ApiError extends Data.TaggedError('ApiError')<{
@@ -21,16 +31,10 @@ const decodeSession = Schema.decodeUnknownEffect(SessionSchema)
 const decodeWorktrees = Schema.decodeUnknownEffect(Schema.Array(WorktreeSummarySchema))
 const decodeAgents = Schema.decodeUnknownEffect(AgentsSummarySchema)
 const decodeTrailers = Schema.decodeUnknownEffect(Schema.Array(TrailerProblemSchema))
-
-/**
- * `FocusResult` is the one contract shape with no Schema beside it, because it
- * is the only reply that is not data: the daemon answers whether the window
- * manager did the thing, and a refusal carries the reason it gave.
- */
-const decodeFocus = Schema.decodeUnknownEffect(Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true) }),
-  Schema.Struct({ ok: Schema.Literal(false), reason: Schema.String }),
-]))
+const decodeLinks = Schema.decodeUnknownEffect(LinksSchema)
+const decodeCapabilities = Schema.decodeUnknownEffect(DaemonCapabilitiesSchema)
+const decodeFocus = Schema.decodeUnknownEffect(FocusResultSchema)
+const decodeTerminal = Schema.decodeUnknownEffect(TerminalResultSchema)
 
 const send = <A, E>(
   request: HttpClientRequest.HttpClientRequest,
@@ -58,10 +62,11 @@ async function run<A, E>(program: Effect.Effect<A, E, HttpClient.HttpClient>, si
 
 /**
  * The stream this page listens to: a board's under its own prefix, the index's
- * at the root. Both carry the events their surface refetches on, so where the
- * bundle is served decides which one it subscribes to.
+ * at the root, so where the bundle is served decides which one it opens. It
+ * carries only the events the page names, because the daemon re-reads some
+ * sources only while a page is listening for them.
  */
-export const eventsUrl = `${basePath}/api/events`
+export const eventsUrl = (events: ReadonlyArray<StreamEvent>) => `${basePath}/api/events?events=${events.join(',')}`
 
 export const SessionApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get(`${basePath}/api/session`), decodeSession), signal),
@@ -73,6 +78,10 @@ export const SessionApi = {
   /** The `Session-Done` trailers on this worktree's unpushed commits that could not be acted on. */
   trailers: (signal?: AbortSignal) =>
     run(send(HttpClientRequest.get(`${basePath}/api/trailers`), decodeTrailers), signal),
+
+  /** Where this worktree's work lives outside its files: its pull request, as gh last reported it. */
+  links: (signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${basePath}/api/links`), decodeLinks), signal),
 
   /** Asks the daemon to bring this session's terminal forward. */
   focus: (pid: number) =>
@@ -104,5 +113,21 @@ export const IndexApi = {
     run(send(
       HttpClientRequest.post('/api/agents/focus').pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
       decodeFocus,
+    )),
+}
+
+/**
+ * What the daemon itself answers, at the root whichever page is asking: what
+ * it can do for a page, and a terminal in any worktree it tracks.
+ */
+export const DaemonApi = {
+  capabilities: (signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get('/api/daemon'), decodeCapabilities), signal),
+
+  /** Asks for a terminal in the worktree at this path: its cmux workspace brought forward, or a new one. */
+  terminal: (path: string) =>
+    run(send(
+      HttpClientRequest.post('/api/terminal').pipe(HttpClientRequest.bodyJsonUnsafe({ path })),
+      decodeTerminal,
     )),
 }

@@ -98,8 +98,8 @@ holds open, and only a live thing can need you now. A resumable thing is a
 handle and the state something last knew it in; the only thing to do with one is
 pick it back up. The board's strip lists both, live rows first and resumable
 rows below them, each row carrying one word for how it is doing, its name, its
-age, and the ways to reach it: focus its cmux tab, open the Remote Control link
-recorded for it, open the thread in Codex, or copy its resume command or its id.
+age, and the ways to reach it: focus its cmux tab, open the thread in Codex, or
+copy its resume command or its id.
 The index names only what is live, a pill per session that opens that same list
 as a menu; a worktree whose agents are all resumable shows a dash, and its board
 is where they are. The listing is recomputed when the index renders and when the

@@ -3,6 +3,7 @@ import * as React from 'react'
 import type { FocusResult } from '../../contract'
 import type { Action } from '../lib/agents'
 import { actionKey } from '../lib/agents'
+import { openOnceOnClick } from '../lib/open-once'
 import { ActionIcon } from './agent-marks'
 import { copyLabel, useCopy } from './copyable'
 import { Button } from './ui/button'
@@ -76,7 +77,7 @@ function FocusAction({ action, name, onFocus, onFailure }: {
   )
 }
 
-/** Somewhere else this session already lives: a page, or another app. */
+/** The app this thread already lives in, handed the thread once. */
 function LinkAction({ action, name }: {
   action: Extract<Action, { kind: 'link' }>
   name: string
@@ -93,7 +94,7 @@ function LinkAction({ action, name }: {
               <a
                 aria-label={`${action.label}: ${name}`}
                 href={action.href}
-                {...(action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
+                onClick={openOnceOnClick(action.href)}
               />
             }
           />

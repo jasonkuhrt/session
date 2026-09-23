@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, Globe, SquareTerminal } from 'lucide-react'
+import { Check, Copy, ExternalLink, SquareTerminal } from 'lucide-react'
 import type * as React from 'react'
 
 import type { Action } from '../lib/agents'
@@ -26,13 +26,13 @@ export function Dot({ tone }: { tone: 'on' | 'attention' | 'off' | 'unknown' }) 
 }
 
 /**
- * What an action looks like wherever it is rendered: a terminal to go to, a
- * page on the web, an app to hand off to, or a value for the clipboard that
- * reports itself once it is taken.
+ * What an action looks like wherever it is rendered: a terminal to go to, an
+ * app to hand off to, or a value for the clipboard that reports itself once it
+ * is taken.
  */
 export function ActionIcon({ action, copied }: { action: Action; copied: boolean }) {
   if (action.kind === 'focus') return <SquareTerminal />
-  if (action.kind === 'link') return action.external ? <Globe /> : <ExternalLink />
+  if (action.kind === 'link') return <ExternalLink />
   return copied ? <Check /> : <Copy />
 }
 
