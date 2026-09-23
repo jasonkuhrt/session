@@ -1,5 +1,7 @@
 import { Schema } from 'effect';
 
+/* eslint-disable max-lines -- The one wire contract: every shape the server and the browser exchange is declared here beside its schema, so neither side can read a shape the other does not write. */
+
 export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
 export type Stage = typeof stageNames[number];
 
@@ -79,6 +81,21 @@ export const DaemonInfoSchema = Schema.Struct({
   port: Schema.Int,
   startedAt: Schema.String,
   sourceStamp: Schema.String,
+});
+
+/**
+ * What `GET /api/daemon` reports beside who the daemon is: what it can do for a
+ * page. It is its own shape because the CLI recognises a running daemon by
+ * `DaemonInfo` alone, and one started from older sources, which reports none of
+ * this, must still be recognised in order to be replaced.
+ */
+export type DaemonCapabilities = {
+  /** Whether `cmux` is on the daemon's PATH, which is what the terminal action runs. */
+  terminal: boolean;
+};
+
+export const DaemonCapabilitiesSchema = Schema.Struct({
+  terminal: Schema.Boolean,
 });
 
 /**
@@ -252,6 +269,81 @@ export const TrailerProblemSchema = Schema.Struct({
   detail: Schema.NullOr(Schema.String),
 });
 
+/**
+ * The pull request `gh pr view` reports for a worktree's branch. `state` and
+ * `reviewDecision` are gh's own words, carried unmapped.
+ */
+export type PullRequest = {
+  number: number;
+  url: string;
+  title: string;
+  state: 'OPEN' | 'MERGED' | 'CLOSED';
+  isDraft: boolean;
+  /** `APPROVED`, `CHANGES_REQUESTED` or `REVIEW_REQUIRED` as gh gives it; null when gh gives none. */
+  reviewDecision: string | null;
+  /**
+   * The head commit's checks, counted from gh's `statusCheckRollup`. A check
+   * run passed when it completed with `SUCCESS`, `NEUTRAL` or `SKIPPED` and
+   * failed when it completed any other way; a commit status, which carries only
+   * a `state`, passed on `SUCCESS` and failed on `FAILURE` or `ERROR`.
+   * Everything else is pending.
+   */
+  checks: { passed: number; failed: number; pending: number };
+};
+
+/** One Linear issue a worktree names, as the `linear` CLI reports it. */
+export type LinearIssue = {
+  /** The identifier, e.g. `HEA-5454`. */
+  id: string;
+  url: string;
+  title: string;
+  /** The CLI's state name, unmapped. */
+  state: string;
+};
+
+/**
+ * Where a worktree's work lives outside its files: the pull request for its
+ * branch and the issues it names, read from the tools that know when they are
+ * asked, and never persisted.
+ */
+export type Links = {
+  /** Null when the branch has no pull request, and when the worktree is on no branch. */
+  pr: PullRequest | null;
+  issues: readonly LinearIssue[];
+  /** One sentence per source that could not answer; empty when every source did. */
+  notices: readonly string[];
+  /** ISO 8601 of when the sources were last asked. */
+  reportedAt: string;
+};
+
+export const PullRequestSchema = Schema.Struct({
+  number: Schema.Int,
+  url: Schema.String,
+  title: Schema.String,
+  state: Schema.Literals(['OPEN', 'MERGED', 'CLOSED']),
+  isDraft: Schema.Boolean,
+  reviewDecision: Schema.NullOr(Schema.String),
+  checks: Schema.Struct({
+    passed: Schema.Int,
+    failed: Schema.Int,
+    pending: Schema.Int,
+  }),
+});
+
+export const LinearIssueSchema = Schema.Struct({
+  id: Schema.String,
+  url: Schema.String,
+  title: Schema.String,
+  state: Schema.String,
+});
+
+export const LinksSchema = Schema.Struct({
+  pr: Schema.NullOr(PullRequestSchema),
+  issues: Schema.Array(LinearIssueSchema),
+  notices: Schema.Array(Schema.String),
+  reportedAt: Schema.String,
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -295,3 +387,19 @@ export const WorktreeSummarySchema = Schema.Struct({
 
 /** The result of asking the daemon to focus a session's terminal. */
 export type FocusResult = { ok: true } | { ok: false; reason: string };
+
+export const FocusResultSchema = Schema.Union([
+  Schema.Struct({ ok: Schema.Literal(true) }),
+  Schema.Struct({ ok: Schema.Literal(false), reason: Schema.String }),
+]);
+
+/**
+ * The result of asking the daemon for a terminal in a worktree: whether cmux
+ * did it, and what cmux printed either way, so a refusal is in cmux's words.
+ */
+export type TerminalResult = { ok: boolean; line: string };
+
+export const TerminalResultSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  line: Schema.String,
+});

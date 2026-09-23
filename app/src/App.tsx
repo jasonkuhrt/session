@@ -1,11 +1,12 @@
 import * as React from 'react'
 
-import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '../contract'
+import type { AgentsSummary, FocusResult, Item, Links, Session, TrailerProblem } from '../contract'
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
 import { BatchDialog, CompleteDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
+import { useTerminalAvailable } from './components/terminal-action'
 import { TrailerProblems } from './components/trailer-problems'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
@@ -21,10 +22,13 @@ function App() {
   const [agents, setAgents] = React.useState<AgentsSummary | null>(null)
   const [agentsError, setAgentsError] = React.useState<string | null>(null)
   const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
+  const [links, setLinks] = React.useState<Links | null>(null)
+  const [linksError, setLinksError] = React.useState<string | null>(null)
   const [batching, setBatching] = React.useState(false)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [batchSelection, setSelectedBatchIds] = React.useState<Set<string>>(new Set())
   const now = useNow()
+  const terminal = useTerminalAvailable()
 
   const load = React.useCallback(async (signal?: AbortSignal) => {
     try {
@@ -76,6 +80,21 @@ function App() {
     }
   }, [])
 
+  // The links are the daemon's last answer from gh, read on their own for the
+  // same reason as the agents: a source that cannot be reached must not take
+  // the board down, and a failed read keeps the chip it last had.
+  const loadLinks = React.useCallback(async (signal?: AbortSignal) => {
+    try {
+      const next = await SessionApi.links(signal)
+      if (signal?.aborted) return
+      setLinks(next)
+      setLinksError(null)
+    } catch (error) {
+      if (signal?.aborted) return
+      setLinksError(error instanceof Error ? error.message : 'The pull request could not be read')
+    }
+  }, [])
+
   const focusAgent = React.useCallback(async (pid: number): Promise<FocusResult> => {
     try {
       return await SessionApi.focus(pid)
@@ -89,8 +108,9 @@ function App() {
     void load(controller.signal)
     void loadAgents(controller.signal)
     void loadTrailers(controller.signal)
+    void loadLinks(controller.signal)
     return () => controller.abort()
-  }, [load, loadAgents, loadTrailers])
+  }, [load, loadAgents, loadLinks, loadTrailers])
 
   // The daemon pushes one `changed` event per debounced write under `.session`;
   // the board never polls. A refetch waits while a mutation is in flight or a
@@ -111,13 +131,15 @@ function App() {
         void load()
       }
     }
-    // The agents overlay and the trailers are not the files, so neither is held
-    // back by a drag, and each is read only when its own answer changed.
+    // The agents overlay, the trailers and the links are not the files, so none
+    // is held back by a drag, and each is read only when its own answer changed.
     const refetchAgents = () => void loadAgents()
     const refetchTrailers = () => void loadTrailers()
+    const refetchLinks = () => void loadLinks()
     source.addEventListener('changed', refetch)
     source.addEventListener('agents', refetchAgents)
     source.addEventListener('trailers', refetchTrailers)
+    source.addEventListener('links', refetchLinks)
     source.addEventListener('error', () => { droppedRef.current = true })
     source.addEventListener('open', () => {
       if (!droppedRef.current) return
@@ -125,9 +147,10 @@ function App() {
       refetch()
       refetchAgents()
       refetchTrailers()
+      refetchLinks()
     })
     return () => source.close()
-  }, [load, loadAgents, loadTrailers, settle])
+  }, [load, loadAgents, loadLinks, loadTrailers, settle])
 
   React.useEffect(() => {
     busyRef.current = busy
@@ -147,7 +170,7 @@ function App() {
     <div className="min-h-dvh bg-background text-foreground">
       {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
-      <SessionHeader worktree={session?.worktree} />
+      <SessionHeader worktree={session?.worktree} links={links} linksError={linksError} terminal={terminal} />
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
       <TrailerProblems problems={trailers} />
       {problem === null ? null : (

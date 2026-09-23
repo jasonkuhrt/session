@@ -8,8 +8,8 @@ import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { ClaudeSession } from '../../contract.ts';
 import { capture } from '../command.ts';
-import { terminalsFor, type Terminal } from './cmux.ts';
-import { realPaths } from './paths.ts';
+import { terminalsFor, type Terminal } from '../cmux.ts';
+import { ownerOf, realPaths } from '../paths.ts';
 
 /**
  * The Claude Code sessions under a worktree, from Claude Code's own listing.
@@ -86,25 +86,6 @@ const listRows = capture({ command: 'claude', args: ['agents', '--json'], timeou
       : Schema.decodeEffect(ListingJson)(result.stdout).pipe(Effect.orElseSucceed(() => null)),
   ),
 );
-
-/**
- * The worktree a session belongs to: the one whose path is the cwd or contains
- * it at a segment boundary, longest first. Without the boundary a worktree
- * would swallow its own siblings — `…/Heartbeat` would claim `…/Heartbeat-alch`
- * — and without longest-wins a nested worktree would report to its parent.
- */
-const ownerOf = (roots: ReadonlyMap<string, string>, cwd: string): string | null => {
-  let owner: string | null = null;
-  let length = -1;
-  for (const [path, real] of roots) {
-    if (cwd !== real && !cwd.startsWith(`${real}/`)) continue;
-    if (real.length > length) {
-      owner = path;
-      length = real.length;
-    }
-  }
-  return owner;
-};
 
 /** Epoch milliseconds as the listing and the registry give them; a value no date can hold is no moment. */
 const isoFrom = (value: number | null | undefined): string | null =>
@@ -184,7 +165,7 @@ export const claudeSessions = (
     const cwds = yield* realPaths(rows.map((row) => row.cwd));
     const owned: Array<{ readonly owner: string; readonly row: Row; readonly startedAt: string }> = [];
     for (const row of rows) {
-      const owner = ownerOf(roots, cwds.get(row.cwd) ?? row.cwd);
+      const owner = ownerOf({ roots, directory: cwds.get(row.cwd) ?? row.cwd });
       const moment = isoFrom(row.startedAt);
       if (owner !== null && moment !== null) owned.push({ owner, row, startedAt: moment });
     }

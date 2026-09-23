@@ -4,11 +4,13 @@ import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { stageNames } from '../contract.ts';
-import type { AgentsSummary, FocusResult, Session, TrailerProblem } from '../contract.ts';
+import type { AgentsSummary, FocusResult, Links, Session, TerminalResult, TrailerProblem } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
 import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
+
+/* eslint-disable max-lines -- The HTTP boundary: the board's route table and the handlers the root shares with it live together, so the two surfaces can never answer one request two ways. */
 
 const Stage = Schema.Literals(stageNames);
 const MoveItem = Schema.Struct({
@@ -31,6 +33,9 @@ const CompleteItem = Schema.Struct({
 });
 const FocusSession = Schema.Struct({
   pid: Schema.Int,
+});
+const OpenTerminal = Schema.Struct({
+  path: Schema.String,
 });
 
 const json = (value: unknown, init?: ResponseInit) =>
@@ -82,27 +87,51 @@ const writeIsSameOrigin = (request: Request): boolean => {
 };
 
 /**
- * Focusing a session's terminal, as both routers serve it: a board's under its
- * own prefix, and the index's at the root, where there is no board to scope it
- * to. One handler, so the two can never take different bodies or answer a
- * refusal differently; the daemon owns the window manager behind it.
+ * A write both the index and a board make: from the page's own origin, with a
+ * body of one shape, answered as JSON. Both such routes go through here, so the
+ * two surfaces can never send different bodies or read a refusal differently;
+ * the daemon owns what stands behind each one.
  */
-export async function focusResponse(
-  { request, focus }: {
-    readonly request: Request;
-    readonly focus: (pid: number) => Promise<FocusResult>;
-  },
-): Promise<Response> {
+const sharedWrite = async <A, I>(
+  request: Request,
+  schema: Schema.Codec<A, I>,
+  answer: (input: A) => Promise<Response>,
+): Promise<Response> => {
   if (!writeIsSameOrigin(request)) {
     return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
   }
   try {
-    const input = await Effect.runPromise(decodeBody(request, FocusSession));
-    return json(await focus(input.pid));
+    return await answer(await Effect.runPromise(decodeBody(request, schema)));
   } catch (error) {
     return errorResponse(error);
   }
-}
+};
+
+/**
+ * Focusing a session's terminal: under a board's own prefix, and at the root,
+ * where the index has no board to scope it to.
+ */
+export const focusResponse = ({ request, focus }: {
+  readonly request: Request;
+  readonly focus: (pid: number) => Promise<FocusResult>;
+}) => sharedWrite(request, FocusSession, async (input) => json(await focus(input.pid)));
+
+/**
+ * A terminal in a worktree, at the root, for a board's header and the index's
+ * rows alike. It is asked for by path, and a path the daemon does not track is
+ * not somewhere it opens one.
+ */
+export const terminalResponse = ({ request, open }: {
+  readonly request: Request;
+  /** cmux's answer for a tracked worktree's path; undefined for any other path. */
+  readonly open: (path: string) => Promise<TerminalResult | undefined>;
+}) =>
+  sharedWrite(request, OpenTerminal, async (input) => {
+    const result = await open(input.path);
+    return result === undefined
+      ? json({ error: 'The daemon tracks no worktree at that path.' }, { status: 404 })
+      : json(result);
+  });
 
 /** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
  *  by default, so a quiet session must still say something. */
@@ -194,6 +223,15 @@ export const makeRequestHandler = (options: {
     readonly read: () => ReadonlyArray<TrailerProblem>;
     readonly events: SessionEvents;
   };
+  /**
+   * Where this worktree's work lives outside its files, and the stream that
+   * says it was asked again. The daemon asks the sources and keeps the last
+   * answer; the board only reads it.
+   */
+  readonly links: {
+    readonly read: () => Promise<Links>;
+    readonly events: SessionEvents;
+  };
 }) =>
   Effect.gen(function*() {
     const run = Effect.runPromiseWith(yield* Effect.context<ChildProcessSpawner>());
@@ -224,11 +262,16 @@ export const makeRequestHandler = (options: {
           return json(options.trailers.read());
         }
 
+        if (request.method === 'GET' && url.pathname === '/api/links') {
+          return json(await options.links.read());
+        }
+
         if (request.method === 'GET' && url.pathname === '/api/events') {
           return eventStream([
             { name: 'changed', events: options.events },
             { name: 'agents', events: options.agents.events },
             { name: 'trailers', events: options.trailers.events },
+            { name: 'links', events: options.links.events },
           ]);
         }
 

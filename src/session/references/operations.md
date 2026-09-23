@@ -195,19 +195,59 @@ and the first `no` drops the row, rewrites the state file and pushes a
 the route the CLI registers through.
 
 The index at `/` lists the tracked worktrees: name, branch, the agents at work
-in it, the item counts per stage, and activity. The batch in Execute is named
-beside that stage's count, which is the only place a batch is named, and a stage
-holding nothing renders an empty cell, so the five columns read as a pipeline by
-what is in them. Each board sits under `/w/<key>/`, where the key is the
-worktree name, `Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees
-whose names collide are a conflict: the later one is listed with the reason and
-is not served.
+in it, the item counts per stage, and activity, with a terminal icon beside each
+name. The batch in Execute is named beside that stage's count, which is the only
+place a batch is named, and a stage holding nothing renders an empty cell, so
+the five columns read as a pipeline by what is in them. Each board sits under
+`/w/<key>/`, where the key is the worktree name, `Heartbeat` or
+`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
+conflict: the later one is listed with the reason and is not served.
 
 ## Use the board
 
-A board's header shows its worktree's name and Git branch, and "All sessions"
-links back to the index. A non-Git folder uses its own `.session` and has no
-branch.
+A board's header shows its worktree's name and Git branch, the branch's pull
+request, a terminal icon, and "All sessions", which links back to the index. A
+non-Git folder uses its own `.session` and has no branch, so it has no pull
+request either.
+
+The pull request is one chip, and the chip is a link to it: its number, gh's
+state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
+review decision when it gives one (`approved`, `changes requested`,
+`review required`), and one glyph for the head commit's checks: a cross when any
+failed, a dashed circle while any has not finished, a tick when all passed, and
+none when gh reports no checks. The tooltip names gh's exact words, prints the
+three counts, and says when gh was asked. The counts are taken from gh's
+`statusCheckRollup`, every entry once: a check run passed when it completed with
+`SUCCESS`, `NEUTRAL` or `SKIPPED` and failed when it completed any other way; a
+commit status, such as a deployment's, carries only a state, and passed on
+`SUCCESS` and failed on `FAILURE` or `ERROR`; anything else is pending. Nothing
+on the chip has a colour. A branch with no pull request and a detached head
+draw no chip. Any other way gh can fail, missing from the daemon's PATH, signed
+out, or offline, reads "gh did not answer, so the pull request is not shown."
+where the chip would be.
+
+The daemon asks with `gh pr view` in the worktree and keeps only the last
+answer. A board is served it while it is under a minute old and no
+remote-tracking ref has moved since it was asked; otherwise the board's request
+asks again. While a board or an item page of that worktree is open, the daemon
+also asks again once the answer is a minute old, and at once when a push or a
+fetch moves a remote-tracking ref; with none open it spawns nothing. Every ask
+pushes a `links` event to that worktree's open pages. The pull request is the
+one gh reports for the branch when it is asked, and nothing about it is
+inferred: no state is concluded from a timestamp, and no check outcome is one gh
+did not report. The index keeps no pull request column.
+
+The terminal icon, in the header and beside each name on the index, asks the
+daemon for a terminal in that worktree with `POST /api/terminal`. The daemon
+lists cmux's windows and each window's workspaces, and brings forward the
+workspace working in that worktree: one whose directory is the worktree itself
+first, else one inside it, where a directory belongs to the longest tracked
+worktree holding it, as an agent's does. When cmux names none, it runs
+`cmux <path>`, which opens a new workspace there and starts cmux if it is not
+running. When cmux refuses, the line cmux printed shows beside the icon. The
+icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
+reports as `terminal`, so a daemon started from a shell without cmux on its
+PATH draws none.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
@@ -371,7 +411,7 @@ that it started and did not answer inside its budget. Each notice
 stands for its own source, the other source and the rest of the board are
 unaffected, and an empty strip reads "No agent sessions here" with the notices
 beside it, so a failed listing never passes for an empty one. A machine running
-no cmux is not a failure: those rows simply carry no "Terminal" action.
+no cmux is not a failure: those rows simply carry no "Focus terminal" action.
 
 The `### Agent` line an executing agent writes into its item file, in
 [records.md](records.md), stays a convention between agents. The board does not

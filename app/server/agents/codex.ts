@@ -9,7 +9,7 @@ import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSp
 import type { CodexThread } from '../../contract.ts';
 import { capture } from '../command.ts';
 import { listThreads, type ThreadRow } from './app-server.ts';
-import { realPaths } from './paths.ts';
+import { realPaths } from '../paths.ts';
 
 /**
  * The Codex threads under a worktree.
