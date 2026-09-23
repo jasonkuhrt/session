@@ -144,17 +144,16 @@ export type EventChannel = {
 };
 
 /**
- * The channels a page asked for in `?events=`, or all of them when it named
- * none. A page names what it reads, so a source the daemon re-reads only for
- * a listening page is not kept busy by a page that ignores it.
+ * The channels a page asked for in `?events=`, and no others: a stream that
+ * names none carries none. A page names what it reads, so a source the daemon
+ * re-reads only for a listening page is not kept busy by a page that ignores
+ * it.
  */
 export const namedChannels = ({ url, channels }: {
   readonly url: URL;
   readonly channels: ReadonlyArray<EventChannel>;
 }): ReadonlyArray<EventChannel> => {
-  const named = url.searchParams.get('events');
-  if (named === null) return channels;
-  const wanted = new Set(named.split(','));
+  const wanted = new Set((url.searchParams.get('events') ?? '').split(','));
   return channels.filter((channel) => wanted.has(channel.name));
 };
 
