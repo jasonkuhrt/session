@@ -3,6 +3,7 @@ import { Check, CircleDashed, X } from 'lucide-react'
 import type { PullRequest } from '../../contract'
 import { absoluteTime } from '../lib/format'
 import { checksMark, reviewMeaning, reviewWord, stateMeaning, stateWord } from '../lib/links'
+import { openOnceOnClick } from '../lib/open-once'
 import { Badge } from './ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
@@ -16,7 +17,8 @@ const glyphs = {
 /**
  * The pull request for this board's branch, as one chip that is a link to it:
  * the number, gh's state word and review decision, and one glyph for its
- * checks, with every sentence behind them one hover away. It carries no
+ * checks, with every sentence behind them one hover away. A click opens the
+ * pull request once: the tab it already has comes forward instead of another. It carries no
  * colour, because the lanes are where anything that needs you is shown; this
  * only says where the work stands on GitHub.
  */
@@ -35,6 +37,7 @@ export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedA
                 href={pr.url}
                 rel="noreferrer"
                 target="_blank"
+                onClick={openOnceOnClick(pr.url)}
               />
             }
           />
@@ -53,7 +56,7 @@ export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedA
           <span className="block">{reviewMeaning(pr.reviewDecision)}</span>
           <span className="block">{mark === null ? 'gh reports no checks on it.' : mark.meaning}</span>
           <span className="block">gh was asked at {absoluteTime(reportedAt)}.</span>
-          <span className="block">Opens the pull request on GitHub.</span>
+          <span className="block">Brings forward the GitHub tab this board opened for it, or opens one.</span>
         </span>
       </TooltipContent>
     </Tooltip>

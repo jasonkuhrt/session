@@ -17,6 +17,7 @@ import {
   wordOfThread,
 } from '../lib/agents'
 import { IndexApi } from '../lib/api'
+import { openOnceOnClick } from '../lib/open-once'
 import { absoluteTime, relativeTime, since } from '../lib/format'
 import { cn } from '../lib/utils'
 import { ActionIcon, Dot } from './agent-marks'
@@ -212,6 +213,7 @@ function SessionPill({ pill }: { pill: Pill }) {
                       aria-label={`${action.label}: ${pill.name}`}
                       href={action.href}
                       {...(action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
+                      onClick={openOnceOnClick(action.href)}
                     />
                   }
                 >

@@ -226,6 +226,16 @@ draw no chip. Any other way gh can fail, missing from the daemon's PATH, signed
 out, or offline, reads "gh did not answer, so the pull request is not shown."
 where the chip would be.
 
+Everything the board opens outside itself is opened once. A click on the chip
+opens the pull request in a tab named for its address, and a later click brings
+that tab forward as it is, without reloading it, instead of opening another; a
+tab is opened only when there is none. The name is found from the board tab
+that opened it, so a board opened separately in a tab of its own opens its own,
+and a middle click or a click with a modifier is left to the browser, so a copy
+of the reader's own is always one gesture away. The tab keeps the board as its
+opener, because Chrome loses the name of a tab that has none as soon as it
+loads another site; that tab can therefore reach back to the board's.
+
 The daemon asks with `gh pr view` in the worktree and keeps only the last
 answer. A board is served it while it is under a minute old and no
 remote-tracking ref has moved since it was asked; otherwise the board's request
@@ -244,7 +254,9 @@ workspace working in that worktree: one whose directory is the worktree itself
 first, else one inside it, where a directory belongs to the longest tracked
 worktree holding it, as an agent's does. When cmux names none, it runs
 `cmux <path>`, which opens a new workspace there and starts cmux if it is not
-running. When cmux refuses, the line cmux printed shows beside the icon. The
+running, so asking again brings back the workspace it opened rather than
+opening another. When cmux refuses, the line cmux printed shows beside the
+icon. The
 icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
 reports as `terminal`, so a daemon started from a shell without cmux on its
 PATH draws none.
@@ -346,7 +358,10 @@ it started. Both carry the exact moment.
 "Focus terminal" focuses the cmux tab holding the session's process, and appears
 only when the process is in one; when cmux refuses, the chip shows the line cmux
 returned. "Open on claude.ai" appears only when a Remote Control link was
-recorded for the session, and opens it. When there is no terminal to focus, the
+recorded for the session, and opens it the way the pull request chip opens its
+page. claude.ai answers with a cross-origin opener policy that cuts its tab off
+from the board as it loads, so the board cannot find that tab again, and each
+click on this action opens another. When there is no terminal to focus, the
 chip offers "Copy resume command" instead, if the session has one:
 `claude --resume <session id>` for an interactive session, `claude attach <id>`
 for a background one. "Copy session id" is there whenever the listing carries
@@ -354,9 +369,10 @@ one. Names are never acted on, so nothing on the board says where a name came
 from.
 
 A Codex chip carries the thread's origin, its name or, failing that, its first
-line, and how long ago it was last active. "Open in Codex" opens
-`codex://threads/<id>` and is always available, because that id comes from the
-same listing being rendered; "Copy thread id" is there beside it. The word is
+line, and how long ago it was last active. "Open in Codex" hands
+`codex://threads/<id>` to the Codex app, which is where the thread opens, so no
+tab is opened for it; it is always available, because that id comes from the
+same listing being rendered, and "Copy thread id" is there beside it. The word is
 `open` when a live process holds the thread's writer lock, `not open` when the
 locks were read and this thread was not among them, and `unknown` when they
 could not be read at all. Only `not open` is resumable: it is the one answer
