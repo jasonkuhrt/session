@@ -1,6 +1,6 @@
 ---
 name: session
-description: Manage .session as the working record for Triage, Design, Batch, Queue, and Execute, and drive it with the session CLI, under the session's standing rules. Use when organizing session work, deciding, batching, queueing or executing items, refreshing context, maintaining the five stage records or RULES.md, or opening the session board.
+description: Manage .session as the working record for Triage, Design, Batch, Queue, and Execute, and drive it with the session CLI, under the session's standing rules. Use when organizing session work, deciding, batching, queueing or executing items, briefing an agent or recording its output, refreshing context, maintaining the five stage records, RULES.md and the ledger, or opening the session board.
 ---
 
 # Session
@@ -43,6 +43,14 @@ files directly. Queue and Execute hold one directory per batch with that batch's
 item files inside, so every item there belongs to a batch.
 [references/records.md](references/records.md) has the format.
 
+The root is closed. Beside the five stages and the `.gitignore`, it holds only
+`RULES.md`, `context/`, `ledger/`, `archive/`, and `ignore/`. `check` reports
+anything else there by name, with its fix, and names starting with `.` are
+outside the rule. `context/` is for agents: any file, in any layout, with no
+lifecycle, and `check` does not look inside it. `ledger/` is the session's
+shared log, described below. `archive/` and `ignore/` hold inactive history,
+outside agent context.
+
 Nothing has to be set up. A command that touches the records creates `.session`,
 the five stage directories, and the `.gitignore` when they are missing; `check`
 only reads what is on disk. `session init` does that scaffolding and nothing
@@ -65,6 +73,30 @@ lasts. Write it only from the user's own words, naming who set each rule and
 when; never add, relax, or reinterpret a rule on the agent's initiative. A
 session without standing rules has no `RULES.md`; nothing scaffolds one.
 
+## Ledger
+
+`ledger/` is the session's shared log: what another agent, or the user, must
+know to act correctly in this session and would not learn from the items, such
+as a design pivot, a batch abandoned, a rule learned, a decision taken outside
+any item, or `RULES.md` changed. Routine progress is not an entry, and neither
+is anything that needs the user, which is a stage move. An entry is never edited
+or deleted; a mistake is corrected by a later one. The ledger is memory, not a
+queue: nothing marks an entry read, and no entry waits for anyone.
+
+Write an entry with `session log "<by>" "<title>"` and its body, if it has one,
+on stdin. `<by>` is who is writing: `claude <session id>`, `codex <thread id>`,
+or a person's name. The command reads the clock, adds the branch, commit, and
+running batch it can observe, and writes one file named for the moment and the
+title, such as `2026-09-23 14-02-11Z — Pivot to per-item evidence.md`: flat
+frontmatter, then a body with no headings. An entry written by hand takes the
+same form and the same keys, which
+[references/records.md](references/records.md) defines. The engine writes no
+entry of its own; moves and closes are already in the files and in Git.
+
+On the first refresh, read `RULES.md`, then the ledger, then the stages. A later
+refresh reports each new entry as an added path; read it, because that is how
+agents sharing a session hear from each other.
+
 ## Work with the files
 
 Use the active worktree's `.session` directory. Never change checkouts just to
@@ -76,15 +108,25 @@ content in an editor, in the item files themselves, and run `session check` afte
 hand edits. [references/operations.md](references/operations.md) has the
 commands.
 
+An item is its own brief: point an agent at the item it is to execute, and keep
+what the item does not say under `context/<ID>/`, linked from its `### Evidence`.
+The agent's output goes back to the item the same way, into `### Evidence` or
+into files under `context/<ID>/` linked from there, so the item stays the one
+place its outcome is read. Write into the records only what they need; scratch
+work stays out of them. Anything that needs the user is a stage move: the item
+goes into the lane where the user decides it, as a new card or a moved one,
+because the lanes are where the user looks for it. Nothing in `context/`, the
+ledger, or any other file asks for the user's attention.
+
 Read [references/records.md](references/records.md) when creating, migrating, or
 moving items. It defines the small stage-specific format and supporting folders.
 Use stable IDs across stages. Do not infer authorization from an old filename,
 confidence label, or another agent's suggestion; reconcile the conversation.
 
 Before acting, refresh changed context with the CLI. Load `RULES.md` when it
-exists, the five stage records, and only relevant supporting context. Keep the
-path/hash inventory in the conversation; read changed files and avoid reloading
-unchanged material.
+exists, then the ledger, then the five stage records, and only relevant
+supporting context. Keep the path/hash inventory in the conversation; read
+changed files and avoid reloading unchanged material.
 `ignore/` and `archive/` are outside normal context: do not traverse, read,
 summarize, or follow links into them during a refresh. Read inactive history only
 when the user asks for it.
@@ -132,6 +174,25 @@ and its file operations, read
 [references/operations.md](references/operations.md). The UI owns no second copy
 of work state. Do not recreate a per-task viewer, content module, or task
 database.
+
+A board's header shows the branch's pull request and the Linear issues that
+the branch and the pull request name, as chips carrying only what gh and linear
+answered. Beside them sit an icon for each of the session's three pages and a
+terminal action that brings forward the worktree's cmux workspace or opens one.
+The chips and the terminal action open their target once, bringing back the tab
+or the workspace already open rather than opening another.
+
+The pages sit beside the board, under its address `/w/<key>/`, where the key
+names the worktree; they are read-only views of the files and follow them as
+the board does. The ledger page, `/w/<key>/ledger`, shows the entries newest
+first. The context page, `/w/<key>/context`, shows `context/` as a tree. The
+archive page, `/w/<key>/archive`, lists the archive's records newest first, for
+a person looking back rather than as context for an agent. The file page,
+`/w/<key>/file/<path>`, renders one Markdown file of the session at the item
+page's reading width. A Markdown file opens there from the context page, a
+record from the archive page, and a linked Markdown file from an item, so each
+has an address to send the user to. No page carries unread state or asks for
+anything.
 
 Validate after editing or migrating records. The checker proves structural
 invariants, not that a design is sound or the user agreed. The agent still owns

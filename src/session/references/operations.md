@@ -311,7 +311,9 @@ issues are not shown.", and when linear printed a reason, the daemon's log has
 it. Either way no issue is drawn, because a partial list would read as the
 whole one. When gh does not answer, only the branch is read.
 
-Everything the board opens outside itself is opened once. A click on a chip
+Everything the board opens outside itself is opened once, except a Markdown
+link whose address the URL parser rejects, which is left to the browser as a
+plain link. A click on a chip
 opens its pull request or issue in a tab named for its address, and a later
 click brings that tab forward as it is, without reloading it, instead of
 opening another; a tab is opened only when there is none. The name is found
