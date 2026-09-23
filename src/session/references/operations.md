@@ -462,26 +462,27 @@ ever drawn disabled with a reason: an empty selection and an occupied Execute
 are already visible in the lanes themselves. Execute is frozen: its cards can
 only be completed, which files them under `archive/`.
 
-A card is dragged by its whole self. While it is held, the board draws it where
-the move would write it and outlines the list it would land in: one group, or
-the lane's cards in no group. Held over a card of its own list it takes that
-card's place; arriving over a card of another list it goes in front of that
-card, or after it when its own centre is below the other's, as the sortable
-library places cards. Held over a group's heading or edge it joins the group,
-at its start over the group's top half and at its end over the bottom half,
-and a group the drag has emptied is still there to take it back until the
-drop. Held over the lane's own space, which runs on below the lane's last card,
-it leaves any group for the end of the lane. So a card dropped among a
-group's cards joins that group, one dropped among the lane's cards in no group
-leaves its group, and one dropped in another lane lands in no group there unless
-it was dropped among one of that lane's groups. `POST /api/move` carries that as
-`group`: the group it lands in, or `null`. A card in no group can go in front of
-another card in no group, or to the end of the lane, and never straight in front
-of a group, because the move names the card it goes before; held just after
-such a card, it is drawn past the groups that follow, where it would be written.
-Nothing drops into Queue or Execute; a Queue card can be reordered inside its
-own batch or dragged back to Batch, Design, or Triage, into a group there or
-not. Escape puts the held card back, and so does a move the engine refuses.
+A card is dragged by its whole self, and picking it up moves nothing. While it
+is held, the board draws it where the move would write it and outlines the list
+it would land in: one group, or the lane's cards in no group. Held over a card,
+it goes in front of that card while its own centre is above the card's centre
+and right after it once below, whichever list either is in, and it follows as it
+moves. Right after a card in no group it goes in front of whatever follows that
+card, a group included, so it lands just where it is drawn. Held over a group's
+heading or edge it joins the group, at its start over the group's top half and
+at its end over the bottom half, and a group the drag has emptied is still there
+to take it back until the drop. Held over the lane's heading it leaves any group
+for the start of the lane, in front of its first entry, a group included, and
+held over the space that runs on below the lane's last entry it leaves any group
+for the end of the lane. So a card dropped among a group's cards joins that
+group, one dropped among the lane's cards in no group leaves its group, and one
+dropped in another lane lands in no group there unless it was dropped among one
+of that lane's groups. `POST /api/move` carries that as `group`, the group it
+lands in or `null`, and names the card or, for a card in no group, the group it
+goes in front of. Nothing drops into Queue or Execute; a Queue card can be
+reordered inside its own batch or dragged back to Batch, Design, or Triage, into
+a group there or not. Escape puts the held card back, and so does a move the
+engine refuses.
 
 Beside the session, each board serves three read-only listings. `GET
 /w/<key>/api/ledger` is the ledger's entries, newest first by date and then by

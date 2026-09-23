@@ -24,6 +24,24 @@ export type LaneActions = CardActions & {
 /** The outline of the list a held card would be dropped into, the lane's own cards or one group's. */
 const landing = 'outline-2 outline-primary outline-dashed outline-offset-2'
 
+/**
+ * A part of a lane that takes a card into the lane itself, in no group. The
+ * heading takes it to the lane's start and the space below the last entry to
+ * its end; both rank with a group, so the pointer over them outweighs a card
+ * the held card merely overlaps. The rest of the lane ranks below everything
+ * and places a card by which half of the lane it is over.
+ */
+function useLaneDrop(stage: Stage, at: 'start' | 'end' | 'half', { accepts, pending }: Pick<LaneActions, 'accepts' | 'pending'>) {
+  return useDroppable({
+    id: `lane-${at}:${stage}`,
+    type: 'lane',
+    data: { stage, group: null, at },
+    accept: source => accepts(source.id, { stage, group: null }),
+    collisionPriority: at === 'half' ? CollisionPriority.Lowest : CollisionPriority.Normal,
+    disabled: pending,
+  })
+}
+
 export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneActions & {
   lane: LaneLayout
   /** How many items the stage holds on disk; a drag under way does not change it. */
@@ -33,16 +51,9 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
   executeOccupied: boolean
 }) {
   const { stage } = lane
-  const { ref } = useDroppable({
-    id: `lane:${stage}`,
-    type: 'lane',
-    data: { stage, group: null },
-    accept: source => actions.accepts(source.id, { stage, group: null }),
-    // Below a group and below every card, so the lane itself takes a card only
-    // where nothing else is under it.
-    collisionPriority: CollisionPriority.Lowest,
-    disabled: actions.pending,
-  })
+  const { ref: wholeRef } = useLaneDrop(stage, 'half', actions)
+  const { ref: startRef } = useLaneDrop(stage, 'start', actions)
+  const { ref: endRef } = useLaneDrop(stage, 'end', actions)
   const items = lane.entries.flatMap(entry => (entry.kind === 'item' ? [entry.item] : entry.items))
   const selected = items.flatMap(item => (actions.selectedIds.has(item.id) ? [item.id] : []))
   // A card in no group is sorted among the lane's other cards in no group, so
@@ -50,15 +61,18 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
   const looseIndex = new Map<string, number>()
   for (const entry of lane.entries) if (entry.kind === 'item') looseIndex.set(entry.item.id, looseIndex.size)
   return (
-    <section ref={ref} className="min-w-0 space-y-3">
-      <LaneHeading stage={stage} count={count} />
-      <LaneControls {...actions} stage={stage} selected={selected} count={count} executeOccupied={executeOccupied} />
-      {/* The space under the last entry is the lane's own: a card dropped
-          there lands at the end of the lane, in no group. */}
-      <div className={cn('min-h-32 space-y-3 rounded-lg pb-24', held?.to === stage && held.group === null && landing)}>
+    <section ref={wholeRef} className="min-w-0 space-y-3">
+      <div ref={startRef} className="space-y-3">
+        <LaneHeading stage={stage} count={count} />
+        <LaneControls {...actions} stage={stage} selected={selected} count={count} executeOccupied={executeOccupied} />
+      </div>
+      <div className={cn('min-h-32 space-y-3 rounded-lg', held?.to === stage && held.group === null && landing)}>
         {lane.entries.map(entry => (entry.kind === 'item'
           ? <WorkflowCard key={entry.item.id} {...actions} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
           : <GroupBlock key={`group:${entry.name}`} {...actions} stage={stage} name={entry.name} items={entry.items} landing={held?.to === stage && held.group === entry.name} />))}
+        {/* The space under the last entry is the lane's own: a card dropped
+            there lands at the end of the lane, in no group. */}
+        <div ref={endRef} className="h-24" />
       </div>
     </section>
   )
