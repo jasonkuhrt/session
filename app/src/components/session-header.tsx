@@ -2,6 +2,7 @@ import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
 import { Copyable } from './copyable'
+import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
 import { TerminalAction } from './terminal-action'
 import { Button } from './ui/button'
@@ -10,15 +11,15 @@ import { WorktreePicker } from './worktree-picker'
 
 /**
  * The board's header: which worktree and branch you are looking at, a way to
- * switch worktrees, where the work lives outside the files, a terminal here,
- * and the way back to every session. A page deeper than the board carries its
- * own trail instead, because by then where you are is a position rather than
- * a pair of fields.
+ * switch worktrees, where the work lives outside the files, the session's
+ * pages beside its lanes, a terminal here, and the way back to every session.
+ * A page deeper than the board carries its own trail instead, because by then
+ * where you are is a position rather than a pair of fields.
  *
  * Left to right after the worktree and branch: where the work lives outside
- * the files, then the terminal; "All sessions" stays at the far end. A source
- * that could not answer says so where its chip would be, and a control that
- * cannot act is not drawn.
+ * the files, then the ledger, context and archive pages, then the terminal;
+ * "All sessions" stays at the far end. A source that could not answer says so
+ * where its chip would be, and a control that cannot act is not drawn.
  */
 export function SessionHeader({ worktree, links, linksError, terminal }: {
   worktree: Session['worktree'] | undefined
@@ -35,6 +36,7 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
       <header className="flex flex-wrap items-center gap-8 border-b px-6 py-5">
         {worktree ? <WorktreeFields worktree={worktree} /> : null}
         <LinksGroup links={links} linksError={linksError} />
+        <PageLinks />
         {terminal && worktree ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
         <Button
           variant="ghost"

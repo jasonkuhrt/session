@@ -1,11 +1,14 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { basePath } from '../lib/base'
+import { basePath, isMarkdownPath } from '../lib/base'
+import { openOnceOnClick } from '../lib/open-once'
+import { copyLabel, useCopy } from './copyable'
 import { Button } from './ui/button'
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+  img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
   input: (props) => <input {...props} disabled />,
 } satisfies Components
 
@@ -33,28 +36,18 @@ export function Markdown({ children, collapseEvidence = false }: { children: str
   )
 }
 
-export function MarkdownLink({ href, children }: { href: string | undefined; children: React.ReactNode }) {
-  const [copied, setCopied] = React.useState(false)
+function MarkdownLink({ href, children }: { href: string | undefined; children: React.ReactNode }) {
+  const [copyState, copy] = useCopy()
   if (!href) return <span>{children}</span>
 
+  // An absolute path is a place on this machine rather than a page, so it is
+  // offered for the clipboard, the way every copy on the board reports itself.
   if (href.startsWith('/') && !href.startsWith('/files/')) {
     return (
       <span className="inline-flex max-w-full items-baseline gap-2">
         <code className="break-all">{href}</code>
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(href)
-              setCopied(true)
-              window.setTimeout(() => setCopied(false), 1_500)
-            } catch {
-              setCopied(false)
-            }
-          }}
-        >
-          {copied ? 'Copied' : 'Copy path'}
+        <Button variant="ghost" size="xs" onClick={() => void copy(href)}>
+          {copyLabel({ label: 'Copy path', state: copyState })}
         </Button>
       </span>
     )
@@ -64,14 +57,48 @@ export function MarkdownLink({ href, children }: { href: string | undefined; chi
     return <span>{children}</span>
   }
 
+  if (href.startsWith('#') || /^mailto:/iu.test(href)) return <a href={href}>{children}</a>
+
+  // Everything else opens beside the page, once: a second click brings back
+  // the tab the first one opened.
+  const target = linkHref(href)
   return (
-    <a href={fileHref(href)} target={href.startsWith('#') ? undefined : '_blank'} rel="noreferrer">
+    <a
+      href={target}
+      target="_blank"
+      rel="noreferrer"
+      onClick={openOnceOnClick(new URL(target, window.location.href).href)}
+    >
       {children}
     </a>
   )
 }
 
-/** Session-relative link targets resolve through this board's files route. */
+/**
+ * An image drawn from the session through the files route, as a link to the
+ * same file would reach it. A source the parser dropped as unsafe has nothing
+ * to load, so its description stands in its place.
+ */
+function MarkdownImage({ alt, src, title }: { alt: string | undefined; src: string | undefined; title: string | undefined }) {
+  if (!src) return <span>{alt}</span>
+  return <img alt={alt ?? ''} src={fileHref(src)} title={title} />
+}
+
+/**
+ * A path in a session's Markdown is relative to the session root, as the
+ * parser hands it over, already percent-encoded. A link to a Markdown file
+ * opens on the board's file page, where it is read the way an item is; any
+ * other file opens as it is on disk through the files route.
+ */
+function linkHref(href: string) {
+  if (/^https?:/iu.test(href) || href.startsWith('/files/')) return fileHref(href)
+  const path = href.replace(/^\.\//u, '')
+  const end = path.search(/[?#]/u)
+  const file = end === -1 ? path : path.slice(0, end)
+  return isMarkdownPath(file) ? `${basePath}/file/${path}` : fileHref(href)
+}
+
+/** Session-relative paths resolve through this board's files route. */
 function fileHref(href: string) {
   if (href.startsWith('#') || /^(https?:|mailto:)/iu.test(href)) return href
   if (href.startsWith('/files/')) return `${basePath}${href}`
