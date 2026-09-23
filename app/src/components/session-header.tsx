@@ -2,6 +2,7 @@ import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
 import { Copyable } from './copyable'
+import { LinearIssueChip } from './linear-issue-chip'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
 import { TerminalAction } from './terminal-action'
@@ -76,9 +77,10 @@ function WorktreeFields({ worktree }: { worktree: NonNullable<Session['worktree'
 }
 
 /**
- * Where the work lives outside the files: the pull request, and what each
- * source that could not answer said, in the place its chips would be. Nothing
- * is drawn when there is no pull request, no issue and no notice.
+ * Where the work lives outside the files: the pull request, the Linear issues
+ * the branch and the pull request name, and what each source that could not
+ * answer said, in the place its chips would be. Nothing is drawn when there is
+ * no pull request, no issue and no notice.
  */
 function LinksGroup({ links, linksError }: { links: Links | null; linksError: string | null }) {
   const notices = [...(links?.notices ?? []), ...(linksError === null ? [] : [linksError])]
@@ -88,6 +90,9 @@ function LinksGroup({ links, linksError }: { links: Links | null; linksError: st
   return (
     <div className="flex flex-wrap items-center gap-2">
       {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.reportedAt} />}
+      {links === null
+        ? null
+        : issues.map((issue) => <LinearIssueChip key={issue.id} issue={issue} reportedAt={links.reportedAt} />)}
       {notices.length === 0 ? null : <span className="text-xs text-muted-foreground">{notices.join(' · ')}</span>}
     </div>
   )

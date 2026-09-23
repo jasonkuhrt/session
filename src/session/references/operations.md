@@ -31,13 +31,17 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
 or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` and
-`log` are the commands that read stdin, in full and trimmed. `add` takes the new
-item's body there, reads it to its end whatever stdin is, and rejects an empty
-one. `log` takes the entry's body, which may be empty: a terminal gives none; a
-pipe or a file is read to its end; and a socket, which is what a program that
-spawns the CLI hands it, is read to its end once it starts sending within half
-a second. A socket that stays silent, like the one an agent's shell tool holds
-open without writing to it, gives no body instead of a wait that never ends.
+`log` are the commands that read stdin, in full and trimmed. A pipe or a file is
+read to its end. A socket, which is what a program that spawns the CLI hands
+it, is read to its end once it starts sending within half a second; one that
+stays silent that long, like the one an agent's shell tool holds open without
+writing to it, gives no body instead of a wait that never ends. `add` takes the
+new item's body, reads a terminal to its end too, and rejects an empty body, so
+on a silent socket it refuses at once. `log` takes the entry's body, which may
+be empty, and reads nothing from a terminal. When a body starts on its socket
+in the half second after that, it is too late: `log` has written the entry
+without it, says on stderr that the body was not written, and keeps the exit
+code of the write. A body that starts later still is not seen at all.
 
 ## Move and batch rules
 
@@ -263,10 +267,11 @@ conflict: the later one is listed with the reason and is not served.
 ## Use the board
 
 A board's header shows its worktree's name and Git branch, the branch's pull
-request, one icon apiece for the session's Ledger, Context and Archive pages, a
-terminal icon, and "All sessions", which links back to the index. The page icons
-carry no count and no age; each names its page on hover. A non-Git folder uses
-its own `.session` and has no branch, so it has no pull request either.
+request, the Linear issues the worktree names, one icon apiece for the session's
+Ledger, Context and Archive pages, a terminal icon, and "All sessions", which
+links back to the index. The page icons carry no count and no age; each names
+its page on hover. A non-Git folder uses its own `.session` and has no branch,
+so it has no pull request and names no issue either.
 
 The pull request is one chip, and the chip is a link to it: its number, gh's
 state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
@@ -284,28 +289,58 @@ draw no chip. Any other way gh can fail, missing from the daemon's PATH, signed
 out, or offline, reads "gh did not answer, so the pull request is not shown."
 where the chip would be.
 
-Everything the board opens outside itself is opened once. A click on the chip
-opens the pull request in a tab named for its address, and a later click brings
-that tab forward as it is, without reloading it, instead of opening another; a
-tab is opened only when there is none. The name is found from the board tab
-that opened it, so a board opened separately in a tab of its own opens its own,
-and a middle click or a click with a modifier is left to the browser, so a copy
-of the reader's own is always one gesture away. The tab keeps the board as its
-opener, because Chrome loses the name of a tab that has none as soon as it
-loads another site; that tab can therefore reach back to the board's.
+Each Linear issue the worktree names is one chip after the pull request's, and
+the chip is a link to the issue that shows its identifier, such as `HEA-5454`,
+and nothing else. The tooltip gives the issue's title, its state in linear's
+own words, and when linear was asked. The identifiers are read from the branch
+name and from the pull request's title and body: anything written the way
+Linear writes one, a team key of two or more letters and digits that starts with a letter, a hyphen, and a number
+that does not start with 0, in any case, so `jason/hea-5454-upgrade` names
+`HEA-5454`. They are uppercased and kept once each, in the order they are first
+named. Each is asked for with `linear issue view <ID> --json` in the worktree,
+so linear reads that worktree's own configuration, and a chip is drawn only
+when linear answers with the issue. An identifier linear cannot find draws
+nothing, so a word that only looks like one, such as `to-400` in a branch name,
+costs one ask and nothing else. Linear answers a moved issue's old identifier
+with the issue under its new one, so two names for one issue draw one chip. A
+worktree that names no identifier asks linear nothing. linear without an API
+key reads "linear is not authenticated, so issues are not shown." where the
+chips would be. linear missing from the daemon's PATH, offline, slower than
+fifteen seconds, or answering any other way reads "linear did not answer, so
+issues are not shown.", and when linear printed a reason, the daemon's log has
+it. Either way no issue is drawn, because a partial list would read as the
+whole one. When gh does not answer, only the branch is read.
 
-The daemon asks with `gh pr view` in the worktree and keeps only the last
-answer. A board is served it while it is under a minute old and no
-remote-tracking ref has moved since it was asked; otherwise the board's request
-asks again. While a board of that worktree is open, the daemon also asks again
-once the answer is a minute old, and at once when a push or a fetch moves a
-remote-tracking ref; with none open it spawns nothing. A page's stream carries
-only the events that page names, and an item page names only `changed`, so an
-open item page keeps nothing asking. Every ask pushes a `links` event to that
-worktree's open boards. The pull request is the one gh reports for the branch
-when it is asked, and nothing about it is inferred: no state is concluded from a
-timestamp, and no check outcome is one gh did not report. The index keeps no
-pull request column.
+Everything the board opens outside itself is opened once. A click on a chip
+opens its pull request or issue in a tab named for its address, and a later
+click brings that tab forward as it is, without reloading it, instead of
+opening another; a tab is opened only when there is none. The name is found
+from the board tab that opened it, so a board opened separately in a tab of
+its own opens its own, and a middle click or a click with a modifier is left
+to the browser, so a copy of the reader's own is always one gesture away. The
+tab keeps the board as its opener, because Chrome loses the name of a tab that
+has none as soon as it loads another site; that tab can therefore reach back to
+the board's.
+
+The daemon asks with `gh pr view` in the worktree and reads its branch with
+`git branch --show-current`, then asks linear about every identifier they
+name, four at a time, and keeps only the last answer, issues included. A board
+is served it while it is under a minute old and no remote-tracking ref has
+moved since it was asked; otherwise the board's request asks again. While a
+board of that worktree is open, the daemon also asks again once the answer is
+a minute old, and at once when a push or a fetch moves a remote-tracking ref;
+with none open it spawns nothing. A page's stream carries only the events that
+page names, and an item page names only `changed`, so an open item page keeps
+nothing asking. Every ask pushes a `links` event to that worktree's open
+boards. The pull request is the one gh reports for the branch when it is
+asked, and nothing about it is inferred: no state is concluded from a
+timestamp, and no check outcome is one gh did not report. An issue is drawn
+only once linear has confirmed it: the identifiers are read from the branch
+and the pull request, and each is confirmed by linear before it is drawn.
+Each ask costs one Linear API request per identifier, counted against the
+key's hourly limit, and a request Linear refuses for that reads "linear did
+not answer, so issues are not shown." The index keeps no pull request or issue
+column.
 
 The terminal icon, in the header and beside each name on the index, asks the
 daemon for a terminal in that worktree with `POST /api/terminal`. The daemon
@@ -346,14 +381,14 @@ A relative link in an item's Markdown names a path under the session. A link to
 a Markdown file opens it on the file page, below; a link to any other file, and
 an image, resolve through the board's files route, `/w/<key>/files/<path>`, so
 an image kept under `context/` shows in the body. Each link opens beside the
-page, once, in a tab named for its address, as the pull request chip does. The
-route serves any regular file under the session: Markdown as Markdown, PNG,
-JPEG, GIF, WebP and SVG images as images, and anything else as plain text.
-Nothing under the root's `ignore/` is served, whether asked for by path or
-reached through a link, and neither is anything that resolves outside the
-session; `archive/` is served, and a directory named `ignore` further down is an
-ordinary one. What the route serves never runs: it is sent sandboxed and is
-never sniffed into another type.
+page, once, in a tab named for its address, as the header's chips do. The route
+serves any regular file under the session: Markdown as Markdown, PNG, JPEG, GIF,
+WebP and SVG images as images, and anything else as plain text. Nothing under
+the root's `ignore/` is served, whether asked for by path or reached through a
+link, and neither is anything that resolves outside the session; `archive/` is
+served, and a directory named `ignore` further down is an ordinary one. What the
+route serves never runs: it is sent sandboxed and is never sniffed into another
+type.
 
 Select ready items in the Batch lane and use "Queue batch", which appears once
 something is selected, to name them and append the batch to Queue. The Queue

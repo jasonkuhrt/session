@@ -110,7 +110,7 @@ export const SessionApi = {
   trailers: (signal?: AbortSignal) =>
     run(send(HttpClientRequest.get(`${basePath}/api/trailers`), decodeTrailers), signal),
 
-  /** Where this worktree's work lives outside its files: its pull request, as gh last reported it. */
+  /** Where this worktree's work lives outside its files: its pull request and the Linear issues it names, as gh and linear last reported them. */
   links: (signal?: AbortSignal) =>
     run(send(HttpClientRequest.get(`${basePath}/api/links`), decodeLinks), signal),
 
