@@ -232,7 +232,7 @@ the chip is a link to the issue that shows its identifier, such as `HEA-5454`,
 and nothing else. The tooltip gives the issue's title, its state in linear's
 own words, and when linear was asked. The identifiers are read from the branch
 name and from the pull request's title and body: anything written the way
-Linear writes one, a team key that starts with a letter, a hyphen, and a number
+Linear writes one, a team key of two or more letters and digits that starts with a letter, a hyphen, and a number
 that does not start with 0, in any case, so `jason/hea-5454-upgrade` names
 `HEA-5454`. They are uppercased and kept once each, in the order they are first
 named. Each is asked for with `linear issue view <ID> --json` in the worktree,
