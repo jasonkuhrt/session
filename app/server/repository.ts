@@ -371,12 +371,17 @@ export const makeRepository = (directory: string) =>
         ),
       );
 
+    /** Whether a directory holds anything a reader sees: an entry whose name does not start with a dot. */
+    const holdsVisibleEntry = (path: string) =>
+      fs.readDirectory(path).pipe(Effect.map((names) => names.some((name) => !name.startsWith('.'))));
+
     /**
      * A stage directory keeps itself; the group directories it empties do not.
      * Every reader skips an entry whose name starts with a dot, so a group
      * directory holding only such entries, like Finder's `.DS_Store`, holds
-     * nothing and goes with them; left behind, it would keep its prefix and its
-     * name from the next group or item. A directory whose own name starts with
+     * nothing and goes with them. Readers pass over such a directory too, so
+     * one left behind by a write interrupted before this ran fails nothing
+     * until the next write removes it. A directory whose own name starts with
      * a dot is no group, and is left alone as every reader leaves it.
      */
     const pruneEmptyDirectories = Effect.gen(function*() {
@@ -387,9 +392,7 @@ export const makeRepository = (directory: string) =>
           if (name.startsWith('.')) continue;
           const child = join(stageDirectory, name);
           if ((yield* pathType(child)) !== 'Directory') continue;
-          if ((yield* fs.readDirectory(child)).every((entry) => entry.startsWith('.'))) {
-            yield* fs.remove(child, { recursive: true });
-          }
+          if (!(yield* holdsVisibleEntry(child))) yield* fs.remove(child, { recursive: true });
         }
       }
     }).pipe(
@@ -1337,6 +1340,9 @@ export const makeRepository = (directory: string) =>
       for (const name of yield* fs.readDirectory(execute)) {
         const match = name.startsWith('.') ? null : entryName.exec(name);
         if (match === null || (yield* pathType(join(execute, name))) !== 'Directory') continue;
+        // A batch directory holding nothing a reader sees is no batch, as the
+        // stage's own reading of it has it.
+        if (!(yield* holdsVisibleEntry(join(execute, name)))) continue;
         batches.push({ prefix: Number(match[1]!), name: match[2]! });
       }
       return batches.toSorted((left, right) => left.prefix - right.prefix)[0]?.name ?? null;

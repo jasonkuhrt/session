@@ -642,7 +642,10 @@ how it is written, or has a `date` that is not a UTC instant to the second;
 whose name is not the one its date and title give; or whose body, read the way
 the board renders it, has a heading. It does not look inside `context/`. It does
 not judge acceptance criteria or user approval. An empty stage is an empty
-directory.
+directory. A directory in a stage that holds nothing, or nothing but names
+starting with a dot, is no group to `check` or to any other reader, whatever
+its name, and the next write removes it; so one that an interrupted write
+leaves beside the entry that took its prefix or its name fails nothing.
 
 ## App development
 
