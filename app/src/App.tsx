@@ -31,14 +31,16 @@ function App() {
   const now = useNow()
   const terminal = useTerminalAvailable()
 
-  const load = React.useCallback(async (signal?: AbortSignal) => {
+  const load = React.useCallback(async (signal?: AbortSignal): Promise<Session | null> => {
     try {
       const next = await SessionApi.read(signal)
-      if (signal?.aborted) return
+      if (signal?.aborted) return null
       setSession(next)
       setLoadError(null)
+      return next
     } catch (error) {
       if (!signal?.aborted) setLoadError(error instanceof Error ? error.message : 'Could not load the session')
+      return null
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
@@ -48,7 +50,7 @@ function App() {
     await load()
   }, [load])
 
-  const { pending, failure, refreshed, mutate, settle } = useSessionMutations({
+  const { pending, failure, refreshed, mutate, follow } = useSessionMutations({
     session,
     onSession: setSession,
     reload,
@@ -127,10 +129,7 @@ function App() {
     const source = new EventSource(eventsUrl(['changed', 'agents', 'trailers', 'links']))
     const refetch = () => {
       if (busyRef.current) missedRef.current = true
-      else {
-        settle()
-        void load()
-      }
+      else void follow(load)
     }
     // The agents overlay, the trailers and the links are not the files, so none
     // is held back by a drag, and each is read only when its own answer changed.
@@ -151,7 +150,7 @@ function App() {
       refetchLinks()
     })
     return () => source.close()
-  }, [load, loadAgents, loadLinks, loadTrailers, settle])
+  }, [follow, load, loadAgents, loadLinks, loadTrailers])
 
   React.useEffect(() => {
     busyRef.current = busy
