@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { NodeRuntime, NodeServices } from '@effect/platform-node';
+import * as Clock from 'effect/Clock';
 import * as Console from 'effect/Console';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
@@ -147,52 +148,91 @@ const cliTry = <A>(operation: () => A) =>
 
 const unreadable = () => new SessionCliError({ message: 'Could not read the body from stdin.' });
 
-const readBody = Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable }).pipe(
-  Effect.map((text) => text.trim()),
+/** How long, in milliseconds, a socket on stdin has to start sending before it is taken to carry no body. */
+const socketGrace = 500;
+
+/**
+ * How much longer, in milliseconds, `log` keeps listening to a socket that was
+ * silent through the grace, so that a body arriving just after it is said to
+ * be too late rather than dropped in silence.
+ */
+const lateWatch = 500;
+
+/** What stdin is: a socket, a pipe, a file, or a device such as a terminal; null when it cannot be told. */
+const stdinType = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
+  return Option.isNone(info) ? null : info.value.type;
+});
+
+const readToEnd = Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable });
+
+/**
+ * A socket on stdin, which is what a program that spawns the CLI hands it,
+ * read the one way both commands read it: to its end once it starts sending
+ * within the grace, and as nothing when it stays silent through it, which is
+ * what the socket an agent's shell tool holds open without writing does.
+ * `watch` is how long past the grace to keep listening; a body that begins in
+ * it is not read but reported as `late`. Stdin is let go of either way, so
+ * the process can end with the socket still open.
+ */
+const readSocket = (watch: number) =>
+  Effect.gen(function*() {
+    const reader = yield* Effect.sync(() => Bun.stdin.stream().getReader());
+    const release = Effect.promise(() => reader.cancel());
+    const started = yield* Clock.currentTimeMillis;
+    const first = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable }).pipe(
+      Effect.timeoutOption(socketGrace + watch),
+    );
+    if (Option.isNone(first)) {
+      yield* release;
+      return { text: '', silent: true, late: false };
+    }
+    if (first.value.done) return { text: '', silent: false, late: false };
+    if ((yield* Clock.currentTimeMillis) - started > socketGrace) {
+      yield* release;
+      return { text: '', silent: true, late: true };
+    }
+    const decoder = new TextDecoder();
+    let text = '';
+    let chunk: Awaited<ReturnType<typeof reader.read>> = first.value;
+    for (; !chunk.done; chunk = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable })) {
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    return { text: text + decoder.decode(), silent: false, late: false };
+  });
+
+/**
+ * The new item's body for `add`: a terminal, a pipe or a file read to its
+ * end, and a socket read through the grace. An empty body is refused, so a
+ * socket that stays silent is refused at once instead of waited on for good.
+ */
+const readBody = Effect.gen(function*() {
+  if ((yield* stdinType) !== 'Socket') return (yield* readToEnd).trim();
+  const socket = yield* readSocket(0);
+  if (socket.silent) {
+    return yield* new SessionCliError({ message: 'The item body is empty; nothing arrived on stdin within half a second.' });
+  }
+  return socket.text.trim();
+}).pipe(
   Effect.filterOrFail(
     (body) => body !== '',
     () => new SessionCliError({ message: 'The item body is empty.' }),
   ),
 );
 
-/** How long a socket on stdin has to start sending before a ledger entry is taken to have no body. */
-const socketGrace = '500 millis';
-
-/**
- * Everything a socket on stdin sends once it has started within the grace,
- * and nothing when it stays silent, which is what the socket an agent's shell
- * tool holds open without writing to it does.
- */
-const socketText = Effect.gen(function*() {
-  const reader = Bun.stdin.stream().getReader();
-  const decoder = new TextDecoder();
-  const first = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable }).pipe(
-    Effect.timeoutOption(socketGrace),
-  );
-  if (Option.isNone(first)) {
-    // Letting go of the reader is what lets the process end with stdin still open.
-    yield* Effect.promise(() => reader.cancel());
-    return '';
-  }
-  let text = '';
-  for (let chunk = first.value; !chunk.done; chunk = yield* Effect.tryPromise({ try: () => reader.read(), catch: unreadable })) {
-    text += decoder.decode(chunk.value, { stream: true });
-  }
-  return text + decoder.decode();
-});
-
 /**
  * A ledger entry's body, which may be empty: none from a terminal or another
  * device; everything a pipe or a file holds, read to its end; and from a
- * socket, which is what a program spawning the CLI hands it, whatever it sends
- * once it starts within the grace.
+ * socket, whatever it sends once it starts within the grace. `late` is true
+ * when a body began to arrive in the moment after the grace, too late for it.
  */
 const entryBody = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem;
-  const info = yield* fs.stat('/dev/stdin').pipe(Effect.option);
-  if (Option.isNone(info) || info.value.type === 'CharacterDevice' || info.value.type === 'BlockDevice') return '';
-  if (info.value.type === 'Socket') return (yield* socketText).trim();
-  return (yield* Effect.tryPromise({ try: () => Bun.stdin.text(), catch: unreadable })).trim();
+  const type = yield* stdinType;
+  if (type === null || type === 'CharacterDevice' || type === 'BlockDevice') return { text: '', late: false };
+  if (type !== 'Socket') return { text: (yield* readToEnd).trim(), late: false };
+  const socket = yield* readSocket(lateWatch);
+  return { text: socket.text.trim(), late: socket.late };
 });
 
 const itemCount = (session: Session): number =>
@@ -346,11 +386,15 @@ const log = (options: Options, repository: SessionRepository, resolved: Worktree
     const entry = yield* repository.appendLedger({
       by: options.operands[0]!,
       title: options.operands[1]!,
-      body,
+      body: body.text,
       branch: resolved.worktree.branch,
       commit: resolved.git === null ? null : yield* headCommit(resolved.worktree.path),
     });
     yield* Console.log(`Logged ${entry.name.slice(0, -'.md'.length)}`);
+    // The entry stands as written; the line only says what did not make it in.
+    if (body.late) {
+      yield* Console.error('A body arrived on stdin after half a second, too late for this entry, and was not written.');
+    }
   });
 
 const check = (repository: SessionRepository) =>

@@ -31,13 +31,17 @@ bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree che
 
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`
 or `Moved BE-16 to BATCH`. Errors print a message on stderr and exit 1. `add` and
-`log` are the commands that read stdin, in full and trimmed. `add` takes the new
-item's body there, reads it to its end whatever stdin is, and rejects an empty
-one. `log` takes the entry's body, which may be empty: a terminal gives none; a
-pipe or a file is read to its end; and a socket, which is what a program that
-spawns the CLI hands it, is read to its end once it starts sending within half
-a second. A socket that stays silent, like the one an agent's shell tool holds
-open without writing to it, gives no body instead of a wait that never ends.
+`log` are the commands that read stdin, in full and trimmed. A pipe or a file is
+read to its end. A socket, which is what a program that spawns the CLI hands
+it, is read to its end once it starts sending within half a second; one that
+stays silent that long, like the one an agent's shell tool holds open without
+writing to it, gives no body instead of a wait that never ends. `add` takes the
+new item's body, reads a terminal to its end too, and rejects an empty body, so
+on a silent socket it refuses at once. `log` takes the entry's body, which may
+be empty, and reads nothing from a terminal. When a body starts on its socket
+in the half second after that, it is too late: `log` has written the entry
+without it, says on stderr that the body was not written, and keeps the exit
+code of the write. A body that starts later still is not seen at all.
 
 ## Move and batch rules
 
