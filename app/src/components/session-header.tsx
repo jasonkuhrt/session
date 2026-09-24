@@ -1,7 +1,6 @@
 import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
-import { Copyable } from './copyable'
 import { LinearIssueChip } from './linear-issue-chip'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
@@ -13,16 +12,18 @@ import { TooltipProvider } from './ui/tooltip'
 import { WorktreePicker } from './worktree-picker'
 
 /**
- * The board's header: which worktree and branch you are looking at, a way to
- * switch worktrees, where the work lives outside the files, the session's
- * pages beside its lanes, a terminal here, and the way back to every session.
- * A page deeper than the board carries its own trail instead, because by then
- * where you are is a position rather than a pair of fields.
+ * The board's header: the way back to every session, the worktree you are
+ * looking at with the branch checked out in it and a way to switch, where the
+ * work lives outside the files, the session's pages beside its lanes, a
+ * terminal here, and the board's own settings. A page deeper than the board
+ * carries its own trail instead, because by then where you are is a position
+ * rather than a control.
  *
- * Left to right after the worktree and branch: where the work lives outside
- * the files, then the ledger, context and archive pages, then the terminal;
- * "All sessions" stays at the far end. A source that could not answer says so
- * where its chip would be, and a control that cannot act is not drawn.
+ * Left to right: "All sessions", where every trail starts too, then the
+ * worktree, then where the work lives outside the files, then the ledger,
+ * context and archive pages, then the terminal; the settings stay at the far
+ * end. A source that could not answer says so where its chip would be, and a
+ * control that cannot act is not drawn.
  */
 export function SessionHeader({ worktree, links, linksError, terminal }: {
   worktree: Session['worktree'] | undefined
@@ -37,47 +38,24 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
   return (
     <TooltipProvider>
       {/* The header wraps rather than pushing the page wider than the window. */}
-      <header className="flex flex-wrap items-center gap-8 border-b px-6 py-5">
-        {worktree ? <WorktreeFields worktree={worktree} /> : null}
-        <LinksGroup links={links} linksError={linksError} />
-        <PageLinks />
-        {terminal && worktree ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+      <header className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b px-6 py-4">
         <Button
           variant="ghost"
           size="sm"
-          className="ml-auto"
+          className="-ml-2.5"
           nativeButton={false}
           title={tip('Every worktree the daemon is tracking.')}
           render={<a aria-label="All sessions" href="/" />}
         >
           <LayoutGrid /> All sessions
         </Button>
-        <SettingsMenu />
+        {worktree ? <WorktreePicker current={worktree} /> : null}
+        <LinksGroup links={links} linksError={linksError} />
+        <PageLinks />
+        {terminal && worktree ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+        <SettingsMenu className="ml-auto" />
       </header>
     </TooltipProvider>
-  )
-}
-
-/** The branch checked out here, and the worktree, with the way to switch to another. */
-function WorktreeFields({ worktree }: { worktree: NonNullable<Session['worktree']> }) {
-  const tip = useTip()
-  return (
-    <dl className="flex gap-8 text-sm">
-      <div>
-        <dt className="text-muted-foreground" title={tip('The Git branch checked out in this worktree.')}>Branch</dt>
-        <dd className="font-medium">
-          {worktree.branch === null
-            ? 'No branch'
-            : <Copyable value={worktree.branch}>{worktree.branch}</Copyable>}
-        </dd>
-      </div>
-      <div>
-        <dt className="text-muted-foreground" title={tip('The worktree whose session this board shows; switch to another below.')}>Worktree</dt>
-        <dd>
-          <WorktreePicker current={worktree} />
-        </dd>
-      </div>
-    </dl>
   )
 }
 

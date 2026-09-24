@@ -1,9 +1,9 @@
 import * as React from 'react'
 
-import type { WorktreeSummary } from '../../contract'
+import type { Session, WorktreeSummary } from '../../contract'
 import { IndexApi } from '../lib/api'
-import { parentPath } from '../lib/format'
-import { Copyable } from './copyable'
+import { useTip } from './tip'
+import { Button } from './ui/button'
 import {
   Combobox,
   ComboboxContent,
@@ -11,53 +11,46 @@ import {
   ComboboxInput,
   ComboboxItem,
   ComboboxList,
+  ComboboxTrigger,
 } from './ui/combobox'
 
 /** A worktree this board can switch to. */
-type Option = { key: string; name: string; path: string }
+type Option = { key: string; name: string; path: string; branch: string | null }
 
 /**
- * How the list names a worktree: what it is called, then where it sits. It
- * wraps rather than overflowing, because the popup is as wide as the control
- * it hangs off and a worktree path is longer than any sane control; a name cut
- * off mid-path is worse than one that takes a second line.
+ * How the picker names a worktree, on the control and in the list alike: its
+ * name over the branch checked out in it, a line each. A line too long for the
+ * popup is cut short rather than wrapped, so every option is the same two
+ * lines and the list reads down one edge.
  */
-function WorktreeLabel({ name, path }: Option) {
-  const parent = parentPath(path)
+function WorktreeLabel({ name, branch }: { name: string; branch: string | null }) {
   return (
-    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-      <span className="font-medium">{name}</span>
-      {parent === '' ? null : <span className="wrap-anywhere text-muted-foreground">{parent}</span>}
+    <span className="grid min-w-0 flex-1 text-left">
+      <span className="truncate font-medium">{name}</span>
+      <span className="truncate text-xs font-normal text-muted-foreground">{branch ?? 'No branch'}</span>
     </span>
   )
 }
 
-/**
- * Characters of room for the control, which is also the width the popup takes.
- * Half the worktrees on a busy machine name themselves inside it, and the rest
- * wrap; the longest real one wants about four times a sane header's width.
- */
-const controlCharacters = 44
-
-/** Typing narrows on what a person would type: the name, or where it lives. */
+/** Typing narrows on what the list shows: the name, or the branch. */
 const matches = (option: Option, query: string) => {
   const needle = query.trim().toLowerCase()
-  return needle === '' || `${option.name} ${option.path}`.toLowerCase().includes(needle)
+  return needle === '' || `${option.name} ${option.branch ?? ''}`.toLowerCase().includes(needle)
 }
 
 /**
- * The worktree the board is showing, and a way to switch to another one.
+ * The worktree the board is showing and the branch checked out in it, as the
+ * control that switches to another worktree.
  *
  * The options are the served rows of the root index; a row the daemon refuses
  * to serve is not somewhere this can go. Until that list arrives, and if it
- * never does, the name is the plain text it was before the picker existed: the
- * board itself never depends on the index answering.
- *
- * The directory sits beside the control rather than inside it, because it is a
- * path someone copies and a control cannot hold a second control.
+ * never does, the name and branch are plain text: the board itself never
+ * depends on the index answering. The branch on the control is the board's
+ * own read, which is newer than the index's whenever the two differ.
  */
-export function WorktreePicker({ current }: { current: { name: string; path: string } }) {
+export function WorktreePicker({ current }: { current: NonNullable<Session['worktree']> }) {
   const [worktrees, setWorktrees] = React.useState<readonly WorktreeSummary[] | null>(null)
+  const tip = useTip()
 
   // The registry of served worktrees lives at the root whichever page is open.
   // It is the picker's own concern, so no surface has to fetch it to have one.
@@ -68,7 +61,7 @@ export function WorktreePicker({ current }: { current: { name: string; path: str
         const next = await IndexApi.read(controller.signal)
         if (!controller.signal.aborted) setWorktrees(next)
       } catch {
-        // Nothing to say: the header falls back to the plain name.
+        // Nothing to say: the header falls back to the plain name and branch.
       }
     }
     void load()
@@ -77,43 +70,46 @@ export function WorktreePicker({ current }: { current: { name: string; path: str
 
   const options: Option[] = (worktrees ?? [])
     .filter((row) => row.conflict === null)
-    .map((row) => ({ key: row.key, name: row.name, path: row.path }))
+    .map((row) => ({ key: row.key, name: row.name, path: row.path, branch: row.branch }))
     .toSorted((left, right) => left.name.localeCompare(right.name))
   const selected = options.find((option) => option.path === current.path) ?? null
-  const parent = parentPath(current.path)
+
+  if (options.length === 0) return <WorktreeLabel name={current.name} branch={current.branch} />
 
   return (
-    <span className="flex items-baseline gap-2">
-      {options.length === 0 ? <span className="font-medium">{current.name}</span> : (
-        <Combobox
-          items={options}
-          value={selected}
-          itemToStringLabel={(option: Option) => option.name}
-          isItemEqualToValue={(left: Option, right: Option) => left.key === right.key}
-          filter={matches}
-          onValueChange={(next: Option | null) => {
-            if (next === null || next.key === selected?.key) return
-            window.location.assign(`/w/${next.key}/`)
-          }}
-        >
-          <ComboboxInput aria-label="Switch worktree" placeholder="Switch worktree" size={controlCharacters} />
-          <ComboboxContent>
-            <ComboboxEmpty>No worktree matches</ComboboxEmpty>
-            <ComboboxList>
-              {(option: Option) => (
-                <ComboboxItem key={option.key} value={option}>
-                  <WorktreeLabel {...option} />
-                </ComboboxItem>
-              )}
-            </ComboboxList>
-          </ComboboxContent>
-        </Combobox>
-      )}
-      {parent === '' ? null : (
-        <Copyable value={current.path}>
-          <span className="text-sm font-normal text-muted-foreground">{parent}</span>
-        </Copyable>
-      )}
-    </span>
+    <Combobox
+      items={options}
+      value={selected}
+      itemToStringLabel={(option: Option) => option.name}
+      isItemEqualToValue={(left: Option, right: Option) => left.key === right.key}
+      filter={matches}
+      // Typing narrows to the worktree wanted, so Enter goes there.
+      autoHighlight
+      onValueChange={(next: Option | null) => {
+        if (next === null || next.key === selected?.key) return
+        window.location.assign(`/w/${next.key}/`)
+      }}
+    >
+      <ComboboxTrigger
+        aria-label="Switch worktree"
+        title={tip('The worktree whose session this board shows, and the branch checked out in it. Pick another worktree to switch to its board.')}
+        render={<Button variant="outline" className="h-auto max-w-80 justify-between gap-3 py-1.5" />}
+      >
+        <WorktreeLabel name={current.name} branch={current.branch} />
+      </ComboboxTrigger>
+      {/* The popup grows to the longest option, up to a cap past which a line
+          is cut short, so a long name does not squeeze every other one. */}
+      <ComboboxContent className="w-auto max-w-[min(36rem,var(--available-width))]">
+        <ComboboxInput showTrigger={false} aria-label="Find a worktree" placeholder="Find a worktree" />
+        <ComboboxEmpty>No worktree matches</ComboboxEmpty>
+        <ComboboxList className="max-h-[min(28rem,calc(var(--available-height)---spacing(9)))]">
+          {(option: Option) => (
+            <ComboboxItem key={option.key} value={option}>
+              <WorktreeLabel name={option.name} branch={option.branch} />
+            </ComboboxItem>
+          )}
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   )
 }
