@@ -1,7 +1,8 @@
-import { Check, Copy, ExternalLink, SquareTerminal } from 'lucide-react'
+import { Check, Copy, ExternalLink, History, SquareTerminal, X } from 'lucide-react'
 
 import type { Action } from '../lib/agents'
 import { cn } from '../lib/utils'
+import type { CopyState } from './copyable'
 
 /**
  * The parts both agent surfaces draw, kept where each can only be drawn one
@@ -24,11 +25,14 @@ export function Dot({ tone }: { tone: 'on' | 'attention' | 'off' | 'unknown' }) 
 
 /**
  * What an action looks like wherever it is rendered: a terminal to go to, an
- * app to hand off to, or a value for the clipboard that reports itself once it
- * is taken.
+ * app to hand off to, a command that resumes the session, or its id. A copy
+ * reports what happened to it, a tick once it is taken and a cross when the
+ * clipboard refused it, because on the board's strip the icon is all there is.
  */
-export function ActionIcon({ action, copied }: { action: Action; copied: boolean }) {
+export function ActionIcon({ action, copy = 'idle' }: { action: Action; copy?: CopyState }) {
   if (action.kind === 'focus') return <SquareTerminal />
   if (action.kind === 'link') return <ExternalLink />
-  return copied ? <Check /> : <Copy />
+  if (copy === 'copied') return <Check />
+  if (copy === 'failed') return <X />
+  return action.subject === 'resume' ? <History /> : <Copy />
 }

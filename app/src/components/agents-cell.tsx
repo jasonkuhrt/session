@@ -119,7 +119,7 @@ function CopyItem({ action }: { action: Extract<Action, { kind: 'copy' }> }) {
       aria-label={`${action.label}: ${action.value}`}
       onClick={() => void copy(action.value)}
     >
-      <ActionIcon action={action} copied={state === 'copied'} />
+      <ActionIcon action={action} copy={state} />
       {copyLabel({ label: action.label, state })}
     </DropdownMenuItem>
   )
@@ -155,7 +155,7 @@ function FocusItem({ action, onSettled }: {
         })()
       }}
     >
-      <ActionIcon action={action} copied={false} /> {action.label}
+      <ActionIcon action={action} /> {action.label}
     </DropdownMenuItem>
   )
 }
@@ -220,7 +220,7 @@ function SessionPill({ pill }: { pill: Pill }) {
                     />
                   }
                 >
-                  <ActionIcon action={action} copied={false} /> {action.label}
+                  <ActionIcon action={action} /> {action.label}
                 </DropdownMenuItem>
               )
           )}
