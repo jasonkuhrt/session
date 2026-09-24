@@ -3,6 +3,7 @@ import { BoardPageFrame, ListingEmpty, PageLoading } from './components/board-pa
 import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
+import { archiveStateMeaning } from './lib/archive'
 import { filePageHref } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
@@ -17,37 +18,6 @@ const columnMeaning = {
   title: 'The item’s title when it was filed; it opens the record, which is the item’s text exactly as its file held it.',
   state: 'How the item left the stages: done when it was finished, or the stage it was filed from.',
 } as const
-
-/**
- * What a state word says about how an item left. `done` is finished work;
- * every other word is the stage `session archive` filed it from, which sets an
- * item aside without finishing it.
- */
-const stateMeaning = (state: string) => {
-  switch (state) {
-    case 'done': {
-      return 'done: it was finished, filed with session done, the board’s Complete work, or a commit’s Session-Done trailer.'
-    }
-    case 'triage': {
-      return 'triage: it was filed from Triage with session archive, a candidate that was rejected.'
-    }
-    case 'design': {
-      return 'design: it was filed from Design with session archive, while its design questions were still open.'
-    }
-    case 'batch': {
-      return 'batch: it was filed from Batch with session archive, settled work that never ran.'
-    }
-    case 'queue': {
-      return 'queue: it was filed from Queue with session archive, before its batch started.'
-    }
-    case 'execute': {
-      return 'execute: it was filed from Execute with session archive, a started item that was abandoned.'
-    }
-    default: {
-      return `${state}: the state the record’s file name gives.`
-    }
-  }
-}
 
 /**
  * The session's archive, newest first by the day in each name. It is memory,
@@ -118,7 +88,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
         </a>
       </TableCell>
       <TableCell>
-        <Explained meaning={stateMeaning(state)}>{state}</Explained>
+        <Explained meaning={archiveStateMeaning(state)}>{state}</Explained>
       </TableCell>
     </TableRow>
   )
