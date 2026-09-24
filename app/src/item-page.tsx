@@ -247,7 +247,7 @@ function Detail({
       </div>
 
       <div className="mt-10 border-t pt-10">
-        <Markdown collapseEvidence>{item.body || '_No detail has been written yet._'}</Markdown>
+        <Markdown collapseEvidence page>{item.body || '_No detail has been written yet._'}</Markdown>
       </div>
     </article>
   )

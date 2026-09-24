@@ -3,6 +3,7 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { absoluteHref, basePath, isMarkdownPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
+import { cn } from '../lib/utils'
 import { copyLabel, useCopy } from './copyable'
 import { Button } from './ui/button'
 
@@ -12,13 +13,21 @@ const markdownComponents = {
   input: (props) => <input {...props} disabled />,
 } satisfies Components
 
-export function Markdown({ children, collapseEvidence = false }: { children: string; collapseEvidence?: boolean }) {
+export function Markdown({ children, collapseEvidence = false, page = false }: {
+  children: string
+  collapseEvidence?: boolean
+  /**
+   * Whether the Markdown is the page itself, read down the middle of the
+   * window, as an item or a file is: its code then runs the window's width.
+   */
+  page?: boolean
+}) {
   const evidenceMatch = collapseEvidence ? /^###\s+Evidence\s*$/imu.exec(children) : null
   const primary = evidenceMatch ? children.slice(0, evidenceMatch.index) : children
   const evidence = evidenceMatch ? children.slice(evidenceMatch.index + evidenceMatch[0].length).trim() : null
 
   return (
-    <div className="markdown-reader">
+    <div className={cn('markdown-reader', page && 'markdown-page')}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
         {primary}
       </ReactMarkdown>

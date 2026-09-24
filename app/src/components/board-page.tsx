@@ -44,7 +44,9 @@ export type Crumb = {
  * A page under a board: the trail that places it, what went wrong reading it,
  * and the reading column its content fills. The item page and the session's
  * listings and files share it, so every page under a board is entered and left
- * the same way.
+ * the same way. The page is the container its content measures the window
+ * by, which is what lets a code block in the column run the window's width
+ * without counting a scroll bar in it.
  */
 export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem, notice = null, children }: {
   /** What the page is, first in the tab's name. */
@@ -62,7 +64,7 @@ export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem,
 }) {
   return (
     <TooltipProvider>
-      <div className="min-h-dvh bg-background text-foreground">
+      <div className="@container min-h-dvh bg-background text-foreground">
         {/* One tab per page, so a row of them is readable. React hoists this into the head. */}
         <title>{worktree === null ? `${title} · Session` : `${title} · ${worktree} · Session`}</title>
         <PageTrail worktree={worktree} boardMeaning={boardMeaning} crumbs={crumbs} />

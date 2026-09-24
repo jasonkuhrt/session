@@ -118,7 +118,7 @@ function FileContent({ path, markdown, text }: { path: string; markdown: boolean
   if (!markdown) return <NotMarkdown path={path} />
   if (text === null) return null
   if (text.kind === 'refused') return <p className="text-sm text-muted-foreground">{text.sentence}</p>
-  return <Markdown collapseEvidence>{withFrontmatterShown(text.text)}</Markdown>
+  return <Markdown collapseEvidence page>{withFrontmatterShown(text.text)}</Markdown>
 }
 
 /** What the page says of a file it does not render, and the way to see the file as it is. */
