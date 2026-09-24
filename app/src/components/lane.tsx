@@ -7,9 +7,9 @@ import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { groupMeta, stageMeta } from '../lib/workflow'
+import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import type { CardActions } from './workflow-card'
 import { WorkflowCard } from './workflow-card'
 
@@ -80,22 +80,18 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
 
 function LaneHeading({ stage, count }: { stage: Stage; count: number }) {
   const meta = stageMeta[stage]
+  const tip = useTip()
   return (
     <div className="flex items-center gap-2">
       {/* What the stage is for is one hover away rather than a line under
           every lane; the heading is what carries it. */}
       <h2 className="font-medium">
-        <Tooltip>
-          <TooltipTrigger className="cursor-default rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-            {meta.label}
-          </TooltipTrigger>
-          <TooltipContent>{meta.hint}</TooltipContent>
-        </Tooltip>
+        <Explained meaning={meta.hint}>{meta.label}</Explained>
       </h2>
       <Badge
         variant={count === 0 ? 'outline' : 'secondary'}
         className={cn(count === 0 && 'text-muted-foreground')}
-        title="How many items are in this stage."
+        title={tip('How many items are in this stage.')}
       >
         {count}
       </Badge>
@@ -124,34 +120,30 @@ function LaneControls({ stage, selected, count, executeOccupied, pending, onGrou
       {canGroup || canQueue ? (
         <div className="flex gap-2">
           {canGroup ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
-              >
-                Group ({selected.length})
-              </TooltipTrigger>
-              <TooltipContent>Name the selected items as a group in {stageMeta[stage].label}.</TooltipContent>
-            </Tooltip>
+            <Tip
+              meaning={`Name the selected items as a group in ${stageMeta[stage].label}.`}
+              render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
+            >
+              Group ({selected.length})
+            </Tip>
           ) : null}
           {canQueue ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(selected, null)} />}
-              >
-                Queue batch ({selected.length})
-              </TooltipTrigger>
-              <TooltipContent>Name the selected items as a batch and append it to Queue.</TooltipContent>
-            </Tooltip>
+            <Tip
+              meaning="Name the selected items as a batch and append it to Queue."
+              render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(selected, null)} />}
+            >
+              Queue batch ({selected.length})
+            </Tip>
           ) : null}
         </div>
       ) : null}
       {canStart ? (
-        <Tooltip>
-          <TooltipTrigger render={<Button variant="outline" className="w-full" disabled={pending} onClick={onStart} />}>
-            Start next batch
-          </TooltipTrigger>
-          <TooltipContent>Move the first queued batch into Execute.</TooltipContent>
-        </Tooltip>
+        <Tip
+          meaning="Move the first queued batch into Execute."
+          render={<Button variant="outline" className="w-full" disabled={pending} onClick={onStart} />}
+        >
+          Start next batch
+        </Tip>
       ) : null}
     </>
   )
@@ -192,32 +184,23 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
     <div ref={ref} className={cn('space-y-2 rounded-xl border p-2', lands && landing)}>
       <div className="flex items-start gap-1">
         <h3 className="min-w-0 flex-1 py-1 text-xs font-medium tracking-wide break-words text-foreground">
-          <Tooltip>
-            <TooltipTrigger className="cursor-default rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-              {name}
-            </TooltipTrigger>
-            <TooltipContent>{groupMeta[stage].heading}</TooltipContent>
-          </Tooltip>
+          <Explained meaning={groupMeta[stage].heading} className="block">{name}</Explained>
         </h3>
         {canQueue ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onQueue(ids, name)} />}
-            >
-              Queue batch
-            </TooltipTrigger>
-            <TooltipContent>Name these items as a batch, starting from the name of this group, and append it to Queue.</TooltipContent>
-          </Tooltip>
+          <Tip
+            meaning="Name these items as a batch, starting from the name of this group, and append it to Queue."
+            render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onQueue(ids, name)} />}
+          >
+            Queue batch
+          </Tip>
         ) : null}
         {canUngroup ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onUngroup(ids)} />}
-            >
-              Ungroup
-            </TooltipTrigger>
-            <TooltipContent>Take these items out of the group, each to the end of {stageMeta[stage].label}.</TooltipContent>
-          </Tooltip>
+          <Tip
+            meaning={`Take these items out of the group, each to the end of ${stageMeta[stage].label}.`}
+            render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onUngroup(ids)} />}
+          >
+            Ungroup
+          </Tip>
         ) : null}
       </div>
       {items.map((item, index) => <WorkflowCard key={item.id} {...actions} item={item} index={index} stage={stage} />)}

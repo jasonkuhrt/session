@@ -1,6 +1,6 @@
 import type { ArchiveRecord } from '../contract'
-import { Explained } from './components/agent-marks'
 import { BoardPageFrame, ListingEmpty, PageLoading } from './components/board-page'
+import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
 import { filePageHref } from './lib/base'
@@ -91,6 +91,7 @@ const recordLink = 'rounded-sm underline-offset-4 outline-none hover:underline f
 
 /** One record: the day, the item, its title, and how it left, as its name gives them. */
 function RecordRow({ record }: { record: ArchiveRecord }) {
+  const tip = useTip()
   const { date, id, title, state } = record
   if (date === null || id === null || title === null || state === null) {
     return (
@@ -99,7 +100,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
           <a
             className={recordLink}
             href={filePageHref(record.path)}
-            title="This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file."
+            title={tip('This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file.')}
           >
             {record.name}
           </a>
@@ -112,7 +113,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
       <TableCell className="font-mono text-muted-foreground tabular-nums">{date}</TableCell>
       <TableCell className="font-mono">{id}</TableCell>
       <TableCell className="whitespace-normal">
-        <a className={recordLink} href={filePageHref(record.path)} title={`Read the record of ${id} on a page of its own.`}>
+        <a className={recordLink} href={filePageHref(record.path)} title={tip(`Read the record of ${id} on a page of its own.`)}>
           {title}
         </a>
       </TableCell>

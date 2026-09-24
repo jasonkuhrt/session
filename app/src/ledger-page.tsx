@@ -1,6 +1,7 @@
 import type { LedgerEntry } from '../contract'
 import { BoardPageFrame, ListingEmpty, ListingNotices, PageLoading } from './components/board-page'
 import { Markdown } from './components/markdown'
+import { useTip } from './components/tip'
 import { Card, CardContent } from './components/ui/card'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
 import { useNow } from './lib/clock'
@@ -69,19 +70,20 @@ export function LedgerPage() {
 
 /** One entry: what it says, when it was written, its body, and the rest of what it records. */
 function EntryCard({ entry, now }: { entry: LedgerEntry; now: number }) {
+  const tip = useTip()
   return (
     <Card>
       <CardContent className="space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-pretty text-lg leading-snug font-medium">{entry.title}</h2>
-          <span className="shrink-0 text-xs text-muted-foreground" title={`Written at ${absoluteTime(entry.date)}.`}>
+          <span className="shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(entry.date)}.`)}>
             {relativeTime(entry.date, now)}
           </span>
         </div>
         {entry.body === '' ? null : <Markdown>{entry.body}</Markdown>}
         <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
           {keysOf(entry).map(({ key, value, meaning }) => (
-            <span key={key} className="wrap-anywhere" title={meaning}>
+            <span key={key} className="wrap-anywhere" title={tip(meaning)}>
               {key}: {value}
             </span>
           ))}

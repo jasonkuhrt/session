@@ -7,6 +7,7 @@ import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { CompleteDialog } from './components/session-dialogs'
 import { StageControl } from './components/stage-control'
+import { useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { eventsUrl, SessionApi } from './lib/api'
 import { basePath } from './lib/base'
@@ -164,6 +165,7 @@ function Detail({
   onMove: (to: Stage) => void
   onComplete: () => void
 }) {
+  const tip = useTip()
   return (
     <article>
       {/* A group's name on its own is a phrase nobody can place, so it is
@@ -172,7 +174,7 @@ function Detail({
       {item.group
         ? (
           <dl className="mb-3 flex items-baseline gap-2 text-sm">
-            <dt className="text-muted-foreground" title={groupMeta[stage].field}>{groupMeta[stage].label}</dt>
+            <dt className="text-muted-foreground" title={tip(groupMeta[stage].field)}>{groupMeta[stage].label}</dt>
             <dd className="font-medium">{item.group}</dd>
           </dl>
         )
@@ -194,7 +196,7 @@ function Detail({
             className="w-fit"
             onClick={onComplete}
             disabled={pending}
-            title="Finish this item: it leaves Execute and is filed under archive/ as done."
+            title={tip('Finish this item: it leaves Execute and is filed under archive/ as done.')}
           >
             <CheckCircle2 /> Complete work
           </Button>

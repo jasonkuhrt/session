@@ -4,8 +4,8 @@ import type { PullRequest } from '../../contract'
 import { absoluteTime } from '../lib/format'
 import { checksMark, reviewMeaning, reviewWord, stateMeaning, stateWord } from '../lib/links'
 import { openOnceOnClick } from '../lib/open-once'
+import { Tip } from './tip'
 import { Badge } from './ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /** The glyph for each way the checks can stand; drawn in the chip's own muted text, never in a colour. */
 const glyphs = {
@@ -26,30 +26,8 @@ export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedA
   const mark = checksMark(pr.checks)
   const Glyph = mark === null ? null : glyphs[mark.kind]
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Badge
-            variant="outline"
-            render={
-              <a
-                aria-label={`Pull request #${pr.number}: ${pr.title}`}
-                href={pr.url}
-                rel="noreferrer"
-                target="_blank"
-                onClick={openOnceOnClick(pr.url)}
-              />
-            }
-          />
-        }
-      >
-        <span>#{pr.number}</span>
-        <span className="font-normal text-muted-foreground">
-          · {stateWord(pr)}{pr.reviewDecision === null ? null : ` · ${reviewWord(pr.reviewDecision)}`}
-        </span>
-        {Glyph === null ? null : <Glyph aria-hidden className="text-muted-foreground" />}
-      </TooltipTrigger>
-      <TooltipContent>
+    <Tip
+      meaning={
         <span className="block space-y-1">
           <span className="block font-medium">#{pr.number} {pr.title}</span>
           <span className="block">{stateMeaning(pr)}</span>
@@ -58,7 +36,27 @@ export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedA
           <span className="block">gh was asked at {absoluteTime(reportedAt)}.</span>
           <span className="block">Brings forward the GitHub tab this board opened for it, or opens one.</span>
         </span>
-      </TooltipContent>
-    </Tooltip>
+      }
+      render={
+        <Badge
+          variant="outline"
+          render={
+            <a
+              aria-label={`Pull request #${pr.number}: ${pr.title}`}
+              href={pr.url}
+              rel="noreferrer"
+              target="_blank"
+              onClick={openOnceOnClick(pr.url)}
+            />
+          }
+        />
+      }
+    >
+      <span>#{pr.number}</span>
+      <span className="font-normal text-muted-foreground">
+        · {stateWord(pr)}{pr.reviewDecision === null ? null : ` · ${reviewWord(pr.reviewDecision)}`}
+      </span>
+      {Glyph === null ? null : <Glyph aria-hidden className="text-muted-foreground" />}
+    </Tip>
   )
 }

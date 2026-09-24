@@ -1,8 +1,9 @@
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
 import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
+import { Tip } from './tip'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { TooltipProvider } from './ui/tooltip'
 
 /**
  * Where this item is, and where it may go from here. The five stages are a
@@ -43,23 +44,22 @@ export function StageControl({
             : availability.reason ?? stageMeta[candidate].hint
 
           return (
-            <Tooltip key={candidate}>
-              <TooltipTrigger
-                render={
-                  <ToggleGroupItem
-                    className="w-full aria-disabled:opacity-25"
-                    value={candidate}
-                    aria-disabled={!current && unavailable}
-                    onPressedChange={(_pressed, details) => {
-                      if (!current && unavailable) details.cancel()
-                    }}
-                  />
-                }
-              >
-                {stageMeta[candidate].label}
-              </TooltipTrigger>
-              <TooltipContent>{current ? stageMeta[candidate].hint : explanation}</TooltipContent>
-            </Tooltip>
+            <Tip
+              key={candidate}
+              meaning={current ? stageMeta[candidate].hint : explanation}
+              render={
+                <ToggleGroupItem
+                  className="w-full aria-disabled:opacity-25"
+                  value={candidate}
+                  aria-disabled={!current && unavailable}
+                  onPressedChange={(_pressed, details) => {
+                    if (!current && unavailable) details.cancel()
+                  }}
+                />
+              }
+            >
+              {stageMeta[candidate].label}
+            </Tip>
           )
         })}
       </ToggleGroup>

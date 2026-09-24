@@ -2,6 +2,7 @@ import { Check, Copy } from 'lucide-react'
 import * as React from 'react'
 
 import { cn } from '../lib/utils'
+import { useTip } from './tip'
 
 /** How long a copied confirmation stays up before the control says its name again. */
 const copiedMilliseconds = 1_500
@@ -52,11 +53,12 @@ export function Copyable({
   children: React.ReactNode
 }) {
   const [state, copy] = useCopy()
+  const tip = useTip()
   const name = label ?? value
   return (
     <button
       type="button"
-      title={state === 'failed' ? 'Copy failed' : `Copy ${name}`}
+      title={state === 'failed' ? 'Copy failed' : tip(`Copy ${name}`)}
       aria-label={`Copy ${name}`}
       onClick={() => void copy(value)}
       className="group/copyable inline-flex max-w-full items-start gap-1 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"

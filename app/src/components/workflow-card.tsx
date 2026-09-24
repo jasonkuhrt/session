@@ -7,6 +7,7 @@ import { itemHref } from '../lib/base'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { Copyable } from './copyable'
+import { useTip } from './tip'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { Checkbox } from './ui/checkbox'
@@ -43,6 +44,7 @@ export function WorkflowCard({ item, index, stage, pending, selectedIds, accepts
   // in the lanes where an item may be in no group. In Queue and Execute every
   // item is already in a batch.
   const selectable = !isBatchedStage(stage)
+  const tip = useTip()
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
     // what the sortable's keyboard sensor listens on. It carries the name a
@@ -68,7 +70,7 @@ export function WorkflowCard({ item, index, stage, pending, selectedIds, accepts
                   checked={selectedIds.has(item.id)}
                   onCheckedChange={selected => onSelect(item.id, selected)}
                   aria-label={`Select ${item.title}`}
-                  title={stage === 'BATCH' ? 'Select this item to group it or queue it in a batch.' : 'Select this item to group it.'}
+                  title={tip(stage === 'BATCH' ? 'Select this item to group it or queue it in a batch.' : 'Select this item to group it.')}
                 />
               )
               : null}
@@ -83,7 +85,7 @@ export function WorkflowCard({ item, index, stage, pending, selectedIds, accepts
           {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Copyable value={item.id}>{item.id}</Copyable>
-            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => onComplete(item)} title={`Complete ${item.title}`} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
+            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => onComplete(item)} title={tip(`Complete ${item.title}`)} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
           </div>
         </CardContent>
       </Card>

@@ -5,7 +5,9 @@ import { Copyable } from './copyable'
 import { LinearIssueChip } from './linear-issue-chip'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
+import { SettingsMenu } from './settings-menu'
 import { TerminalAction } from './terminal-action'
+import { useTip } from './tip'
 import { Button } from './ui/button'
 import { TooltipProvider } from './ui/tooltip'
 import { WorktreePicker } from './worktree-picker'
@@ -31,6 +33,7 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
   /** Whether the daemon can run cmux. */
   terminal: boolean
 }) {
+  const tip = useTip()
   return (
     <TooltipProvider>
       {/* The header wraps rather than pushing the page wider than the window. */}
@@ -44,11 +47,12 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
           size="sm"
           className="ml-auto"
           nativeButton={false}
-          title="Every worktree the daemon is tracking."
+          title={tip('Every worktree the daemon is tracking.')}
           render={<a aria-label="All sessions" href="/" />}
         >
           <LayoutGrid /> All sessions
         </Button>
+        <SettingsMenu />
       </header>
     </TooltipProvider>
   )
@@ -56,10 +60,11 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
 
 /** The branch checked out here, and the worktree, with the way to switch to another. */
 function WorktreeFields({ worktree }: { worktree: NonNullable<Session['worktree']> }) {
+  const tip = useTip()
   return (
     <dl className="flex gap-8 text-sm">
       <div>
-        <dt className="text-muted-foreground" title="The Git branch checked out in this worktree.">Branch</dt>
+        <dt className="text-muted-foreground" title={tip('The Git branch checked out in this worktree.')}>Branch</dt>
         <dd className="font-medium">
           {worktree.branch === null
             ? 'No branch'
@@ -67,7 +72,7 @@ function WorktreeFields({ worktree }: { worktree: NonNullable<Session['worktree'
         </dd>
       </div>
       <div>
-        <dt className="text-muted-foreground" title="The worktree whose session this board shows; switch to another below.">Worktree</dt>
+        <dt className="text-muted-foreground" title={tip('The worktree whose session this board shows; switch to another below.')}>Worktree</dt>
         <dd>
           <WorktreePicker current={worktree} />
         </dd>

@@ -1,6 +1,6 @@
 import type { TrailerProblem } from '../../contract'
 import { problemCount, problemSentence, trailerMeaning } from '../lib/trailers'
-import { Explained } from './agent-marks'
+import { Explained } from './tip'
 import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Badge } from './ui/badge'
 import { TooltipProvider } from './ui/tooltip'

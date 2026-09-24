@@ -2,6 +2,8 @@ import * as React from 'react'
 
 import { basePath } from '../lib/base'
 import { cn } from '../lib/utils'
+import { SettingsMenu } from './settings-menu'
+import { useTip } from './tip'
 import { Alert, AlertDescription } from './ui/alert'
 import {
   Breadcrumb,
@@ -92,6 +94,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
   boardMeaning: string
   crumbs: readonly Crumb[]
 }) {
+  const tip = useTip()
   const board = worktree ?? 'Board'
   // A step is known by the steps that lead to it, so two steps with one name,
   // such as a path's `a/a`, are still two.
@@ -101,8 +104,8 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
     trail: crumbs.slice(0, position + 1).map((step) => step.label).join('/'),
   }))
   return (
-    <header className="sticky top-0 z-10 border-b bg-background/85 px-6 py-3 backdrop-blur">
-      <Breadcrumb>
+    <header className="sticky top-0 z-10 flex items-center gap-4 border-b bg-background/85 px-6 py-3 backdrop-blur">
+      <Breadcrumb className="min-w-0">
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink
@@ -110,7 +113,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
                 <a
                   aria-label="All sessions"
                   href="/"
-                  title="Every worktree the daemon is tracking."
+                  title={tip('Every worktree the daemon is tracking.')}
                 />
               }
             >
@@ -119,7 +122,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink render={<a aria-label={board} href={`${basePath}/`} title={boardMeaning} />}>
+            <BreadcrumbLink render={<a aria-label={board} href={`${basePath}/`} title={tip(boardMeaning)} />}>
               {board}
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -129,16 +132,16 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
               <BreadcrumbItem>
                 {last
                   ? (
-                    <BreadcrumbPage className={cn(crumb.literal && 'font-mono')} title={crumb.meaning}>
+                    <BreadcrumbPage className={cn(crumb.literal && 'font-mono')} title={tip(crumb.meaning)}>
                       {crumb.label}
                     </BreadcrumbPage>
                   )
                   : crumb.href === undefined
-                  ? <span className={cn(crumb.literal && 'font-mono')} title={crumb.meaning}>{crumb.label}</span>
+                  ? <span className={cn(crumb.literal && 'font-mono')} title={tip(crumb.meaning)}>{crumb.label}</span>
                   : (
                     <BreadcrumbLink
                       className={cn(crumb.literal && 'font-mono')}
-                      render={<a aria-label={crumb.label} href={crumb.href} title={crumb.meaning} />}
+                      render={<a aria-label={crumb.label} href={crumb.href} title={tip(crumb.meaning)} />}
                     >
                       {crumb.label}
                     </BreadcrumbLink>
@@ -148,6 +151,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
           ))}
         </BreadcrumbList>
       </Breadcrumb>
+      <SettingsMenu className="ml-auto" />
     </header>
   )
 }

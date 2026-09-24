@@ -19,7 +19,8 @@ import {
 import { absoluteTime, relativeTime, since } from '../lib/format'
 import { cn } from '../lib/utils'
 import { Actions } from './agent-actions'
-import { Dot, Explained } from './agent-marks'
+import { Dot } from './agent-marks'
+import { Explained, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { TooltipProvider } from './ui/tooltip'
 
@@ -58,8 +59,9 @@ const heldFor = (session: ClaudeSession, now: number) => {
  * fact that says how stale its state is, so it is never dropped.
  */
 function StartedAge({ session, now }: { session: ClaudeSession; now: number }) {
+  const tip = useTip()
   return (
-    <span className={ageText} title={`It started at ${absoluteTime(session.startedAt)}.`}>
+    <span className={ageText} title={tip(`It started at ${absoluteTime(session.startedAt)}.`)}>
       started {relativeTime(session.startedAt, now)}
     </span>
   )
@@ -72,6 +74,7 @@ function ClaudeRow({ session, now, onFocus }: {
   onFocus: (pid: number) => Promise<FocusResult>
 }) {
   const [failure, setFailure] = React.useState<string | null>(null)
+  const tip = useTip()
   const live = isLive(session)
   const attention = needsYou(session)
   const name = sessionName(session)
@@ -86,7 +89,7 @@ function ClaudeRow({ session, now, onFocus }: {
       )}
     >
       <span className={harnessColumn}>
-        <Badge variant="outline" title="A session of the Claude Code CLI.">Claude Code</Badge>
+        <Badge variant="outline" title={tip('A session of the Claude Code CLI.')}>Claude Code</Badge>
       </span>
       <Explained
         meaning={held === null
@@ -102,9 +105,9 @@ function ClaudeRow({ session, now, onFocus }: {
         </span>
       </Explained>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="truncate text-sm font-medium" title={name}>{name}</span>
+        <span className="truncate text-sm font-medium" title={tip(name)}>{name}</span>
         {session.kind === 'interactive' ? null : (
-          <Badge variant="outline" title="A background session: it runs without a terminal of its own.">
+          <Badge variant="outline" title={tip('A background session: it runs without a terminal of its own.')}>
             {session.kind}
           </Badge>
         )}
@@ -128,6 +131,7 @@ function CodexRow({ thread, now, onFocus }: {
   onFocus: (pid: number) => Promise<FocusResult>
 }) {
   const [failure, setFailure] = React.useState<string | null>(null)
+  const tip = useTip()
   return (
     <li
       className={cn(
@@ -136,7 +140,7 @@ function CodexRow({ thread, now, onFocus }: {
       )}
     >
       <span className={harnessColumn}>
-        <Badge variant="outline" title={`A Codex thread, started from ${thread.origin}.`}>
+        <Badge variant="outline" title={tip(`A Codex thread, started from ${thread.origin}.`)}>
           Codex {thread.origin}
         </Badge>
       </span>
@@ -147,9 +151,9 @@ function CodexRow({ thread, now, onFocus }: {
       <span className="flex min-w-0 flex-1 items-center gap-2">
         {/* An unnamed thread is named by its preview, which is a whole first
             message; capped so one of them cannot own the row. */}
-        <span className="max-w-[60ch] truncate text-sm" title={thread.name}>{thread.name}</span>
+        <span className="max-w-[60ch] truncate text-sm" title={tip(thread.name)}>{thread.name}</span>
       </span>
-      <span className={ageText} title={`It was last updated at ${absoluteTime(thread.updatedAt)}.`}>
+      <span className={ageText} title={tip(`It was last updated at ${absoluteTime(thread.updatedAt)}.`)}>
         updated {relativeTime(thread.updatedAt, now)}
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-2">
