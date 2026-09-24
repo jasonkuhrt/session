@@ -18,7 +18,8 @@ export const refreshedNotice =
  */
 export function useSessionMutations(input: {
   readonly session: Session | null
-  readonly onSession: (session: Session) => void
+  /** Shows the session a write answered with; the write stays pending until a returned promise settles. */
+  readonly onSession: (session: Session) => void | Promise<void>
   readonly reload: () => Promise<void>
 }) {
   const { session, onSession, reload } = input
@@ -33,7 +34,7 @@ export function useSessionMutations(input: {
       setFailure(null)
       setRefreshed(false)
       try {
-        onSession(await SessionApi.mutate(path, { ...body, revision: session.revision }))
+        await onSession(await SessionApi.mutate(path, { ...body, revision: session.revision }))
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {

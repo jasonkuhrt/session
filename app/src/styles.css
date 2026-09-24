@@ -193,9 +193,12 @@
  * block runs the page's full width as a band, with its text starting where the
  * prose starts, so reading down the page never jumps sideways; a line longer
  * than the room to the right scrolls inside the band. The page frame is the
- * container `cqw` counts, and the column is centred in it.
+ * container `cqw` counts, and the column is centred in it. Only a block whose
+ * box is the column's own bleeds, at the top level or in Evidence: `50%` is
+ * half of the box a block sits in, and one inside a list item or a quote sits
+ * in an indented box, so it keeps to it.
  */
-.markdown-page pre {
+:is(.markdown-page, .markdown-page > .evidence-panel > div) > pre {
   width: 100cqw;
   margin-left: calc(50% - 50cqw);
   padding-inline: calc(50cqw - 50%) 1.5rem;

@@ -455,8 +455,8 @@ the room to the right scrolls inside the band.
 
 An item filed under `archive/`, by "Complete work", `done`, `archive` or a
 commit's trailer, keeps its page. When no stage holds the id, the page reads
-the newest record under `archive/` whose name carries it and shows the item as
-it was filed: "Archived" above the title with the state its name gives, `done`
+the record under `archive/` whose name carries it, the one filed on the latest
+day when there are several, and shows the item as it was filed: "Archived" above the title with the state its name gives, `done`
 or the stage it was filed from, and the day; the record's path under the
 session; all five stages very dim, saying the item is archived; and the
 record's text in the reader. The record is read before the page changes, so an

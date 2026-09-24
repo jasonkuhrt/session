@@ -38,18 +38,20 @@ export const archiveStateMeaning = (state: string) => {
 export type ArchivedItem = { readonly record: ArchiveRecord; readonly item: Item }
 
 /**
- * The newest record of an item under `archive/`, read as the item it was, or
- * null when the archive holds none. A record's text is the item's file as it
- * was filed, with the note of a commit that closed it at the end, so its first
- * line is the item's heading; a record edited by hand past that is shown
- * whole, under the title its name gives.
+ * An item's record under `archive/`, read as the item it was, or null when the
+ * archive holds none. When it holds several, the one read is the one filed on
+ * the latest day, as the day in each name gives it; names carry no time, so
+ * two filed on the same day are told apart only by name. A record's text is
+ * the item's file as it was filed, with the note of a commit that closed it at
+ * the end, so its first line is the item's heading; a record edited by hand
+ * past that is shown whole, under the title its name gives.
  */
 export async function readArchivedItem({ id, signal }: {
   readonly id: string
   readonly signal?: AbortSignal | undefined
 }): Promise<ArchivedItem | null> {
   const { records } = await SessionApi.archive(signal)
-  // Newest first, so an item filed, brought back and filed again reads as it last left.
+  // The listing is newest day first, then by name.
   const record = records.find((candidate) => candidate.id === id)
   if (record === undefined) return null
   const text = (await SessionApi.file(record.path, signal)).replaceAll('\r\n', '\n')

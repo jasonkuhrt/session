@@ -69,7 +69,8 @@ convention the board does not interpret.
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
 nothing in them reaches the daemon. A new setting is a field of the schema with
-its default, and nothing else.
+its default, which is all its storage needs, and an item in the settings menu
+that says what it does.
 
 Keep stage names identical in files, CLI, and UI. Design collaboration and focused
 explanations compose through `design-together` and `show-me`.

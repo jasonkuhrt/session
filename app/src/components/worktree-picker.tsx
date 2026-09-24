@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import type { Session, WorktreeSummary } from '../../contract'
 import { IndexApi } from '../lib/api'
+import { cn } from '../lib/utils'
 import { useTip } from './tip'
 import { Button } from './ui/button'
 import {
@@ -23,9 +24,9 @@ type Option = { key: string; name: string; path: string; branch: string | null }
  * popup is cut short rather than wrapped, so every option is the same two
  * lines and the list reads down one edge.
  */
-function WorktreeLabel({ name, branch }: { name: string; branch: string | null }) {
+function WorktreeLabel({ name, branch, className }: { name: string; branch: string | null; className?: string }) {
   return (
-    <span className="grid min-w-0 flex-1 text-left">
+    <span className={cn('grid min-w-0 text-left', className)}>
       <span className="truncate font-medium">{name}</span>
       <span className="truncate text-xs font-normal text-muted-foreground">{branch ?? 'No branch'}</span>
     </span>
@@ -74,7 +75,8 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
     .toSorted((left, right) => left.name.localeCompare(right.name))
   const selected = options.find((option) => option.path === current.path) ?? null
 
-  if (options.length === 0) return <WorktreeLabel name={current.name} branch={current.branch} />
+  // As wide as the control that replaces it can be, so a long branch is cut the same way.
+  if (options.length === 0) return <WorktreeLabel name={current.name} branch={current.branch} className="max-w-80" />
 
   return (
     <Combobox

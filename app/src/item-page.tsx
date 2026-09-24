@@ -53,14 +53,24 @@ export function ItemPage({ id }: { id: string }) {
    * Shows one read of the session, unless a newer one has started since. When
    * no stage holds the item its archived record is read first, so the page
    * goes from the item in its stage to the item in the archive in one step,
-   * never through a moment where the item is nowhere.
+   * never through a moment where the item is nowhere. An archive that cannot
+   * be read still lets the session land, so the page never stays on one the
+   * files have moved past, and it says why the item is not shown.
    */
   const land = React.useCallback(async (next: Session, mine: number, signal?: AbortSignal) => {
-    const filed = locate(next, id) === null ? await readArchivedItem({ id, signal }) : null
+    let filed: ArchivedItem | null = null
+    let unread: string | null = null
+    if (locate(next, id) === null) {
+      try {
+        filed = await readArchivedItem({ id, signal })
+      } catch (error) {
+        unread = `The archive could not be read, so ${id} is not shown: ${messageOf(error)}`
+      }
+    }
     if (signal?.aborted || mine !== latest.current) return null
     setSession(next)
     setArchived(filed)
-    setLoadError(null)
+    setLoadError(unread)
     return next
   }, [id])
 
@@ -72,7 +82,8 @@ export function ItemPage({ id }: { id: string }) {
       if (!signal?.aborted && mine === latest.current) setLoadError(messageOf(error))
       return null
     } finally {
-      if (!signal?.aborted) setLoading(false)
+      // A read a newer one overtook says nothing, not even that loading is over.
+      if (!signal?.aborted && mine === latest.current) setLoading(false)
     }
   }, [land])
 
@@ -82,11 +93,10 @@ export function ItemPage({ id }: { id: string }) {
 
   // A write answers with the session it made, which lands the same way a read
   // does: an item it filed away is shown in the archive rather than as gone.
-  const show = React.useCallback((next: Session) => {
-    const mine = ++latest.current
-    land(next, mine).catch((error: unknown) => {
-      if (mine === latest.current) setLoadError(messageOf(error))
-    })
+  // The write stays pending until it has landed, so nothing on the page acts
+  // on the session it replaced.
+  const show = React.useCallback(async (next: Session) => {
+    await land(next, ++latest.current)
   }, [land])
 
   const { pending, failure, refreshed, mutate, follow } = useSessionMutations({
@@ -142,12 +152,15 @@ export function ItemPage({ id }: { id: string }) {
         ? <PageLoading />
         : found === null
         ? archived === null || session === null
-          ? (
-            <p className="text-sm text-muted-foreground">
-              No item {id} in this session.{' '}
-              <a className="underline underline-offset-4" href={boardHref}>Back to the board</a>
-            </p>
-          )
+          // A read that failed says so above; only a read that worked can say the item is not here.
+          ? problem === null
+            ? (
+              <p className="text-sm text-muted-foreground">
+                No item {id} in this session.{' '}
+                <a className="underline underline-offset-4" href={boardHref}>Back to the board</a>
+              </p>
+            )
+            : null
           : (
             <Detail
               item={archived.item}
