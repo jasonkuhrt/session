@@ -60,15 +60,3 @@ export function absoluteTime(iso: string): string {
   const at = Date.parse(iso)
   return Number.isNaN(at) ? iso : new Date(at).toLocaleString()
 }
-
-/**
- * The directory a worktree sits in, elided from the front to its last two
- * segments. Enough to tell two worktrees of the same name apart without
- * spending a line on an absolute path; the full path stays on hover.
- */
-export function parentPath(path: string): string {
-  const segments = path.split('/').slice(0, -1).filter((segment) => segment !== '')
-  if (segments.length === 0) return ''
-  const tail = segments.slice(-2)
-  return `${segments.length > tail.length ? '…/' : '/'}${tail.join('/')}`
-}

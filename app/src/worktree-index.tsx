@@ -17,7 +17,6 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { eventsUrl, IndexApi } from './lib/api'
 import { bandRows } from './lib/bands'
 import { useNow } from './lib/clock'
-import { parentPath } from './lib/format'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
 
@@ -29,7 +28,7 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /** What each column holds, said where its name is. */
 const columnMeaning = {
-  worktree: 'A Git worktree the daemon is tracking, and the directory it sits in; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
+  worktree: 'A Git worktree the daemon is tracking; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
   branch: 'The Git branch checked out in that worktree.',
   agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
   activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
@@ -152,11 +151,13 @@ export function WorktreeIndex() {
 }
 
 /**
- * The name, over the directory it sits in; the whole path stays on hover. A
- * terminal there is one click away whenever the daemon can run cmux.
+ * The name alone, which already tells the worktrees apart: a worktree whose
+ * folder shares the main checkout's name carries its parent folder's name
+ * before it, and a name a second worktree claims is listed as a conflict.
+ * Where it sits is its tip. A terminal there is one click away whenever the
+ * daemon can run cmux.
  */
 function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }) {
-  const parent = parentPath(row.path)
   const tip = useTip()
   return (
     <TableCell title={tip(row.path)}>
@@ -172,14 +173,6 @@ function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }
         <TrailerCount problems={row.trailerProblems} />
         {terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
       </span>
-      {parent === '' ? null : (
-        <span className="block">
-          {/* The line is elided; what it copies is the whole path. */}
-          <Copyable value={row.path}>
-            <span className="text-xs text-muted-foreground">{parent}</span>
-          </Copyable>
-        </span>
-      )}
     </TableCell>
   )
 }
