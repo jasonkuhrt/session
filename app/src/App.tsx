@@ -83,7 +83,7 @@ function App() {
     }
   }, [])
 
-  // The links are the daemon's last answer from gh and linear, read on their
+  // The links are the daemon's last answers from gh and linear, read on their
   // own for the same reason as the agents: a source that cannot be reached
   // must not take the board down, and a failed read keeps the chips it last had.
   const loadLinks = React.useCallback(async (signal?: AbortSignal) => {

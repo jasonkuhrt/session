@@ -15,12 +15,13 @@ const glyphs = {
 } as const
 
 /**
- * The pull request for this board's branch, as one chip that is a link to it:
- * the number, gh's state word and review decision, and one glyph for its
- * checks, with every sentence behind them one hover away. A click opens the
- * pull request once: the tab it already has comes forward instead of another. It carries no
- * colour, because the lanes are where anything that needs you is shown; this
- * only says where the work stands on GitHub.
+ * The pull request for a worktree's branch, as one chip that is a link to it,
+ * the same in a board's header and on the index's row: the number, gh's state
+ * word and review decision, and one glyph for its checks, with every sentence
+ * behind them one hover away. A click opens the pull request once: the tab it
+ * already has comes forward instead of another. It carries no colour, because
+ * the lanes are where anything that needs you is shown; this only says where
+ * the work stands on GitHub.
  */
 export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedAt: string }) {
   const mark = checksMark(pr.checks)
@@ -34,7 +35,7 @@ export function PullRequestChip({ pr, reportedAt }: { pr: PullRequest; reportedA
           <span className="block">{reviewMeaning(pr.reviewDecision)}</span>
           <span className="block">{mark === null ? 'gh reports no checks on it.' : mark.meaning}</span>
           <span className="block">gh was asked at {absoluteTime(reportedAt)}.</span>
-          <span className="block">Brings forward the GitHub tab this board opened for it, or opens one.</span>
+          <span className="block">Brings forward the GitHub tab this page opened for it, or opens one.</span>
         </span>
       }
       render={

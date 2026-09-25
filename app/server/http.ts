@@ -269,8 +269,8 @@ export const makeRequestHandler = (options: {
   };
   /**
    * Where this worktree's work lives outside its files, and the stream that
-   * says it was asked again. The daemon asks the sources and keeps the last
-   * answer; the board only reads it.
+   * says a source was asked again. The daemon asks the sources and keeps their
+   * last answers; the board only reads them.
    */
   readonly links: {
     readonly read: () => Promise<Links>;
