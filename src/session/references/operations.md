@@ -339,8 +339,8 @@ the route the CLI registers through.
 
 The index at `/` lists the tracked worktrees: name, branch, the pull request gh
 reports for that branch, the agents at work in it, the item counts per stage,
-and activity, with a terminal icon beside each name and the settings icon at the
-far end of its header. A name stands without its path, which is its tip: the
+and activity, with a terminal icon and a Zed icon beside each name and the
+settings icon at the far end of its header. A name stands without its path, which is its tip: the
 name already tells the worktrees apart, since one whose folder shares the main
 checkout's name carries its parent folder's name before it. A worktree with a
 commit checked out rather than a branch reads `Detached HEAD` where the branch
@@ -361,8 +361,8 @@ reason that names both folders, and is not served.
 ## Use the board
 
 A board's header starts with "All sessions", which links back to the index,
-then the worktree picker with the terminal icon beside it, since the terminal
-opens in that worktree, then the branch's pull request, the Linear issues the
+then the worktree picker with the terminal and Zed icons beside it, since both
+open that worktree, then the branch's pull request, the Linear issues the
 worktree names, an icon for the session's rules when it has `RULES.md`, which
 opens it on the file page, and one icon apiece for its Ledger, Context and
 Archive pages; the settings icon is at the far end. The picker is
@@ -501,6 +501,19 @@ starts it. When cmux refuses any step, its line shows beside the icon. The
 icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
 reports as `terminal`, so a daemon started from a shell without cmux on its
 PATH draws none.
+
+The Zed icon beside it asks the daemon for Zed on that worktree with
+`POST /api/zed`. The daemon runs `zed --classic <path>`, then brings Zed forward
+with `open -b dev.zed.Zed`, since a request that starts in a background process
+cannot count on Zed reaching the front by itself. `--classic` asks for the same
+thing whatever the user's `cli_default_open_behavior`: Zed brings forward the
+window one of whose projects has the worktree itself as a root, never a window
+on a folder that holds it or sits beside it, and opens a worktree it finds in
+no window in a new window rather than in another window's sidebar, so a window
+on another worktree is never changed. An explicit behaviour also keeps the CLI
+from stopping to ask which default the user wants. When zed or `open` refuses,
+its line shows beside the icon. The icon is drawn only while `zed` is on the
+daemon's PATH, which `GET /api/daemon` reports as `zed`.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
