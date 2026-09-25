@@ -86,7 +86,7 @@ export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem,
  * Where this page sits, and the way back out of it.
  *
  * A page is one level inside a worktree's board, which is one level inside
- * every session on this machine, and the trail is that sentence: each step
+ * every worktree the daemon tracks, and the trail is that sentence: each step
  * names the place it goes to, and the last one names where you are. It is the
  * page's only navigation, so it sits where a window's navigation sits rather
  * than inside the reading column.
@@ -113,13 +113,13 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
             <BreadcrumbLink
               render={
                 <a
-                  aria-label="All sessions"
+                  aria-label="All worktrees"
                   href="/"
                   title={tip('Every worktree the daemon is tracking.')}
                 />
               }
             >
-              All sessions
+              All worktrees
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />

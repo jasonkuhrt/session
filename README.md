@@ -42,16 +42,24 @@ worktree; `-C` goes before the command to point at another one. The
 [operations reference](src/session/references/operations.md) has every command.
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
-worktree to it, and opens its board. The index at the root lists every worktree
-the daemon knows by name, with its branch, the pull request gh reports for it,
-the agents live in it, item counts per stage, and activity; each board sits
-under `/w/<worktree name>/`. Activity is when the
-worktree last did anything and who did it: `Claude Code` for a session's status
-change, `Codex` for a thread, `Items` for an item file, with the exact moment
-behind it. The index has no refresh button and needs none: any command that
-scaffolds a session registers it with a running daemon, and a worktree whose
-`.session` goes away drops off the index by itself. The daemon also finds the
-other worktrees of the same repository that already have a `.session`.
+worktree to it, and opens its board. The index at the root, headed Worktrees,
+shows every worktree the daemon knows as cards: the main worktrees pinned in a
+strip on top, then a card per epic with its worktrees inside and a card of its
+own for each worktree in none, the ones with a live agent first, then by their
+latest activity, and one with nothing live and nothing in five days dim and
+last. A worktree is two lines, its name and the agents live in it over its
+branch and the pull request gh reports for it, beside a glyph of how many items
+each stage holds. Drag a worktree onto an epic to join it, onto another
+worktree to make an epic of the two, or out of its epic onto empty space to
+leave it; `session join "<epic>"` and `session leave` do the same from a
+terminal. Each board sits under `/w/<worktree name>/`. Activity is when the
+worktree last did anything: a Claude Code session's status change, a Codex
+thread's update, or an item file written. The index has no refresh button and
+needs none: any command that scaffolds a session registers it with a running
+daemon, a change to a session's items or epic reaches it as it is written, and a
+worktree whose `.session` goes away drops off the index by itself. The daemon
+also finds the other worktrees of the same repository that already have a
+`.session`.
 
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
@@ -80,7 +88,7 @@ change, over a stream the daemon pushes, and pauses while a card is being
 dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.
 
-The board's header starts with "All sessions" and the worktree picker, which
+The board's header starts with "All worktrees" and the worktree picker, which
 shows the worktree's name over the branch checked out in it, each line marked
 with an icon for what it is, and switches to any other worktree's board. The gear at the top right of every page holds the
 board's own settings, kept in this browser. Tips, off by default, makes every
@@ -93,9 +101,10 @@ comes `ledger/`, the session's shared log: one dated entry per file, written
 with `session log` or by hand, for what another agent must know to act
 correctly here and would not learn from the items. Material about one item
 belongs under `context/<ID>/`, linked from that item's `### Evidence`. Facts
-about the worktree's session live in `meta/`, one file each, and none is defined
-yet. Finished and abandoned items live under `archive/`, one file each, and are
-not loaded as active context.
+about the worktree's session live in `meta/`, one file each: `meta/epic` names
+the epic the worktree is in, in one line, and is the only one defined. Finished
+and abandoned items live under `archive/`, one file each, and are not loaded as
+active context.
 
 A commit can close items itself: end its message with a `Session-Done: <ID>`
 trailer and the daemon files that item as done the moment the commit is made,
@@ -121,7 +130,7 @@ rows below them, each row leading with the ways to reach it as icon buttons,
 focus its cmux tab, open the thread in Codex, or copy its resume command or its
 id, then one word for how it is doing, its name, and its age.
 The index names only what is live, a pill per session that opens that same list
-as a menu; a worktree whose agents are all resumable shows a dash, and its board
+as a menu; a worktree whose agents are all resumable shows none, and its board
 is where they are. The listing is recomputed when the index renders and when the
 Claude session registry or the Codex writer locks change, and every open board
 is pushed the change.
@@ -170,6 +179,25 @@ kept outside the files: they live in the browser's localStorage, say only how
 the board draws, and never reach the daemon. Moves preserve stable IDs and
 record content. A revision check guards every mutation, and a mutation writes
 its files before it deletes the ones it replaced.
+
+The index's unit above the worktree is the epic, and its model is fixed. An epic
+is a name and the linked worktrees whose sessions name it in `meta/epic`, and
+nothing else: it has no stage, lifecycle, owner or note, nothing about it
+accrues or asks for action, and it exists exactly while some worktree names it.
+A worktree is in at most one epic, since one file holds one name, and a main
+worktree is never in one: Git keeps the repository there, lists it first and
+will not move, lock or remove it, and the index pins it above the epics.
+Membership changes by a drag on the index or by `session join` and `session
+leave`; deleting a worktree takes its membership with it, nothing is pruned, no
+path is stored, and nothing stores an order or a fold. Everything else about a
+worktree is read where it is kept: its session, `.session/`, which it has at
+most one of and which puts it on the index; its branch, from `git worktree
+list`, and none when detached; that branch's pull request, from `gh pr view`,
+taken as the one while one is open; and the agents in it, by the working
+directory their harness reports. An agent reaches an epic only through the
+worktree it works in, and no fact ties an agent to an epic, because none could
+be derived or verified. Linear issues are what the branch and the pull request
+name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night

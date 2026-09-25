@@ -1,65 +1,119 @@
+import { DragDropProvider, DragOverlay, useDragOperation } from '@dnd-kit/react'
 import * as React from 'react'
 
-import type { PullRequestReport, Stage, WorktreeSummary } from '../contract'
-import { stageNames } from '../contract'
-import { ActivityCell } from './components/activity-cell'
-import { AgentsCell } from './components/agents-cell'
-import { Copyable } from './components/copyable'
-import { PullRequestChip } from './components/pull-request-chip'
+import type { WorktreeSummary } from '../contract'
+import type { EpicNameRequest } from './components/session-dialogs'
+import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
-import { TerminalAction, useTerminalAvailable } from './components/terminal-action'
-import { Explained, useTip } from './components/tip'
-import { TrailerCount } from './components/trailer-problems'
+import { useTerminalAvailable } from './components/terminal-action'
+import { Explained } from './components/tip'
 import { Alert, AlertDescription } from './components/ui/alert'
-import { Badge } from './components/ui/badge'
 import { Skeleton } from './components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { TooltipProvider } from './components/ui/tooltip'
-import { bandRows } from './lib/bands'
+import type { DragContext } from './components/worktree-cards'
+import { CardSpace, EpicCard, HeldPreview, LooseCard } from './components/worktree-cards'
+import { MainStrip } from './components/worktree-row'
+import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
-import { checkoutLabel } from './lib/format'
+import { dragSensors } from './lib/drag'
+import type { Dashboard, Dragged, DropOutcome } from './lib/epics'
+import { dashboardOf, draggedOf, dropOutcome, outcomeWords, targetId, targetOf, withEpics } from './lib/epics'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
-import { cn } from './lib/utils'
-import { stageHint } from './lib/workflow'
 
-const skeletonRows = [1, 2, 3, 4, 5]
+const skeletonCards = [1, 2, 3, 4, 5, 6]
 
 /** One line for the whole page: a source that failed, failed for every row. */
 const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
   [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
 
-/** What each column holds, said where its name is. */
-const columnMeaning = {
-  worktree: 'A Git worktree the daemon is tracking; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
-  branch: 'The Git branch checked out in that worktree.',
-  pullRequest: 'The pull request gh reports for that branch, when it has one: its number, where it stands, and its checks. While this page is open, gh is asked about every row again once its answer is a minute old, and at once when a push or a fetch moves a remote-tracking ref.',
-  agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
-  activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
-}
+/** What the page is, and what can be done on it, said where its name is. */
+const headingMeaning = (
+  <span className="block space-y-1">
+    <span className="block">
+      Every worktree the daemon is tracking, and what its session holds. A worktree joins this page when a session is
+      created in it and leaves when that session is gone.
+    </span>
+    <span className="block">
+      The main worktrees are pinned on top. Below them is a card per epic and one per worktree in none, the ones with a
+      live agent first, then by their latest activity; one with nothing live and nothing in five days is dim and last.
+    </span>
+    <span className="block">
+      Drag a worktree onto an epic to join it, onto another worktree to make an epic of the two, or out of its epic onto
+      the space between the cards to leave it.
+    </span>
+  </span>
+)
 
-const detachedMeaning = 'Git has a commit checked out in this worktree rather than a branch, so it has no branch and no pull request.'
+/** One worktree's new epic, as a write sends it. */
+type EpicChange = { readonly row: WorktreeSummary; readonly epic: string | null }
 
-const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branch.'
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The daemon did not answer.')
 
-/** A stage column says what the stage is for and what an empty cell means. */
-const stageMeaning = (stage: Stage) =>
-  `${stageHint[stage]} An empty cell means there is nothing in it.`
+/** The worktrees a drop names, as the rows it read them from. */
+const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
+  paths.flatMap((path) => rows.filter((row) => row.path === path))
+
+/** What a drop writes: every worktree it names, put in its epic or in none. */
+const changesOf = (outcome: Exclude<DropOutcome, { kind: 'make' }>, rows: readonly WorktreeSummary[]): EpicChange[] =>
+  outcome.kind === 'join'
+    ? rowsAt(rows, outcome.paths).map((row) => ({ row, epic: outcome.epic }))
+    : rowsAt(rows, [outcome.path]).map((row) => ({ row, epic: null }))
 
 export function WorktreeIndex() {
-  const { rows, notice, pullRequests, pullRequestsNotice } = useTrackedWorktrees()
-  const now = useNow()
+  const [holding, setHolding] = React.useState(false)
+  const [writing, setWriting] = React.useState(false)
+  /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
+  const [writes, setWrites] = React.useState<ReadonlyMap<string, string | null>>(new Map())
+  const [failure, setFailure] = React.useState<string | null>(null)
+  const [naming, setNaming] = React.useState<EpicNameRequest | null>(null)
+  // The page's clock as it read when a card was picked up: which cards are
+  // quiet, and so where they are, does not move while one is held.
+  const [heldAt, setHeldAt] = React.useState<number | null>(null)
+  const busy = holding || writing
+  const { rows: listed, notice, pullRequests, pullRequestsNotice, reload } = useTrackedWorktrees({ held: busy })
+  const clock = useNow()
+  const now = heldAt ?? clock
   const terminal = useTerminalAvailable()
+  const rows = listed === null ? null : withEpics({ rows: listed, epics: writes })
+  const dashboard = rows === null ? null : dashboardOf({ rows, now })
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
+
+  /**
+   * Put worktrees in epics, one request per worktree, since each worktree's
+   * file is its own, and draw them there until the rows read afterwards,
+   * which are what the page shows from then on, whatever landed.
+   */
+  const write = async (changes: readonly EpicChange[]) => {
+    if (changes.length === 0) return
+    setWriting(true)
+    setFailure(null)
+    setWrites(new Map(changes.map((change) => [change.row.path, change.epic])))
+    const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change.row.key, change.epic)))
+    const refusals = [...new Set(results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : [])))]
+    await reload()
+    setWrites(new Map())
+    setFailure(refusals.length === 0 ? null : refusals.join(' '))
+    setWriting(false)
+    setHeldAt(null)
+  }
+
+  const context: DragContext = {
+    pullRequests,
+    now,
+    terminal,
+    rows: rows ?? [],
+    writing,
+    landingOn: null,
+    onRename: (card) => setNaming({ kind: 'rename', ids: card.rows.map((row) => row.path), epic: card.name }),
+  }
 
   return (
     <TooltipProvider>
-      <div className="min-h-dvh bg-background text-foreground">
-        <title>Sessions</title>
+      <div className="flex min-h-dvh flex-col bg-background text-foreground">
+        <title>Worktrees</title>
         <header className="flex items-center gap-8 border-b px-6 py-5">
           <h1 className="font-medium">
-            <Explained meaning="Every worktree the daemon is tracking, and what its session holds. A worktree joins this list when a session is created in it and leaves when that session is gone.">
-              Sessions
-            </Explained>
+            <Explained meaning={headingMeaning}>Worktrees</Explained>
           </h1>
           <SettingsMenu className="ml-auto" />
         </header>
@@ -68,185 +122,128 @@ export function WorktreeIndex() {
             <AlertDescription>{notice}</AlertDescription>
           </Alert>
         ) : null}
+        {failure ? (
+          <Alert variant="destructive" className="mx-6 mt-4 w-auto">
+            <AlertDescription>{failure}</AlertDescription>
+          </Alert>
+        ) : null}
         {sourceNotices.length === 0
           ? null
           : <p className="mx-6 mt-4 text-sm text-muted-foreground">{sourceNotices.join(' · ')}</p>}
-        <main className="p-6">
-          {rows === null ? <LoadingRows /> : rows.length === 0 ? <EmptyState /> : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead><Explained meaning={columnMeaning.worktree}>Worktree</Explained></TableHead>
-                  <TableHead><Explained meaning={columnMeaning.branch}>Branch</Explained></TableHead>
-                  <TableHead><Explained meaning={columnMeaning.pullRequest}>Pull request</Explained></TableHead>
-                  <TableHead><Explained meaning={columnMeaning.agents}>Agents</Explained></TableHead>
-                  {stageNames.map(stage => (
-                    <TableHead key={stage} className="text-right">
-                      <Explained meaning={stageMeaning(stage)} className="inline-flex">
-                        {stage}
-                      </Explained>
-                    </TableHead>
-                  ))}
-                  <TableHead><Explained meaning={columnMeaning.activity}>Activity</Explained></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bandRows({ rows, now }).map(entry => (
-                  <React.Fragment key={entry.band.label}>
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell
-                        colSpan={10}
-                        className={cn(
-                          'bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground',
-                          entry.band.muted && 'opacity-60',
-                        )}
-                      >
-                        {entry.band.label}
-                        <span className="ml-2 tabular-nums tracking-normal text-muted-foreground/60">{entry.rows.length}</span>
-                      </TableCell>
-                    </TableRow>
-                    {entry.rows.map(row => (
-                      <Row
-                        key={row.path}
-                        row={row}
-                        pullRequest={pullRequests[row.path]}
-                        now={now}
-                        muted={entry.band.muted}
-                        terminal={terminal}
-                      />
-                    ))}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
+        <main className="flex flex-1 flex-col gap-4 p-6">
+          {dashboard === null || rows === null ? <LoadingCards /> : rows.length === 0 ? <EmptyState /> : (
+            <DragDropProvider
+              sensors={dragSensors}
+              onDragStart={() => {
+                setHolding(true)
+                setHeldAt(clock)
+                setFailure(null)
+              }}
+              onDragEnd={(event) => {
+                setHolding(false)
+                const dragged = draggedOf(event.operation.source?.id)
+                const outcome = event.canceled || dragged === null
+                  ? null
+                  : dropOutcome({ rows, dragged, target: targetOf(event.operation.target?.id) })
+                if (outcome === null || outcome.kind === 'make') setHeldAt(null)
+                if (outcome === null) return
+                if (outcome.kind !== 'make') {
+                  void write(changesOf(outcome, rows))
+                  return
+                }
+                const named = rowsAt(rows, outcome.paths)
+                if (named.length === 2) {
+                  setNaming({ kind: 'epic', ids: outcome.paths, names: [named[0]!.name, named[1]!.name] })
+                }
+              }}
+            >
+              <Cards dashboard={dashboard} context={context} />
+            </DragDropProvider>
           )}
         </main>
+        <NameDialog
+          request={naming}
+          pending={writing}
+          onClose={() => setNaming(null)}
+          onName={(name) => {
+            const request = naming
+            setNaming(null)
+            if (request === null || rows === null) return
+            if (request.kind === 'epic') {
+              void write(rowsAt(rows, request.ids).map((row) => ({ row, epic: name })))
+              return
+            }
+            // A rename moves whoever is in the epic now, since the files may
+            // have changed while the dialog was open.
+            if (name === request.epic) return
+            void write(rows.filter((row) => !row.main && row.epic === request.epic).map((row) => ({ row, epic: name })))
+          }}
+        />
       </div>
     </TooltipProvider>
   )
 }
 
 /**
- * The name alone, which already tells the worktrees apart: a worktree whose
- * folder shares the main checkout's name carries its parent folder's name
- * before it, and a name a second worktree claims is listed as a conflict.
- * Where it sits is its tip. A terminal there is one click away whenever the
- * daemon can run cmux.
+ * The strip and the cards, inside the drag, where what is held and what it is
+ * over are known: the card it would land in is outlined, and the pointer
+ * carries the card with the words of what dropping it there would do.
  */
-function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }) {
-  const tip = useTip()
+function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragContext }) {
+  const { source, target } = useDragOperation()
+  const dragged = draggedOf(source?.id)
+  const over = targetOf(target?.id)
+  const outcome = dragged === null ? null : dropOutcome({ rows: context.rows, dragged, target: over })
+  const landingOn = outcome === null || over === null ? null : targetId(over)
+  const held: DragContext = { ...context, landingOn }
   return (
-    <TableCell title={tip(row.path)}>
-      <span className="flex flex-wrap items-center gap-2">
-        {row.conflict === null ? (
-          <a
-            className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-            href={`/w/${row.key}/`}
-          >
-            {row.name}
-          </a>
-        ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
-        <TrailerCount problems={row.trailerProblems} />
-        {terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
-      </span>
-    </TableCell>
-  )
-}
-
-function Row({ row, pullRequest, now, muted, terminal }: {
-  row: WorktreeSummary
-  /** gh's last report for the row's branch; undefined until gh has been asked. */
-  pullRequest: PullRequestReport | undefined
-  now: number
-  muted: boolean
-  terminal: boolean
-}) {
-  const tip = useTip()
-  // Dimmed, not disabled: a session with nothing in it recedes, and its name is
-  // still the link that opens its board.
-  const dim = muted ? 'opacity-60' : undefined
-  // A row the daemon cannot serve says so beside its name, and gives the whole
-  // rest of the width to the reason rather than filing it under a column.
-  if (row.conflict !== null) {
-    return (
-      <TableRow className={dim}>
-        <NameCell row={row} terminal={terminal} />
-        <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
-          <span className="flex flex-wrap items-baseline gap-2">
-            <Badge variant="destructive" title={tip('The daemon cannot serve this worktree’s board, for the reason beside this.')}>
-              Not served
-            </Badge>
-            <span className="text-muted-foreground">{row.conflict}</span>
-          </span>
-        </TableCell>
-      </TableRow>
-    )
-  }
-
-  return (
-    <TableRow className={dim}>
-      <NameCell row={row} terminal={terminal} />
-      <TableCell className="text-muted-foreground">
-        {row.branch === null
-          ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
-          : <Copyable value={row.branch}>{row.branch}</Copyable>}
-      </TableCell>
-      <PullRequestCell report={pullRequest} />
-      <TableCell><AgentsCell agents={row.agents} now={now} /></TableCell>
-      {stageNames.map(stage => (
-        <CountCell key={stage} stage={stage} count={row.counts[stage]} executing={row.executing} />
-      ))}
-      <TableCell className="text-muted-foreground">
-        <ActivityCell activity={row.activity} now={now} />
-      </TableCell>
-    </TableRow>
-  )
-}
-
-/**
- * The branch's pull request as a board's header draws it, or, in its place,
- * gh's sentence for why it could not say. A branch with no pull request, and a
- * row gh has not been asked about yet, show nothing.
- */
-function PullRequestCell({ report }: { report: PullRequestReport | undefined }) {
-  return (
-    <TableCell>
-      {report?.pr
-        ? <PullRequestChip pr={report.pr} reportedAt={report.reportedAt} />
-        : report?.notice
-          ? <span className="block max-w-44 whitespace-normal text-xs text-muted-foreground">{report.notice}</span>
-          : null}
-    </TableCell>
-  )
-}
-
-/**
- * How much is in one stage, and, in Execute, which batch it is. A count of zero
- * renders nothing at all: a column of zeroes is a column of nothing to do, and
- * the five of them read as a pipeline by what is actually in them.
- */
-function CountCell({ stage, count, executing }: { stage: Stage; count: number; executing: string | null }) {
-  const batch = stage === 'Execute' ? executing : null
-  return (
-    <TableCell className="text-right">
-      <span className="flex items-center justify-end gap-2">
-        {batch === null ? null : (
-          <Explained meaning="The batch in Execute.">
-            <Badge variant="secondary">{batch}</Badge>
-          </Explained>
+    <>
+      <MainStrip mains={dashboard.mains} context={context} />
+      <CardSpace context={held}>
+        <div className="worktree-cards">
+          {dashboard.cards.map((card) =>
+            card.kind === 'epic'
+              ? <EpicCard key={`epic:${card.name}`} card={card} context={held} />
+              : <LooseCard key={card.row.path} card={card} context={held} />
+          )}
+        </div>
+      </CardSpace>
+      {/* Dropped, the card is drawn where the drop put it, so nothing flies back first. */}
+      <DragOverlay dropAnimation={null}>
+        {(carried) => (
+          <Held
+            dragged={draggedOf(carried.id)}
+            dashboard={dashboard}
+            context={context}
+            words={outcome === null ? null : outcomeWords({ outcome, rows: context.rows })}
+          />
         )}
-        {count === 0 ? null : <span className="tabular-nums text-foreground">{count}</span>}
-      </span>
-    </TableCell>
+      </DragOverlay>
+    </>
   )
 }
 
-/** The shape the table will take, so the first paint is not a single slab. */
-function LoadingRows() {
+/** The card the pointer carries: the worktree's row, or the whole epic, as each is drawn. */
+function Held({ dragged, dashboard, context, words }: {
+  dragged: Dragged | null
+  dashboard: Dashboard
+  context: DragContext
+  words: string | null
+}) {
+  if (dragged === null) return null
+  if (dragged.kind === 'epic') {
+    const card = dashboard.cards.find((candidate) => candidate.kind === 'epic' && candidate.name === dragged.name)
+    return card?.kind === 'epic' ? <HeldPreview held={{ kind: 'epic', card }} words={words} context={context} /> : null
+  }
+  const row = context.rows.find((candidate) => candidate.path === dragged.path)
+  return row === undefined ? null : <HeldPreview held={{ kind: 'row', row }} words={words} context={context} />
+}
+
+/** The shape the cards will take, so the first paint is not a single slab. */
+function LoadingCards() {
   return (
-    <div className="space-y-2">
-      <Skeleton className="h-8" />
-      {skeletonRows.map(row => <Skeleton key={row} className="h-10" />)}
+    <div className="worktree-cards">
+      {skeletonCards.map((card) => <Skeleton key={card} className="h-24 rounded-xl" />)}
     </div>
   )
 }
@@ -254,7 +251,7 @@ function LoadingRows() {
 function EmptyState() {
   return (
     <div className="py-20 text-center text-sm text-muted-foreground">
-      <p>No sessions yet.</p>
+      <p>No worktrees yet.</p>
       <p className="mt-2">
         Run <code className="rounded bg-muted px-1.5 py-0.5 font-mono">session open</code> in a worktree to add it.
       </p>

@@ -1,4 +1,4 @@
-import { CheckCircle2, Group, Layers3 } from 'lucide-react'
+import { Boxes, CheckCircle2, Group, Layers3 } from 'lucide-react'
 import * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
@@ -17,17 +17,52 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 
 /**
- * What the name dialog is naming: items chosen in one lane as a group, or
- * Batch items as a batch for Queue, either the ones chosen or the items of one
- * group there, in which case the group's name is where the name starts.
+ * What a board names: items chosen in one lane as a group, or Batch items as
+ * a batch for Queue, either the ones chosen or the items of one group there,
+ * in which case the group's name is where the name starts.
  */
-export type NameRequest =
+export type BoardNameRequest =
   | { readonly kind: 'group'; readonly stage: Stage; readonly ids: readonly string[] }
   | { readonly kind: 'batch'; readonly ids: readonly string[]; readonly group: string | null }
 
-const startingName = (request: NameRequest | null) => (request?.kind === 'batch' ? request.group ?? '' : '')
+/**
+ * What the index names: an epic for two worktrees in none, one dropped onto
+ * the other, or a new name for an epic, which every worktree in it takes, so a
+ * name another epic has merges the two. `ids` are the worktrees' paths.
+ */
+export type EpicNameRequest =
+  | { readonly kind: 'epic'; readonly ids: readonly string[]; readonly names: readonly [string, string] }
+  | { readonly kind: 'rename'; readonly ids: readonly string[]; readonly epic: string }
+
+/** What the name dialog is naming. */
+export type NameRequest = BoardNameRequest | EpicNameRequest
+
+const startingName = (request: NameRequest | null) =>
+  request?.kind === 'batch' ? request.group ?? '' : request?.kind === 'rename' ? request.epic : ''
+
+function epicCopyOf(request: EpicNameRequest) {
+  const common = { label: 'Epic name', placeholder: 'What do these worktrees serve together?' }
+  if (request.kind === 'epic') {
+    return {
+      ...common,
+      title: 'Make an epic',
+      description: `${request.names[0]} and ${request.names[1]} will be in one epic under this name. A name another epic already has puts them in it.`,
+      submit: 'Make epic',
+      submitting: 'Making…',
+    }
+  }
+  const count = request.ids.length
+  return {
+    ...common,
+    title: 'Rename the epic',
+    description: `${count === 1 ? 'The worktree' : `The ${count} worktrees`} in “${request.epic}” will be in the epic of the new name. A name another epic already has merges the two.`,
+    submit: 'Rename',
+    submitting: 'Renaming…',
+  }
+}
 
 function copyOf(request: NameRequest) {
+  if (request.kind === 'epic' || request.kind === 'rename') return epicCopyOf(request)
   const count = request.ids.length
   const chosen = `${count} chosen ${count === 1 ? 'item' : 'items'}`
   if (request.kind === 'group') {
@@ -53,11 +88,20 @@ function copyOf(request: NameRequest) {
   }
 }
 
+/** The mark beside each dialog's title: what the name will name. */
+function NameMark({ request }: { request: NameRequest | null }) {
+  const className = 'size-4 text-muted-foreground'
+  if (request?.kind === 'group') return <Group className={className} />
+  return request?.kind === 'batch' ? <Layers3 className={className} /> : <Boxes className={className} />
+}
+
 /**
  * The one dialog that names something: a group gathered from what a lane
- * chose, and a batch composed for Queue from what Batch chose or from one
- * group in Batch. Every name the board asks for is asked for here, so a
- * group and a batch are named the same way.
+ * chose, a batch composed for Queue from what Batch chose or from one group in
+ * Batch, and on the index an epic, made or renamed. Every name the board and
+ * the index ask for is asked for here, so all of them are named the same way,
+ * and none starts from a name of the dialog's own: without one there is
+ * nothing to name.
  */
 export function NameDialog({
   request,
@@ -93,9 +137,7 @@ export function NameDialog({
     >
       <DialogContent>
         <DialogHeader>
-          {shown?.kind === 'group'
-            ? <Group className="size-4 text-muted-foreground" />
-            : <Layers3 className="size-4 text-muted-foreground" />}
+          <NameMark request={shown} />
           <DialogTitle>{copy?.title}</DialogTitle>
           <DialogDescription>{copy?.description}</DialogDescription>
         </DialogHeader>

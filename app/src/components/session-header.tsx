@@ -12,14 +12,14 @@ import { TooltipProvider } from './ui/tooltip'
 import { WorktreePicker } from './worktree-picker'
 
 /**
- * The board's header: the way back to every session, the worktree you are
+ * The board's header: the way back to every worktree, the worktree you are
  * looking at with the branch checked out in it and a way to switch, where the
  * work lives outside the files, the session's pages beside its lanes, a
  * terminal here, and the board's own settings. A page deeper than the board
  * carries its own trail instead, because by then where you are is a position
  * rather than a control.
  *
- * Left to right: "All sessions", where every trail starts too, then the
+ * Left to right: "All worktrees", where every trail starts too, then the
  * worktree with its terminal beside it, since the terminal opens in that
  * worktree, then where the work lives outside the files, then the session's
  * rules, ledger, context and archive; the settings stay at the far end. A
@@ -48,9 +48,9 @@ export function SessionHeader({ worktree, rules, links, linksError, terminal }: 
           className="-ml-2.5"
           nativeButton={false}
           title={tip('Every worktree the daemon is tracking.')}
-          render={<a aria-label="All sessions" href="/" />}
+          render={<a aria-label="All worktrees" href="/" />}
         >
-          <LayoutGrid /> All sessions
+          <LayoutGrid /> All worktrees
         </Button>
         {worktree ? (
           <div className="flex items-center gap-1.5">

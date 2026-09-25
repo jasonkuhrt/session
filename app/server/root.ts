@@ -1,6 +1,7 @@
 import type { Stage } from '../contract.ts';
 import { stageDirectory, stageNames } from '../contract.ts';
-import { contextDirectory, entryName, metaDirectory, rootEntries } from './layout.ts';
+import { contextDirectory, entryName, epicFact, metaDirectory, rootEntries } from './layout.ts';
+import { nameRuleBroken, quote } from './model.ts';
 
 /**
  * The session root's rules: whether an entry belongs there, what `meta/` may
@@ -10,9 +11,49 @@ import { contextDirectory, entryName, metaDirectory, rootEntries } from './layou
 
 /**
  * The facts `meta/` may hold, each by its name and kind, as the root's entries
- * are. None is defined yet, so whatever it holds is reported.
+ * are: `epic`, the file naming the epic this worktree is in. Whatever else it
+ * holds is reported.
  */
-const metaFacts: ReadonlyMap<string, 'directory' | 'file'> = new Map();
+const metaFacts: ReadonlyMap<string, 'directory' | 'file'> = new Map([[epicFact, 'file']]);
+
+/** The epic's file as a refusal names it. */
+const epicPath = `${metaDirectory}/${epicFact}`;
+
+/** How a broken epic's file is mended, by the two commands that write it whole. */
+const epicFix = 'rewrite it with `session join "<epic>"`, or remove it with `session leave`';
+
+/**
+ * Why a name cannot be an epic's, or null when it can. An epic's name follows
+ * a group's rules, and it is one line of a file, so it holds no line break.
+ * The clause starts in lower case, for a caller to lead into it.
+ */
+export const epicNameProblem = (name: string): string | null => {
+  const broken = nameRuleBroken(name);
+  if (broken === 'blank') return 'an epic’s name must be non-empty and free of surrounding spaces';
+  if (/[\n\r]/u.test(name)) return `an epic’s name is one line, and ${quote(name)} holds a line break`;
+  return broken === 'slash' ? `an epic’s name must not contain "/", and ${quote(name)} does` : null;
+};
+
+/**
+ * The epic a `meta/epic` file names, or the rule it breaks, with its fix: the
+ * file is one line, the epic's name, ending in a newline, and nothing else.
+ */
+export const parseEpicFile = (content: string): { readonly epic: string } | { readonly problem: string } => {
+  const end = content.indexOf('\n');
+  if (end === -1 || end !== content.length - 1) {
+    return { problem: `${epicPath} holds one line, the epic’s name, ending in a newline; ${epicFix}.` };
+  }
+  const epic = content.slice(0, end);
+  const problem = epicNameProblem(epic);
+  return problem === null ? { epic } : { problem: `${epicPath}: ${problem}; ${epicFix}.` };
+};
+
+/** Why `meta` may not be a link: a worktree's facts are its own, and a link would share them or put them elsewhere. */
+export const metaLinkProblem =
+  `${metaDirectory} is a link; a worktree’s facts are its own, so make ${metaDirectory}/ a directory of its own.`;
+
+/** Why `meta/epic` may not be a link: each worktree names its epic in a file of its own. */
+export const epicLinkProblem = `${epicPath} is a link; each worktree names its epic in a file of its own, so ${epicFix}.`;
 
 /** The one-file-per-stage layout's file for a stage, `TRIAGE.md`, from before stages were directories. */
 export const leftoverStageFile = (stage: Stage): string => `${stage.toUpperCase()}.md`;

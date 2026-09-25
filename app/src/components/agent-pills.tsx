@@ -35,10 +35,10 @@ import {
 } from './ui/dropdown-menu'
 
 /**
- * The agents in one worktree's row: a pill per session, each one a menu of
- * what can be done with that session and nothing else. The row says how many
- * and which, the menu says the rest, so a cell costs one line however busy the
- * worktree is.
+ * The agents in one worktree's row on the index: a pill per session, each one
+ * a menu of what can be done with that session and nothing else. The row says
+ * how many and which, the menu says the rest, so the pills cost one line
+ * however busy the worktree is.
  *
  * Only live things are named here. A session whose process is gone belongs to
  * the board's strip, where it is scoped to the worktree a reader chose; the
@@ -237,13 +237,13 @@ function SessionPill({ pill }: { pill: Pill }) {
 }
 
 /**
- * Every live agent in this worktree, what needs a person first. A session
- * whose process is gone and a thread no app is known to hold are not named
- * here: they belong to the worktree's own board, and a row that listed them
- * would say something is happening where nothing is known to be.
+ * Every live agent in this worktree, what needs a person first, and nothing
+ * when none is. A session whose process is gone and a thread no app is known
+ * to hold are not named here: they belong to the worktree's own board, and a
+ * row that listed them would say something is happening where nothing is
+ * known to be.
  */
-export function AgentsCell({ agents, now }: { agents: AgentsSummary; now: number }) {
-  const tip = useTip()
+export function AgentPills({ agents, now }: { agents: AgentsSummary; now: number }) {
   const pills: Pill[] = []
   for (const session of sortSessions(agents.claude)) {
     if (isLive(session)) pills.push(claudePill(session, now))
@@ -253,11 +253,7 @@ export function AgentsCell({ agents, now }: { agents: AgentsSummary; now: number
   for (const thread of sortThreads(agents.codex)) {
     if (thread.loaded === true) pills.push(codexPill(thread, now))
   }
-  if (pills.length === 0) {
-    return (
-      <span className="text-muted-foreground" title={tip('No agent is live in this worktree right now.')}>—</span>
-    )
-  }
+  if (pills.length === 0) return null
 
   return (
     <span className="flex flex-wrap gap-1">

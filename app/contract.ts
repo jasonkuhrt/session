@@ -229,7 +229,9 @@ export const ArchiveListingSchema = Schema.Struct({
  * - `agents`: the Claude Code registry or a Codex writer lock changed
  * - `trailers`: the unpushed commits' trailer problems changed
  * - `links`: gh or linear was asked about the worktree's links again
- * - `worktrees`: the set of tracked worktrees changed
+ * - `worktrees`: the set of tracked worktrees changed, a trailer report
+ *   changed, or a tracked worktree's `.session` changed where a row shows it:
+ *   its items or its epic
  * - `pull-requests`: gh was asked about a tracked worktree's pull request again
  */
 export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees' | 'pull-requests';
@@ -571,12 +573,33 @@ export type WorktreeSummary = {
   lastChange: string | null;
   /** The newest of the agents' moments and `lastChange`; null when there is none. */
   activity: Activity | null;
-  /** Set when another tracked worktree already owns this key; the row is not served. */
+  /**
+   * Why the row cannot be read or its board served: another tracked worktree
+   * already owns this key, the session or Git could not be read, or its
+   * `meta/epic` breaks the rules; null when nothing stands in the way.
+   */
   conflict: string | null;
   agents: AgentsSummary;
   /** Trailers on this worktree's unpushed commits that could not be acted on. */
   trailerProblems: readonly TrailerProblem[];
+  /**
+   * The epic this worktree is in: the name its session's `meta/epic` holds,
+   * or null when it names none. The index never draws a main worktree in one.
+   */
+  epic: string | null;
+  /** Whether this is its repository's main worktree, which Git lists first and the index pins above the epics. */
+  main: boolean;
 };
+
+/**
+ * The epic a worktree is in, as `POST /api/worktrees/<key>/epic` takes it and
+ * answers it: an epic's name to put the worktree in, or null to take it out.
+ */
+export type WorktreeEpic = { epic: string | null };
+
+export const WorktreeEpicSchema = Schema.Struct({
+  epic: Schema.NullOr(Schema.String),
+});
 
 export const WorktreeSummarySchema = Schema.Struct({
   key: Schema.String,
@@ -597,6 +620,8 @@ export const WorktreeSummarySchema = Schema.Struct({
   conflict: Schema.NullOr(Schema.String),
   agents: AgentsSummarySchema,
   trailerProblems: Schema.Array(TrailerProblemSchema),
+  epic: Schema.NullOr(Schema.String),
+  main: Schema.Boolean,
 });
 
 /** The result of asking the daemon to focus a session's terminal. */

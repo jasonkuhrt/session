@@ -16,6 +16,7 @@ import {
   SessionSchema,
   TerminalResultSchema,
   TrailerProblemSchema,
+  WorktreeEpicSchema,
   WorktreeSummarySchema,
 } from '../../contract'
 import { basePath, rawFileHref } from './base'
@@ -43,6 +44,7 @@ const decodeTerminal = Schema.decodeUnknownEffect(TerminalResultSchema)
 const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
 const decodeContext = Schema.decodeUnknownEffect(ContextListingSchema)
 const decodeArchive = Schema.decodeUnknownEffect(ArchiveListingSchema)
+const decodeEpic = Schema.decodeUnknownEffect(WorktreeEpicSchema)
 
 const send = <A, E>(
   request: HttpClientRequest.HttpClientRequest,
@@ -194,6 +196,13 @@ export const IndexApi = {
     run(send(
       HttpClientRequest.post('/api/agents/focus').pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
       decodeFocus,
+    )),
+
+  /** Puts a worktree in the epic of that name, or in none with null, by the key the index lists it under. */
+  setEpic: (key: string, epic: string | null) =>
+    run(send(
+      HttpClientRequest.post(`/api/worktrees/${key}/epic`).pipe(HttpClientRequest.bodyJsonUnsafe({ epic })),
+      decodeEpic,
     )),
 }
 

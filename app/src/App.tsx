@@ -4,7 +4,7 @@ import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
-import type { NameRequest } from './components/session-dialogs'
+import type { BoardNameRequest } from './components/session-dialogs'
 import { CompleteDialog, NameDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
 import { useTerminalAvailable } from './components/terminal-action'
@@ -28,7 +28,7 @@ function App() {
   const [agents, setAgents] = React.useState<AgentsSummary | null>(null)
   const [agentsError, setAgentsError] = React.useState<string | null>(null)
   const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
-  const [naming, setNaming] = React.useState<NameRequest | null>(null)
+  const [naming, setNaming] = React.useState<BoardNameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [choosing, setChoosing] = React.useState<Choosing>(null)
   const [selection, setSelection] = React.useState<Set<string>>(new Set())

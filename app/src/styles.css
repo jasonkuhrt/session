@@ -210,6 +210,33 @@
 .markdown-reader table { width: 100%; border-collapse: collapse; font-size: .95em; }
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }
 
+/*
+ * The index's cards: columns as wide as a card needs, as many as the window
+ * holds, each card as tall as its rows. Where the browser lays cards out as
+ * masonry, a card packs up under the one above it in its column; elsewhere
+ * each starts at the top of its row. No script lays them out. Chrome 153
+ * supports neither syntax as it ships: behind its experimental web platform
+ * features flag it has `display: grid-lanes`, the syntax the CSS Working
+ * Group settled on, and never `display: masonry` or `grid-template-rows:
+ * masonry`, the earlier proposal, which Firefox keeps behind a flag of its
+ * own. The strip of main worktrees shares the columns, so its tiles line up
+ * with the cards below, and stays a plain grid, since every tile in it is one
+ * worktree's two lines.
+ */
+.worktree-cards,
+.worktree-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+  align-items: start;
+  gap: 1rem;
+}
+@supports (display: grid-lanes) {
+  .worktree-cards { display: grid-lanes; }
+}
+@supports (grid-template-rows: masonry) and (not (display: grid-lanes)) {
+  .worktree-cards { grid-template-rows: masonry; }
+}
+
 /* Evidence is the long tail of an item: present, one click away, and never in
    the way of the argument above it. */
 .evidence-panel { margin-top: 2.5em; border-top: 1px solid var(--border); padding-top: 1em; }

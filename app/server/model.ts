@@ -85,18 +85,25 @@ const summarize = (body: string): string => {
 export const groupNoun = (stage: Stage): 'batch' | 'group' => (isBatchedStage(stage) ? 'batch' : 'group');
 
 /**
- * A group's name is the rest of its directory's name, so it must survive
- * being one: non-empty, without surrounding spaces, and without `/`. `where`
- * is what a refusal names, the directory itself when one is being read.
+ * The rule a name breaks, or null when it breaks none. A group's name is the
+ * rest of its directory's name and an epic's names it the same way, so each
+ * must survive being one: non-empty, without surrounding spaces, and without
+ * `/`. One rule serves both, so an epic's name follows a group's.
+ */
+export const nameRuleBroken = (name: string): 'blank' | 'slash' | null => {
+  if (name.trim() !== name || name === '') return 'blank';
+  return name.includes('/') ? 'slash' : null;
+};
+
+/**
+ * A group's name, refused when it breaks the name rule. `where` is what a
+ * refusal names, the directory itself when one is being read.
  */
 export const validateGroupName = (stage: Stage, name: string, where: string = stageDirectory(stage)): string => {
   const noun = groupNoun(stage);
-  if (name.trim() !== name || name === '') {
-    fail(`${where}: ${noun} names must be non-empty and free of surrounding spaces.`);
-  }
-  if (name.includes('/')) {
-    fail(`${where}: ${noun} name ${quote(name)} must not contain "/".`);
-  }
+  const broken = nameRuleBroken(name);
+  if (broken === 'blank') fail(`${where}: ${noun} names must be non-empty and free of surrounding spaces.`);
+  if (broken === 'slash') fail(`${where}: ${noun} name ${quote(name)} must not contain "/".`);
   return name;
 };
 

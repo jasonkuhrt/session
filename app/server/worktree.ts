@@ -4,7 +4,7 @@ import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { capture } from './command.ts';
-import { makeRepository } from './repository.ts';
+import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 
 /** What a worktree has checked out, as Git lists it. */
 export type Checkout = {
@@ -20,6 +20,12 @@ const outsideGit: Checkout = { branch: null, detached: false };
 export type WorktreeMetadata = Checkout & {
   readonly name: string;
   readonly path: string;
+  /**
+   * Whether this is its repository's main worktree, which Git lists first:
+   * the one that holds the repository, which `git worktree` will not move,
+   * lock or remove. False outside Git.
+   */
+  readonly main: boolean;
 };
 
 export type WorktreeSession = {
@@ -155,6 +161,12 @@ const locateGit = (start: string) =>
     }),
   );
 
+/**
+ * The worktree a path belongs to, its session, and the name the daemon keys
+ * it by. Git lists the main worktree first, so the first entry is the main:
+ * it keeps its folder's name, a linked worktree whose folder shares that name
+ * takes its parent's before it, and it is the one never in an epic.
+ */
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
     const candidate = resolve(input);
@@ -166,7 +178,7 @@ export const resolveWorktreeSession = (input: string) =>
     if (located === null) {
       return {
         directory: isSessionDirectory ? candidate : join(start, '.session'),
-        worktree: { name: basename(start), path: start, ...outsideGit },
+        worktree: { name: basename(start), path: start, main: false, ...outsideGit },
         git: null,
       } satisfies WorktreeSession;
     }
@@ -180,12 +192,12 @@ export const resolveWorktreeSession = (input: string) =>
         message: 'Git did not list the requested worktree.',
       });
     }
-    const mainWorktreePath = mainWorktree.path;
+    const main = worktreePath === mainWorktree.path;
     const leaf = basename(worktreePath);
     const name =
-      worktreePath === mainWorktreePath
+      main
         ? leaf
-        : leaf === basename(mainWorktreePath)
+        : leaf === basename(mainWorktree.path)
           ? `${basename(dirname(worktreePath))}/${leaf}`
           : leaf;
 
@@ -196,12 +208,37 @@ export const resolveWorktreeSession = (input: string) =>
       worktree: {
         name,
         path: worktreePath,
+        main,
         branch: current.branch,
         detached: current.detached,
       },
       git: located.git,
     } satisfies WorktreeSession;
   });
+
+/**
+ * Why a main worktree cannot join an epic, naming the rule and the way round
+ * it: Git keeps the repository in it and lists it first, so the index pins it
+ * above the epics instead.
+ */
+const mainWorktreeRefusal = (name: string) =>
+  `Not joined: ${name} is its repository’s main worktree, and a main worktree is never in an epic; ` +
+  'join from one of its linked worktrees instead.';
+
+/**
+ * Put a worktree in the epic of that name, or in none with null, through the
+ * one rule both the CLI and the daemon join by: a main worktree is never in an
+ * epic. Leaving is always allowed, so a hand-made file in a main worktree can
+ * be taken out the same way. Answers the epic its file named before.
+ */
+export const setWorktreeEpic = (input: {
+  readonly session: WorktreeSession;
+  readonly repository: SessionRepository;
+  readonly epic: string | null;
+}) =>
+  input.epic !== null && input.session.worktree.main
+    ? Effect.fail(new RepositoryError({ kind: 'conflict', message: mainWorktreeRefusal(input.session.worktree.name) }))
+    : input.repository.setEpic(input.epic);
 
 /**
  * Route key for a worktree: its name, encoded segment by segment so a nested

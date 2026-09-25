@@ -35,14 +35,15 @@ import type {
   PullRequestReports,
   Stage,
   TrailerProblem,
+  WorktreeEpic,
   WorktreeSummary,
 } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
-import { contextDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
+import { epicResponse, eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
+import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
   issuesFor,
@@ -51,7 +52,7 @@ import {
   pullRequestReport,
 } from './links/index.ts';
 import { aliasHostnames } from './portless.ts';
-import { makeRepository, type SessionRepository } from './repository.ts';
+import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
@@ -61,6 +62,7 @@ import {
   ensureSession,
   listRepositories,
   resolveWorktreeSession,
+  setWorktreeEpic,
   type WorktreeError,
   type WorktreeSession,
 } from './worktree.ts';
@@ -469,11 +471,17 @@ type Tracked = {
   readonly session: WorktreeSession;
   /** The one repository the board and the trailer passes both write through, so they share a lock. */
   readonly repository: SessionRepository;
+  /**
+   * Why its board is not served: another tracked worktree owned its key when
+   * it was taken on. The first worktree to claim a key owns it until it
+   * leaves, and then the next one to have claimed it does.
+   */
   conflict: string | null;
   handler: ((request: Request) => Promise<Response>) | undefined;
   /** Every tracked worktree has these from the moment it is tracked: the
-   *  watcher is what notices its session changing and what notices it leave,
-   *  which is not something a board being open can be a condition of. */
+   *  watcher is what notices its session changing, for its boards and the
+   *  index alike, which is not something a board being open can be a
+   *  condition of. Its leaving is noticed a level up; see `parentWatchers`. */
   readonly events: SessionEventSource;
   readonly watcher: Fiber.Fiber<void, never>;
   /** The worktree's trailer passes and link re-reads, over one set of watches; see `worktreeLoops`. */
@@ -555,6 +563,9 @@ const mapWorktrees = <A, B>(
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 
+/** `POST /api/worktrees/<key>/epic`: a key is a worktree's name, encoded segment by segment, so it may hold a `/`. */
+const epicRoute = /^\/api\/worktrees\/(.+)\/epic$/u;
+
 /** How old an overlay a board may be served before the daemon lists again. */
 const agentsFreshnessMilliseconds = 30_000;
 
@@ -565,12 +576,56 @@ const agentsFreshnessMilliseconds = 30_000;
  */
 const agentsDebounceMilliseconds = 1_000;
 
-/** What a board follows as its files change, and what the agent sources fire. */
+/**
+ * An agent moving items, or a lead joining its workers to an epic one command
+ * each, writes sessions in a burst, and the index reads every row once it
+ * settles: longer than a board's settle, since the index's read is every
+ * board's, and short enough to follow a command at once.
+ */
+const indexSettleMilliseconds = 500;
+
+/** What the agent sources fire: any change in the directories they keep. */
 const watchDirectory = (directory: string, events: SessionEventSource) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.watch(directory, { recursive: true }).pipe(
       Stream.runForEach(() => Effect.sync(() => events.changed())),
+    );
+  }).pipe(
+    Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
+  );
+
+/**
+ * The parts of a session the index shows nothing of: what agents keep in
+ * `context/`, the ledger's entries, and the history under `archive/` and
+ * `ignore/`. A change anywhere else can change a row: an item file moves its
+ * counts, its batch and its newest item, and `meta/epic` its epic.
+ */
+const indexQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory, archiveDirectory, ignoreDirectory]);
+
+/** Whether a change under a session, by its path there, can change what the index shows of it. */
+const showsOnIndex = (event: FileSystem.WatchEvent): boolean =>
+  !indexQuiet.has(event.path.split(/[\\/]/u)[0] ?? '');
+
+/**
+ * A tracked worktree's session, watched once for both of its readers: its
+ * boards follow every change, the pages under them included, and the index
+ * the ones a row shows, which the daemon settles across every worktree before
+ * the index reads its rows again.
+ */
+const watchSession = (directory: string, readers: {
+  readonly boards: SessionEventSource;
+  readonly index: SessionEventSource;
+}) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.watch(directory, { recursive: true }).pipe(
+      Stream.runForEach((event) =>
+        Effect.sync(() => {
+          readers.boards.changed();
+          if (showsOnIndex(event)) readers.index.changed();
+        })
+      ),
     );
   }).pipe(
     Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
@@ -802,6 +857,14 @@ export const runDaemon = async () => {
   let agents: { at: number; byPath: ReadonlyMap<string, AgentsSummary> } = { at: 0, byPath: new Map() };
   const agentsEvents = makeSessionEvents(0);
   const worktreeEvents = makeSessionEvents(0);
+  /**
+   * A change under any tracked worktree's session that a row shows, settled
+   * across all of them, since the index reads every row again, and passed on
+   * to it as `worktrees`: without it the index learnt of new counts, a batch
+   * or an epic only when something unrelated made it read.
+   */
+  const sessionChanges = makeSessionEvents(indexSettleMilliseconds);
+  sessionChanges.subscribe(() => worktreeEvents.changed());
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */
   const pullRequestEvents = makeSessionEvents();
   /**
@@ -1045,14 +1108,19 @@ export const runDaemon = async () => {
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
-    // Out of the map first: the watcher's own finalizer asks whether this path
-    // is still tracked, and the answer by then has to be no.
+    // Out of the map first, so a trailer pass or a link re-read already under
+    // way finds nothing to write its answer to.
     tracked.delete(path);
     Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
     Effect.runFork(entry.loops.pipe(Fiber.interrupt));
     entry.events.close();
     entry.trailerEvents.close();
     entry.linksEvents.close();
+    // A key it owned passes to the next worktree that claimed it, as a restart
+    // would give it, so that one's board is served and its row is reachable.
+    if (entry.conflict !== null) return;
+    const next = [...tracked.values()].find((candidate) => candidate.key === entry.key && candidate.conflict !== null);
+    if (next !== undefined) next.conflict = null;
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -1071,7 +1139,7 @@ export const runDaemon = async () => {
       conflict,
       handler: undefined,
       events,
-      watcher: forkNode(watchDirectory(session.directory, events)),
+      watcher: forkNode(watchSession(session.directory, { boards: events, index: sessionChanges })),
       loops: forkNode(worktreeLoops(session, {
         pass: Effect.promise(() => reconcile(path)),
         answeredRef: (ref) => answeredRef(path, ref),
@@ -1225,13 +1293,18 @@ export const runDaemon = async () => {
   /**
    * One row of the index. What the worktree has checked out comes from its
    * repository's listing, which the route asked once for all of that
-   * repository's rows.
+   * repository's rows. Its epic is read on its own, from its file, so a row
+   * whose items or Git cannot be read stays in its epic; a file the rules
+   * reject is why its row cannot be read, with the sentence `check` gives.
+   * Whether it is main was settled by Git when it was taken on, since a path
+   * that is its repository's main worktree stays one for as long as it exists.
    */
   const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
     const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
+    const epic = await runNode(entry.repository.epic.pipe(Effect.result));
     const base = {
       key: entry.key,
       name: entry.session.worktree.name,
@@ -1240,12 +1313,15 @@ export const runDaemon = async () => {
       detached: entry.session.worktree.detached,
       agents: overlay,
       trailerProblems: entry.trailerProblems,
+      epic: Result.isSuccess(epic) ? epic.success : null,
+      main: entry.session.worktree.main,
     };
     try {
       if (Result.isFailure(checkout)) throw checkout.failure;
       const loaded = await runNode(
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
+      if (Result.isFailure(epic)) throw epic.failure;
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
       // The batch in Execute names the work under way; a batch with no name is
       // nothing to render, so it reads as an empty Execute rather than a blank.
@@ -1345,6 +1421,26 @@ export const runDaemon = async () => {
     terminal: await runNode(cmuxOnPath),
   });
 
+  /**
+   * Set a worktree's epic for the index's drags, as `session join` and
+   * `session leave` set it: by the key the index lists it under, which only
+   * the worktree that owns the key answers to, so a row listed under a key it
+   * does not own is never the one written. The session is converged first, as
+   * every command converges it, and one that has gone is not brought back. The
+   * watch on the session is what tells the index.
+   */
+  const setEpicAt = async (key: string, epic: string | null): Promise<WorktreeEpic> => {
+    const entry = [...tracked.values()].find((candidate) => candidate.key === key && candidate.conflict === null);
+    if (entry === undefined || !(await isTrackable(entry.path))) {
+      throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree under that key; reload the index.' });
+    }
+    await runNode(Effect.gen(function*() {
+      yield* ensureSession(entry.session);
+      yield* setWorktreeEpic({ session: entry.session, repository: entry.repository, epic });
+    }));
+    return { epic: epic === null ? null : epic.trim() };
+  };
+
   /** A terminal in a tracked worktree; undefined for a path the daemon does not track. */
   const terminalAt = async (path: string) => {
     const entry = tracked.get(resolve(path));
@@ -1396,6 +1492,9 @@ export const runDaemon = async () => {
       if (request.method === 'POST' && url.pathname === '/api/terminal') {
         return await terminalResponse({ request, open: terminalAt });
       }
+      // The index's drags set a worktree's epic by the key it lists it under.
+      const epicOf = request.method === 'POST' ? epicRoute.exec(url.pathname) : null;
+      if (epicOf !== null) return await epicResponse({ request, write: (epic) => setEpicAt(epicOf[1]!, epic) });
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));
         const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;
