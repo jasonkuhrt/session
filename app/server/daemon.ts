@@ -689,6 +689,25 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   return best;
 };
 
+/**
+ * A file of the built app, and `index.html` for a path without an extension,
+ * which is a route the app draws itself. Nothing outside the build is served.
+ */
+const staticFile = async (url: URL, method: string) => {
+  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
+  const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  const path = resolve(distDirectory, requested);
+  if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
+    return json({ error: 'Not found.' }, 404);
+  }
+  let candidate = file(path);
+  if (!(await candidate.exists()) && !requested.includes('.')) {
+    candidate = file(join(distDirectory, 'index.html'));
+  }
+  if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
+  return method === 'HEAD' ? new Response(null) : new Response(candidate);
+};
+
 // eslint-disable-next-line max-lines-per-function -- The registry, its routes and its lifecycle are one object; the closures share the map.
 export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
@@ -1220,21 +1239,6 @@ export const runDaemon = async () => {
     const target = new URL(url);
     target.pathname = rest.slice(entry.key.length);
     return (await handlerFor(entry))(new Request(target, request));
-  };
-
-  const staticFile = async (url: URL, method: string) => {
-    if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
-    const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const path = resolve(distDirectory, requested);
-    if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
-      return json({ error: 'Not found.' }, 404);
-    }
-    let candidate = file(path);
-    if (!(await candidate.exists()) && !requested.includes('.')) {
-      candidate = file(join(distDirectory, 'index.html'));
-    }
-    if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
-    return method === 'HEAD' ? new Response(null) : new Response(candidate);
   };
 
   /**

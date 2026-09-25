@@ -270,6 +270,11 @@ const currentPrefixes = (
   return { groups, items };
 };
 
+const itemFile =(directory: string, prefix: number, item: ItemDraft): StageFileEntry => ({
+  path: `${directory}/${formatPrefix(prefix)}-${item.id}.md`,
+  content: `${renderItem(item)}\n`,
+});
+
 /**
  * The item files a stage directory should hold for these items, in this order:
  * item files and group directories share one sequence of prefixes.
@@ -281,20 +286,15 @@ export const renderStageDirectory = (input: {
 }): StageFileEntry[] => {
   const { stage } = input;
   const known = currentPrefixes(input.current);
-  const file = (directory: string, prefix: number, item: ItemDraft): StageFileEntry => ({
-    path: `${directory}/${formatPrefix(prefix)}-${item.id}.md`,
-    content: `${renderItem(item)}\n`,
-  });
-
   const entries = topLevelEntries(stage, input.items);
   const prefixes = numberEntries(
     entries.map((entry) => (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null),
   );
   return entries.flatMap((entry, index) => {
     const prefix = prefixes[index]!;
-    if (entry.kind === 'item') return [file(stage, prefix, entry.item)];
+    if (entry.kind === 'item') return [itemFile(stage, prefix, entry.item)];
     const directory = `${stage}/${formatPrefix(prefix)}-${entry.name}`;
     const inner = numberEntries(entry.items.map((item) => known.items.get(`${entry.name}/${item.id}`) ?? null));
-    return entry.items.map((item, position) => file(directory, inner[position]!, item));
+    return entry.items.map((item, position) => itemFile(directory, inner[position]!, item));
   });
 };
