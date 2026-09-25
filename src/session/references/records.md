@@ -2,22 +2,28 @@
 
 The session root is closed. It holds exactly:
 
-- the five stage directories;
+- the five stage directories, `1-Triage/`, `2-Design/`, `3-Batch/`, `4-Queue/`
+  and `5-Execute/`, which [Directory layout](#directory-layout) describes;
 - a `.gitignore` of exactly `*`;
 - `RULES.md`, when the user has set standing rules for the session (see the
   skill's Rules section);
 - `context/`, supporting material for agents;
 - `ledger/`, the session's shared log;
+- `meta/`, facts about this worktree's session, one file each;
 - `archive/` and `ignore/`, inactive history that is not ordinary agent context.
 
 Entries whose name starts with `.` are outside this rule, as they are in the
 stage directories. `check` reports any other entry by name with its fix: move it
 under `context/` or delete it, or, when only its case differs from one of these,
-rename it. Each must also be its own kind: the stages, `context/`, `ledger/`,
-`archive/` and `ignore/` directories, and `RULES.md` and `.gitignore` files.
-Existing supporting files should be migrated deliberately, preserving evidence
-and links rather than discarding them because their names differ from the new
-convention.
+rename it. A directory that holds a stage under another name, bare as the stages
+were named before they were numbered (`TRIAGE/`), in another case, or behind a
+prefix that is not its place, stops every command, not only `check`, with its
+rename, `1-Triage/`, or, when the stage's own directory is there too, with what
+to move into it. Each entry must also be its own kind: the stages, `context/`,
+`ledger/`, `meta/`, `archive/` and `ignore/` directories, and `RULES.md` and
+`.gitignore` files. Existing supporting files should be migrated deliberately,
+preserving evidence and links rather than discarding them because their names
+differ from the new convention.
 
 Each item is one file. Its first line is `## ID — Short title`, with an em dash,
 and the rest is the body: a short lead paragraph, then the stage's meaningful
@@ -89,7 +95,7 @@ each item leaves its group for the batch.
 Any lane can gather its items into named groups, the way Queue gathers them into
 batches. A group is a directory inside the stage directory, numbered like an
 item file and named for the group, and it holds the group's item files:
-`TRIAGE/020-Needs a decision/010-BE-14.md`. In Triage, Design and Batch, item
+`1-Triage/020-Needs a decision/010-BE-14.md`. In Triage, Design and Batch, item
 files and group directories sit side by side and one sequence of prefixes orders
 them together, so a group has its place in the lane among the items outside it.
 In Queue and Execute every item is in a group, and there the group is a batch.
@@ -117,7 +123,7 @@ each command's rules.
 
 A batch is a group that gets started as a unit. Queue and Execute hold only
 batches, one directory each, with the batch's item files inside:
-`QUEUE/010-Email backend peel/010-BE-16.md`. The item file is the same as in
+`4-Queue/010-Email backend peel/010-BE-16.md`. The item file is the same as in
 Batch, and it keeps the Outcome and Acceptance sections it carried there. Every
 item in these two stages belongs to a batch, and batch names follow the rules
 for group names.
@@ -195,6 +201,14 @@ Reports and the inbox are dropped; evidence lives with its item.
 also write one by hand with the same keys and no others. `check` rejects
 anything in `ledger/` that breaks one of these rules.
 
+## Meta
+
+`meta/` holds facts about this worktree's session, one file each, named for the
+fact it holds. No fact is defined yet, so `check` reports anything in it by name
+with its fix, to move it under `context/` or delete it; names starting with `.`
+are outside the rule. Scaffolding creates it empty; a session without it is
+sound and sets no fact.
+
 ## Archive
 
 `archive/` is flat: one file per archived item, named for the day it was
@@ -238,17 +252,21 @@ up.
 
 ## Directory layout
 
-A stage is always a directory. Triage, Design and Batch hold item files and
-group directories side by side; Queue and Execute hold batch directories only:
+A stage is always a directory, named for its place in the flow and its name:
+`1-Triage`, `2-Design`, `3-Batch`, `4-Queue` and `5-Execute`. The digit makes a
+file tree list the stages in the order work moves through them, and the word
+after the hyphen is the stage's name, written the same way by the CLI and the
+board. Triage, Design and Batch hold item files and group directories side by
+side; Queue and Execute hold batch directories only:
 
 ```
-TRIAGE/
+1-Triage/
   010-BE-18.md
   020-Needs a decision/
     010-BE-14.md
     020-BE-15.md
   030-BE-17.md
-QUEUE/
+4-Queue/
   010-Email backend peel/
     010-BE-16.md
     020-BE-12.md
@@ -294,9 +312,16 @@ not decide the destination. Do not create an execution batch merely as a side
 effect of migration.
 
 The CLI never converts an old session. A `.session` that is a symlink is refused
-until it is replaced by a real directory, and a `STAGE.md` from the single-file
-layout is reported by `check` until it is folded into `STAGE/` by hand: split it
-at its `## ` headings into one numbered file per item, then delete it. A
+until it is replaced by a real directory. A session from before the stages were
+numbered holds `TRIAGE/`, `DESIGN/`, `BATCH/`, `QUEUE/` and `EXECUTE/`: every
+command refuses it with the first rename to make, since scaffolding `1-Triage/`
+beside `TRIAGE/` would split the stage in two, and `check` names each in turn.
+Rename the five directories to `1-Triage/` to `5-Execute/`; their groups and
+items move with them unchanged. The session repository's one-off
+`scripts/rename-stage-directories.ts` does that for every session named on its
+command line. A stage file from the single-file layout, such as `TRIAGE.md`, is
+reported by `check` until it is folded into its stage's directory by hand: split
+it at its `## ` headings into one numbered file per item, then delete it. A
 `BATCH.md` may still hold `# ` headings; drop them, and re-form each heading's
 items as a group in Batch with `session group "<name>" <ID...>`, or compose them
 straight into a batch with `session batch "<name>" <ID...>`.

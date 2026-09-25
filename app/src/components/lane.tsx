@@ -7,7 +7,7 @@ import { isBatchedStage } from '../../contract'
 import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
-import { groupMeta, stageMeta } from '../lib/workflow'
+import { groupMeta, stageHint } from '../lib/workflow'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -87,14 +87,13 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
 }
 
 function LaneHeading({ stage, count, children }: { stage: Stage; count: number; children?: React.ReactNode }) {
-  const meta = stageMeta[stage]
   const tip = useTip()
   return (
     <div className="flex items-center gap-2">
       {/* What the stage is for is one hover away rather than a line under
           every lane; the heading is what carries it. */}
       <h2 className="font-medium">
-        <Explained meaning={meta.hint}>{meta.label}</Explained>
+        <Explained meaning={stageHint[stage]}>{stage}</Explained>
       </h2>
       <Badge
         variant={count === 0 ? 'outline' : 'secondary'}
@@ -121,12 +120,12 @@ function ChooseEntries({ stage, pending, onChoose }: {
   return (
     <>
       <Tip
-        meaning={`Choose items of ${stageMeta[stage].label} to name as a group.`}
+        meaning={`Choose items of ${stage} to name as a group.`}
         render={<Button variant="ghost" size="xs" disabled={pending} onClick={() => onChoose({ stage, purpose: 'group' })} />}
       >
         Group…
       </Tip>
-      {stage === 'BATCH' ? (
+      {stage === 'Batch' ? (
         <Tip
           meaning="Choose items of Batch to name as a batch and append to Queue."
           render={<Button variant="ghost" size="xs" disabled={pending} onClick={() => onChoose({ stage, purpose: 'batch' })} />}
@@ -158,7 +157,7 @@ function ChoosingControls({ stage, purpose, selected, pending, onGroup, onQueue,
         : purpose === 'group'
         ? (
           <Tip
-            meaning={`Name the chosen items as a group in ${stageMeta[stage].label}.`}
+            meaning={`Name the chosen items as a group in ${stage}.`}
             render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
           >
             Group ({selected.length})
@@ -192,7 +191,7 @@ function LaneControls({ stage, choosing, selected, count, executeOccupied, pendi
   count: number
   executeOccupied: boolean
 }) {
-  const canStart = stage === 'QUEUE' && count > 0 && !executeOccupied
+  const canStart = stage === 'Queue' && count > 0 && !executeOccupied
   return (
     <>
       {choosing?.stage === stage ? (
@@ -247,7 +246,7 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
   const ids = items.map(item => item.id)
   // A drag can empty a group before the move is written; there is nothing in
   // it to queue or to take out until then.
-  const canQueue = stage === 'BATCH' && ids.length > 0
+  const canQueue = stage === 'Batch' && ids.length > 0
   const canUngroup = !isBatchedStage(stage) && ids.length > 0
   return (
     <div ref={ref} className={cn('space-y-2 rounded-xl border p-2', lands && landing)}>
@@ -265,7 +264,7 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
         ) : null}
         {canUngroup ? (
           <Tip
-            meaning={`Take these items out of the group, each to the end of ${stageMeta[stage].label}.`}
+            meaning={`Take these items out of the group, each to the end of ${stage}.`}
             render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onUngroup(ids)} />}
           >
             Ungroup

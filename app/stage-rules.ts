@@ -1,11 +1,11 @@
 import type { Stage } from './contract.ts';
 
 export const requiredSections: Record<Stage, ReadonlyArray<string>> = {
-  TRIAGE: ['Decision'],
-  DESIGN: ['Open questions'],
-  BATCH: ['Outcome', 'Acceptance'],
-  QUEUE: ['Outcome', 'Acceptance'],
-  EXECUTE: ['Outcome', 'Acceptance'],
+  Triage: ['Decision'],
+  Design: ['Open questions'],
+  Batch: ['Outcome', 'Acceptance'],
+  Queue: ['Outcome', 'Acceptance'],
+  Execute: ['Outcome', 'Acceptance'],
 };
 
 const fenceMarker = /^\s*(`{3,}|~{3,})/u;

@@ -17,7 +17,7 @@ import type {
   Stage,
   StageFile,
 } from '../contract.ts';
-import { isBatchedStage, rulesFile, stageNames } from '../contract.ts';
+import { isBatchedStage, rulesFile, stageDirectory, stageNames } from '../contract.ts';
 import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, parseArchiveName } from './archive.ts';
 import {
   archiveDirectory,
@@ -25,9 +25,9 @@ import {
   entryName,
   ignoreDirectory,
   ledgerDirectory,
+  metaDirectory,
   parseStageDirectory,
   renderStageDirectory,
-  rootEntryProblem,
   type StageFileEntry,
   type StageTreeEntry,
 } from './layout.ts';
@@ -52,6 +52,7 @@ import {
   validateItemSections,
   validateUniqueIds,
 } from './model.ts';
+import { leftoverStageFile, metaEntryProblem, misnamedStages, rootEntryProblem } from './root.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
@@ -243,10 +244,10 @@ const placeItem = (input: {
   }
 
   const index = items.findIndex((candidate) => candidate.id === beforeId);
-  const neighbour = items[index] ?? fail(`${stage}: cannot place ${item.id} before ${beforeId}, which is not in ${stage}.`);
+  const neighbour = items[index] ?? fail(`${stageDirectory(stage)}: cannot place ${item.id} before ${beforeId}, which is not in ${stage}.`);
   if (neighbour.group !== group) {
     fail(
-      `${stage}: cannot place ${item.id} before ${beforeId}; ${item.id} goes in ${placeName(stage, group)} and ${beforeId} is in ${placeName(stage, neighbour.group)}.`,
+      `${stageDirectory(stage)}: cannot place ${item.id} before ${beforeId}; ${item.id} goes in ${placeName(stage, group)} and ${beforeId} is in ${placeName(stage, neighbour.group)}.`,
     );
   }
   return insertAt(index);
@@ -330,6 +331,17 @@ export const makeRepository = (directory: string) =>
     const isLink = (path: string) =>
       fs.readLink(path).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }));
 
+    /** An entry's kind as the layout's rules name kinds: a link that leads nowhere has none, and is `other`. */
+    const entryType = (path: string) =>
+      fs.stat(path).pipe(
+        Effect.option,
+        Effect.map((info): 'directory' | 'file' | 'other' => {
+          if (Option.isNone(info)) return 'other';
+          if (info.value.type === 'Directory') return 'directory';
+          return info.value.type === 'File' ? 'file' : 'other';
+        }),
+      );
+
     /** Why a path's real location could not be had: a link can be read even when what it names cannot. */
     const unresolvedReason = (path: string) =>
       fs.readLink(path).pipe(
@@ -406,11 +418,11 @@ export const makeRepository = (directory: string) =>
      */
     const pruneEmptyDirectories = Effect.gen(function*() {
       for (const stage of stageNames) {
-        const stageDirectory = absolute(stage);
-        if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
-        for (const name of yield* fs.readDirectory(stageDirectory)) {
+        const stagePath = absolute(stageDirectory(stage));
+        if ((yield* pathType(stagePath)) !== 'Directory') continue;
+        for (const name of yield* fs.readDirectory(stagePath)) {
           if (name.startsWith('.')) continue;
-          const child = join(stageDirectory, name);
+          const child = join(stagePath, name);
           if ((yield* pathType(child)) !== 'Directory') continue;
           if (!(yield* holdsVisibleEntry(child))) yield* fs.remove(child, { recursive: true });
         }
@@ -443,12 +455,12 @@ export const makeRepository = (directory: string) =>
         yield* pruneEmptyDirectories;
       });
 
-    const readStageTree = (stageDirectory: string) =>
+    const readStageTree = (stagePath: string) =>
       Effect.gen(function*() {
         const entries: StageTreeEntry[] = [];
-        for (const name of (yield* fs.readDirectory(stageDirectory)).toSorted()) {
+        for (const name of (yield* fs.readDirectory(stagePath)).toSorted()) {
           if (name.startsWith('.')) continue;
-          const child = join(stageDirectory, name);
+          const child = join(stagePath, name);
           const info = yield* fs.stat(child);
           if (info.type !== 'Directory') {
             entries.push({
@@ -476,20 +488,50 @@ export const makeRepository = (directory: string) =>
         return entries;
       });
 
+    /** The names in the session root, sorted, and none while there is no root. */
+    const rootNames = Effect.gen(function*() {
+      if ((yield* pathType(root)) !== 'Directory') return [];
+      return (yield* fs.readDirectory(root)).toSorted();
+    });
+
+    /**
+     * A directory of the root that holds a stage under another name, such as
+     * `TRIAGE/` from before the stages were numbered, stops the session with
+     * the first one's fix, whether or not the stage's own directory is there
+     * too: a load would read past it and miss its items, and scaffolding the
+     * stage's directory beside it would split the stage in two.
+     */
+    const refuseMisnamedStage = Effect.gen(function*() {
+      for (const { name, problem } of misnamedStages(yield* rootNames)) {
+        if ((yield* pathType(absolute(name))) !== 'Directory') continue;
+        return yield* new RepositoryError({ kind: 'validation', message: problem });
+      }
+    }).pipe(Effect.mapError(asRepositoryError));
+
     const readStageState = (stage: Stage) =>
       Effect.gen(function*() {
-        const filePath = absolute(`${stage}.md`);
-        const directoryPath = absolute(stage);
+        const expected = stageDirectory(stage);
+        const leftover = leftoverStageFile(stage);
+        const directoryPath = absolute(expected);
         const [fileType, directoryType] = yield* Effect.all([
-          pathType(filePath),
+          pathType(absolute(leftover)),
           pathType(directoryPath),
         ]);
+        // Anything else under the stage's name, a link to nothing included,
+        // breaks the root's kind rule, which scaffolding cannot mend.
+        if (directoryType !== 'Directory' && (directoryType !== null || (yield* isLink(directoryPath)))) {
+          const type = yield* entryType(directoryPath);
+          return yield* new RepositoryError({
+            kind: 'validation',
+            message: rootEntryProblem({ name: expected, type }, new Set([expected])) ?? `${expected} must be a directory.`,
+          });
+        }
         if (directoryType !== 'Directory') {
           return yield* new RepositoryError({
             kind: 'not-found',
             message: fileType === null
-              ? `Session is missing ${stage}/. Run any session command to create it.`
-              : `Session is missing ${stage}/. Run any session command to create it, then fold ${stage}.md into it by hand.`,
+              ? `Session is missing ${expected}/. Run any session command to create it.`
+              : `Session is missing ${expected}/. Run any session command to create it, then fold ${leftover} into it by hand.`,
           });
         }
         const tree = yield* readStageTree(directoryPath);
@@ -570,6 +612,7 @@ export const makeRepository = (directory: string) =>
     }).pipe(Effect.orElseSucceed(() => false));
 
     const loadUnlocked = Effect.gen(function*() {
+      yield* refuseMisnamedStage;
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
       yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
@@ -658,37 +701,37 @@ export const makeRepository = (directory: string) =>
     }).pipe(Effect.mapError(asRepositoryError));
 
     /**
-     * What `load` reads past: leftover stage files, the closed root,
-     * self-ignoring, the sections each stage requires, and the ledger.
+     * What `load` reads past: leftover stage files, the closed root and what
+     * `meta/` holds, self-ignoring, the sections each stage requires, and the
+     * ledger.
      */
     const check = semaphore.withPermit(
       Effect.gen(function*() {
         if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
         const loaded = yield* loadUnlocked;
         for (const stage of stageNames) {
-          const leftover = yield* pathType(absolute(`${stage}.md`)).pipe(
-            Effect.mapError(asRepositoryError),
-          );
-          if (leftover !== null) {
+          const leftover = leftoverStageFile(stage);
+          if ((yield* pathType(absolute(leftover)).pipe(Effect.mapError(asRepositoryError))) !== null) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `${stage}.md is a leftover stage file; fold it into ${stage}/ by hand.`,
+              message: `${leftover} is a leftover stage file; fold it into ${stageDirectory(stage)}/ by hand.`,
             });
           }
         }
-        const names = yield* fs.readDirectory(root).pipe(Effect.mapError(asRepositoryError));
-        for (const name of names.toSorted()) {
-          // A link that leads nowhere has no kind, and the rule names it as such.
-          const info = yield* fs.stat(absolute(name)).pipe(Effect.option);
-          const type = Option.isNone(info)
-            ? 'other'
-            : info.value.type === 'Directory'
-              ? 'directory'
-              : info.value.type === 'File'
-                ? 'file'
-                : 'other';
-          const problem = rootEntryProblem({ name, type });
+        const names = (yield* fs.readDirectory(root).pipe(Effect.mapError(asRepositoryError))).toSorted();
+        const present = new Set(names);
+        for (const name of names) {
+          const problem = rootEntryProblem({ name, type: yield* entryType(absolute(name)) }, present);
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
+        }
+        // No fact is defined yet, so `meta/` holding anything is reported; a
+        // `meta` that is not a directory was reported with the root.
+        if (present.has(metaDirectory)) {
+          const meta = absolute(metaDirectory);
+          for (const name of (yield* fs.readDirectory(meta).pipe(Effect.mapError(asRepositoryError))).toSorted()) {
+            const problem = metaEntryProblem({ name, type: yield* entryType(join(meta, name)) });
+            if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
+          }
         }
         const gitignore = yield* pathType(absolute(gitignorePath)).pipe(Effect.mapError(asRepositoryError));
         if (gitignore === null) {
@@ -729,9 +772,9 @@ export const makeRepository = (directory: string) =>
           if (isBatchedStage(input.stage)) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: input.stage === 'QUEUE'
-                ? 'Items enter QUEUE only through `session batch`.'
-                : 'EXECUTE is frozen; create items in another stage.',
+              message: input.stage === 'Queue'
+                ? 'Items enter Queue only through `session batch`.'
+                : 'Execute is frozen; create items in another stage.',
             });
           }
           const state = stageOf(loaded, input.stage);
@@ -764,7 +807,7 @@ export const makeRepository = (directory: string) =>
       /**
        * The group it lands in, which the target stage must already hold, or
        * null for none. Left out, an item keeps its group inside its own stage
-       * and has none in another, as leaving QUEUE drops the batch, and none
+       * and has none in another, as leaving Queue drops the batch, and none
        * when it goes in front of a group.
        */
       readonly group?: string | null | undefined;
@@ -773,22 +816,22 @@ export const makeRepository = (directory: string) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
-          if (found.stage === 'EXECUTE') {
+          if (found.stage === 'Execute') {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: 'EXECUTE is frozen; complete its items instead of moving them.',
+              message: 'Execute is frozen; complete its items instead of moving them.',
             });
           }
-          if (input.to === 'EXECUTE') {
+          if (input.to === 'Execute') {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: 'Items enter EXECUTE only through `session start`.',
+              message: 'Items enter Execute only through `session start`.',
             });
           }
-          if (input.to === 'QUEUE' && found.stage !== 'QUEUE') {
+          if (input.to === 'Queue' && found.stage !== 'Queue') {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: 'Items enter QUEUE only through `session batch`.',
+              message: 'Items enter Queue only through `session batch`.',
             });
           }
 
@@ -798,11 +841,11 @@ export const makeRepository = (directory: string) =>
             ? (inPlace && beforeGroup === null ? found.item.group : null)
             : input.group;
           const staysInGroup = inPlace && group === found.item.group;
-          // Inside QUEUE an item keeps its batch and only changes place in it.
-          if (input.to === 'QUEUE' && !staysInGroup) {
+          // Inside Queue an item keeps its batch and only changes place in it.
+          if (input.to === 'Queue' && !staysInGroup) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: `QUEUE: ${input.id} stays in the batch ${quote(found.item.group ?? '')}; a queued item moves only within its batch, or out of QUEUE.`,
+              message: `${stageDirectory('Queue')}: ${input.id} stays in the batch ${quote(found.item.group ?? '')}; a queued item moves only within its batch, or out of Queue.`,
             });
           }
           const target = stageOf(loaded, input.to);
@@ -816,13 +859,13 @@ export const makeRepository = (directory: string) =>
             if (input.beforeId !== undefined && input.beforeId !== null) {
               return yield* new RepositoryError({
                 kind: 'validation',
-                message: `${input.to}: ${input.id} goes in front of one neighbour, an item or a group; name one.`,
+                message: `${stageDirectory(input.to)}: ${input.id} goes in front of one neighbour, an item or a group; name one.`,
               });
             }
             if (group !== null) {
               return yield* new RepositoryError({
                 kind: 'validation',
-                message: `${input.to}: cannot place ${input.id} before the group ${quote(beforeGroup)}; ${input.id} goes in ${placeName(input.to, group)}, and groups do not nest.`,
+                message: `${stageDirectory(input.to)}: cannot place ${input.id} before the group ${quote(beforeGroup)}; ${input.id} goes in ${placeName(input.to, group)}, and groups do not nest.`,
               });
             }
             if (!target.items.some((candidate) => candidate.group === beforeGroup)) {
@@ -835,7 +878,7 @@ export const makeRepository = (directory: string) =>
           if (input.beforeId === input.id && !staysInGroup) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `${input.to}: cannot place ${input.id} before itself.`,
+              message: `${stageDirectory(input.to)}: cannot place ${input.id} before itself.`,
             });
           }
 
@@ -903,9 +946,9 @@ export const makeRepository = (directory: string) =>
           if (isBatchedStage(stage)) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: stage === 'QUEUE'
-                ? 'In QUEUE a group is a batch, composed from BATCH with `session batch`.'
-                : 'EXECUTE is frozen; its batch stays as it started.',
+              message: stage === 'Queue'
+                ? 'In Queue a group is a batch, composed from Batch with `session batch`.'
+                : 'Execute is frozen; its batch stays as it started.',
             });
           }
           const state = stageOf(loaded, stage);
@@ -927,7 +970,7 @@ export const makeRepository = (directory: string) =>
 
     /**
      * Take items out of their groups, each to the end of its own stage, in the
-     * order given. An item in no group stays where it is. QUEUE and EXECUTE
+     * order given. An item in no group stays where it is. Queue and Execute
      * refuse, because every item there belongs to a batch.
      */
     const ungroupItems = (input: { readonly ids: ReadonlyArray<string>; readonly revision: string }) =>
@@ -938,9 +981,9 @@ export const makeRepository = (directory: string) =>
           if (batched !== undefined) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: batched.stage === 'QUEUE'
-                ? `QUEUE: ${batched.item.id} stays in the batch ${quote(batched.item.group ?? '')}; a queued item leaves its batch only by leaving QUEUE, with \`session mv\`.`
-                : 'EXECUTE is frozen; its batch stays as it started.',
+              message: batched.stage === 'Queue'
+                ? `${stageDirectory('Queue')}: ${batched.item.id} stays in the batch ${quote(batched.item.group ?? '')}; a queued item leaves its batch only by leaving Queue, with \`session mv\`.`
+                : 'Execute is frozen; its batch stays as it started.',
             });
           }
           const placed = new Map<Stage, ReadonlyArray<ItemDraft>>();
@@ -979,23 +1022,23 @@ export const makeRepository = (directory: string) =>
               message: 'A batch cannot repeat an item ID.',
             });
           }
-          const pool = stageOf(loaded, 'BATCH');
-          const queue = stageOf(loaded, 'QUEUE');
+          const pool = stageOf(loaded, 'Batch');
+          const queue = stageOf(loaded, 'Queue');
           if (queue.items.some((item) => item.group === name)) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `QUEUE already has a batch named ${quote(name)}.`,
+              message: `Queue already has a batch named ${quote(name)}.`,
             });
           }
-          // An item in a group of BATCH leaves it for the batch, and a group
+          // An item in a group of Batch leaves it for the batch, and a group
           // left empty goes with it.
           const available = new Map(pool.items.map((item) => [item.id, item]));
           const selected = yield* attempt(() =>
             input.ids.map((id) => {
-              const item = available.get(id) ?? fail(`${id} is not in BATCH.`);
+              const item = available.get(id) ?? fail(`${id} is not in Batch.`);
               const queued = draftOf(item, name);
-              validateItem('QUEUE', queued);
-              validateItemSections('QUEUE', queued);
+              validateItem('Queue', queued);
+              validateItemSections('Queue', queued);
               return queued;
             }),
           );
@@ -1009,19 +1052,19 @@ export const makeRepository = (directory: string) =>
     const startBatch = (input: { readonly revision: string }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
-          const queue = stageOf(loaded, 'QUEUE');
-          const execute = stageOf(loaded, 'EXECUTE');
+          const queue = stageOf(loaded, 'Queue');
+          const execute = stageOf(loaded, 'Execute');
           if (execute.items.length > 0) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: 'Complete the current EXECUTE batch first.',
+              message: 'Complete the current Execute batch first.',
             });
           }
           const first = queue.items[0];
           if (first === undefined) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: 'QUEUE is empty; queue a batch first.',
+              message: 'Queue is empty; queue a batch first.',
             });
           }
           const name = first.group;
@@ -1032,7 +1075,7 @@ export const makeRepository = (directory: string) =>
             else waiting.push(item);
           }
           return yield* attempt(() => {
-            for (const item of starting) validateItemSections('EXECUTE', item);
+            for (const item of starting) validateItemSections('Execute', item);
             return [...stageChanges(queue, waiting), ...stageChanges(execute, starting)];
           });
         }),
@@ -1086,13 +1129,13 @@ export const makeRepository = (directory: string) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
-          if (found.stage !== 'EXECUTE') {
+          if (found.stage !== 'Execute') {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: `Item ${input.id} is not in EXECUTE.`,
+              message: `Item ${input.id} is not in Execute.`,
             });
           }
-          return yield* fileAway({ id: input.id, state: 'done', loaded, from: 'EXECUTE' });
+          return yield* fileAway({ id: input.id, state: 'done', loaded, from: 'Execute' });
         }),
       );
 
@@ -1194,7 +1237,7 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    /** Any stage, including EXECUTE, where it means the batch gave the item up. */
+    /** Any stage, including Execute, where it means the batch gave the item up. */
     const archiveItem = (input: { readonly id: string; readonly revision: string }) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
@@ -1208,7 +1251,11 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    /** Scaffolds what is missing. It never converts an older session. */
+    /**
+     * Scaffolds what is missing. It never converts an older session: a stage
+     * held under another name, such as `TRIAGE/`, is refused with its fix
+     * before anything is written, as a load refuses it.
+     */
     const initialize = Effect.gen(function*() {
       const actions: string[] = [];
       const link = yield* sessionLink;
@@ -1218,23 +1265,34 @@ export const makeRepository = (directory: string) =>
         yield* fs.remove(root).pipe(Effect.mapError(asRepositoryError));
         actions.push(`Removed the dangling link ${root}`);
       }
+      yield* refuseMisnamedStage;
+      // Only a name nothing holds is scaffolded: a file or a link there, one to
+      // nothing included, is left for a load to name.
+      const missing: Stage[] = [];
+      for (const stage of stageNames) {
+        const stagePath = absolute(stageDirectory(stage));
+        if ((yield* pathType(stagePath).pipe(Effect.mapError(asRepositoryError))) === null && !(yield* isLink(stagePath))) {
+          missing.push(stage);
+        }
+      }
       if ((yield* pathType(root).pipe(Effect.mapError(asRepositoryError))) === null) {
         actions.push(`Created ${root}`);
       }
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
-      const created: Stage[] = [];
-      for (const stage of stageNames) {
-        const directoryPath = absolute(stage);
-        if ((yield* pathType(directoryPath).pipe(Effect.mapError(asRepositoryError))) === null) {
-          created.push(stage);
-        }
-        yield* fs.makeDirectory(directoryPath, { recursive: true }).pipe(
+      for (const stage of missing) {
+        yield* fs.makeDirectory(absolute(stageDirectory(stage)), { recursive: true }).pipe(
           Effect.mapError(asRepositoryError),
         );
       }
-      if (created.length > 0) {
-        actions.push(`Created ${created.map((stage) => `${stage}/`).join(' ')}`);
+      const created = missing.map((stage) => `${stageDirectory(stage)}/`);
+      // Facts are optional, so a `meta` that is something else, a link to
+      // nothing included, is left for `check` to name.
+      const meta = absolute(metaDirectory);
+      if ((yield* pathType(meta).pipe(Effect.mapError(asRepositoryError))) === null && !(yield* isLink(meta))) {
+        yield* fs.makeDirectory(meta, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
+        created.push(`${metaDirectory}/`);
       }
+      if (created.length > 0) actions.push(`Created ${created.join(' ')}`);
       const hasGitignore = yield* fs.exists(absolute(gitignorePath)).pipe(
         Effect.mapError(asRepositoryError),
       );
@@ -1254,11 +1312,11 @@ export const makeRepository = (directory: string) =>
           if (newest === undefined || mtime.value > newest) newest = mtime.value;
         };
         for (const stage of stageNames) {
-          const stageDirectory = absolute(stage);
-          if ((yield* pathType(stageDirectory)) !== 'Directory') continue;
-          for (const name of yield* fs.readDirectory(stageDirectory)) {
+          const stagePath = absolute(stageDirectory(stage));
+          if ((yield* pathType(stagePath)) !== 'Directory') continue;
+          for (const name of yield* fs.readDirectory(stagePath)) {
             if (name.startsWith('.')) continue;
-            const child = join(stageDirectory, name);
+            const child = join(stagePath, name);
             const info = yield* fs.stat(child);
             if (info.type !== 'Directory') {
               consider(info.mtime);
@@ -1390,7 +1448,7 @@ export const makeRepository = (directory: string) =>
      * loading. Null while Execute holds no batch directory.
      */
     const executingBatchName = Effect.gen(function*() {
-      const execute = absolute('EXECUTE' satisfies Stage);
+      const execute = absolute(stageDirectory('Execute'));
       if ((yield* pathType(execute)) !== 'Directory') return null;
       const batches: Array<{ readonly prefix: number; readonly name: string }> = [];
       for (const name of yield* fs.readDirectory(execute)) {

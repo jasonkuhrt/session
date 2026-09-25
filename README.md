@@ -34,11 +34,11 @@ session -C /absolute/path/to/worktree check
 ```
 
 There is nothing to set up. A command that touches the records creates
-`.session`, its five stage directories, and its `.gitignore` when they are
-missing; `check` only reads what is there. `session init` does that scaffolding
-and nothing else, printing what it made, for handing the directory to your
-editor. Every command defaults to the current worktree; `-C` goes before the
-command to point at another one. The
+`.session`, its five stage directories, `1-Triage` to `5-Execute`, its `meta/`,
+and its `.gitignore` when they are missing; `check` only reads what is there.
+`session init` does that scaffolding and nothing else, printing what it made,
+for handing the directory to your editor. Every command defaults to the current
+worktree; `-C` goes before the command to point at another one. The
 [operations reference](src/session/references/operations.md) has every command.
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
@@ -92,9 +92,10 @@ for a session live in `RULES.md` at the session root and are read first. Next
 comes `ledger/`, the session's shared log: one dated entry per file, written
 with `session log` or by hand, for what another agent must know to act
 correctly here and would not learn from the items. Material about one item
-belongs under `context/<ID>/`, linked from that item's `### Evidence`. Finished
-and abandoned items live under `archive/`, one file each, and are not loaded as
-active context.
+belongs under `context/<ID>/`, linked from that item's `### Evidence`. Facts
+about the worktree's session live in `meta/`, one file each, and none is defined
+yet. Finished and abandoned items live under `archive/`, one file each, and are
+not loaded as active context.
 
 A commit can close items itself: end its message with a `Session-Done: <ID>`
 trailer and the daemon files that item as done the moment the commit is made,
@@ -159,7 +160,10 @@ when you open `.session/` in a file manager and your editor and never run either
 tool: nothing in the layout requires a process to be running or to have run,
 every rule is checkable from the files alone, and every record is ordinary
 Markdown. Every stage is a directory of numbered item files, and the numeric
-prefix is card order. The browser and server read and move those files directly;
+prefix is card order. The stage directories are numbered by their place in the
+flow, `1-Triage` to `5-Execute`, and the name after the hyphen is the stage's
+name, written the same way in the files, the CLI and the board. The browser and
+server read and move those files directly;
 they must not add a second task database or hidden lifecycle state, and the
 board never writes an item's content. The board's own settings are the one thing
 kept outside the files: they live in the browser's localStorage, say only how

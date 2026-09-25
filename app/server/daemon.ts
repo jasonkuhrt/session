@@ -42,7 +42,7 @@ import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
-import { contextDirectory, ledgerDirectory } from './layout.ts';
+import { contextDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
   issuesFor,
@@ -591,10 +591,11 @@ type Change =
 
 /**
  * The parts of a session no trailer depends on: what agents keep in
- * `context/` and the entries in `ledger/` can neither make an item exist nor
- * bring one back, so a change there never asks for a pass that runs Git.
+ * `context/`, the entries in `ledger/` and the facts in `meta/` can neither
+ * make an item exist nor bring one back, so a change there never asks for a
+ * pass that runs Git.
  */
-const trailerQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory]);
+const trailerQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory, metaDirectory]);
 
 /** Whether a change under the session, by its path there, can affect a trailer pass. */
 const touchesItems = (event: FileSystem.WatchEvent): boolean =>
@@ -605,11 +606,12 @@ const touchesItems = (event: FileSystem.WatchEvent): boolean =>
  * stream that both of its loops read: the trailer passes read every change,
  * and the link re-reads only the remote-tracking refs. It is shared, so each
  * directory is watched once however many loops follow it. The session outside
- * `context/` and `ledger/` can make a named item exist or bring one back, and a
- * change under those two is dropped here; the worktree's own reflog is where
- * Git records a commit; and the remote-tracking logs the repository shares move
- * on a push, which takes a commit out of the unpushed range, and on a fetch that
- * learned something new. A log that does not exist yet is not watched.
+ * `context/`, `ledger/` and `meta/` can make a named item exist or bring one
+ * back, and a change under those three is dropped here; the worktree's own
+ * reflog is where Git records a commit; and the remote-tracking logs the
+ * repository shares move on a push, which takes a commit out of the unpushed
+ * range, and on a fetch that learned something new. A log that does not exist
+ * yet is not watched.
  */
 const worktreeChanges = (session: WorktreeSession) =>
   Effect.gen(function*() {
@@ -1226,7 +1228,7 @@ export const runDaemon = async () => {
    * repository's rows.
    */
   const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
-    const counts: Record<Stage, number> = { TRIAGE: 0, DESIGN: 0, BATCH: 0, QUEUE: 0, EXECUTE: 0 };
+    const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
     const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
@@ -1247,7 +1249,7 @@ export const runDaemon = async () => {
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
       // The batch in Execute names the work under way; a batch with no name is
       // nothing to render, so it reads as an empty Execute rather than a blank.
-      const execute = loaded.session.stages.find((stage) => stage.stage === 'EXECUTE');
+      const execute = loaded.session.stages.find((stage) => stage.stage === 'Execute');
       const batch = execute?.items[0]?.group ?? null;
       return {
         ...base,

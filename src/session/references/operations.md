@@ -33,9 +33,14 @@ the command is not on PATH:
 bun ~/.codex/skills/session/scripts/session.ts -C /absolute/path/to/worktree check
 ```
 
+`STAGE` is a stage's name, `Triage`, `Design`, `Batch`, `Queue` or `Execute`,
+in any case, so `session mv BE-16 design` and `session mv BE-16 Design` are one
+command. What the CLI prints names a stage as it is named and a file by its
+path, which starts with the stage's directory, such as `3-Batch/`.
+
 Success prints one short line, such as `Queued "Email backend peel" (3 items)`,
-`Moved BE-16 to BATCH/030-BE-16.md` or
-`Grouped 2 items in TRIAGE/020-Needs a decision`. Errors print a message on
+`Moved BE-16 to 3-Batch/030-BE-16.md` or
+`Grouped 2 items in 1-Triage/020-Needs a decision`. Errors print a message on
 stderr and exit 1. `add` and
 `log` are the commands that read stdin, in full and trimmed. A pipe or a file is
 read to its end. A socket, which is what a program that spawns the CLI hands
@@ -145,9 +150,9 @@ Execute that `done` insists on does not apply. The item's text gains a
 says later why the item left. Git's own trailer parser reads the message, and
 the key matches without regard to case, as Git's does. The daemon also reads
 again when the session changes and when a push moves a remote-tracking ref, so
-a report clears the moment its commit is pushed. A change under `context/` or
-`ledger/` is not such a change: nothing there can make an item exist or bring
-one back, so it never starts a pass.
+a report clears the moment its commit is pushed. A change under `context/`,
+`ledger/` or `meta/` is not such a change: nothing there can make an item exist
+or bring one back, so it never starts a pass.
 
 Only this branch's commits that no remote has yet are read, first parent only,
 so a merged branch contributes none of its own claims. That range is also the
@@ -165,7 +170,7 @@ sentence per commit, and as a count beside its name on the index:
   it as a trailer and nothing was closed;
 - filing the item away failed, for instance because a record of that name
   already exists that day; this is tried again whenever the session changes
-  outside `context/` and `ledger/`, or the branch changes.
+  outside `context/`, `ledger/` and `meta/`, or the branch changes.
 
 The fix for the first two is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
@@ -198,8 +203,8 @@ an entry by hand, in the same form.
 ## Set up
 
 Nothing has to be set up. A command that touches the records creates the session
-first: `.session`, the five stage directories, and the `.gitignore` when they are
-missing. `check` only reads what is on disk.
+first: `.session`, the five stage directories, `meta/`, and the `.gitignore`
+when they are missing. `check` only reads what is on disk.
 
 `init` does that scaffolding and nothing else. It prints each action it took, or
 that there was nothing to do, and it exists so a new session can be handed
@@ -208,9 +213,33 @@ straight to an editor. Nothing depends on it having been run.
 The CLI never migrates. A `.session` that is a symlink to something that exists
 is refused by every command, with the fix in the message: replace the link with
 a real directory, then retry. A dangling link points at nothing, so scaffolding
-replaces it with the real directory. A leftover `STAGE.md` from the single-file layout is reported by
-`check`, which names the file and says to fold it into `STAGE/` by hand. Old
-sessions are converted by hand, the existing ones by a one-off sweep.
+replaces it with the real directory. A stage kept under another name, such as
+`TRIAGE/` from before the stages were numbered, is refused the same way, with
+its rename to `1-Triage/` as the fix, and so is one found beside `1-Triage/`,
+with the fix to move what it holds into it and delete it: a load never reads
+past it, since its items would be missing from every reader, and scaffolding
+never writes beside it, since that would split the stage in two. Nothing is
+written, and the daemon answers that worktree's board and index row with the
+same sentence until it is fixed. Scaffolding creates only what nothing holds: a
+file, or a link that leads nowhere, under a stage's name or `meta` is named by
+the next load or `check`, such as `3-Batch must be a directory; …`, rather than
+written over. A leftover `TRIAGE.md` from the single-file layout is reported by
+`check`, which names the file and says to fold it into `1-Triage/` by hand. Old
+sessions are converted by hand, the existing ones by one-off sweeps; the session
+repository's `scripts/rename-stage-directories.ts` renames the five stage
+directories of every session named on its command line, a worktree or its
+`.session`, and leaves everything else as it is:
+
+```sh
+bun scripts/rename-stage-directories.ts <worktree or .session> ...
+```
+
+It refuses a session where a stage's new directory is already there beside its
+old one and renames nothing in it, because merging the two is a person's call.
+It skips a linked `.session` and a path without one, prints a line for each
+session and a count, and exits 1 when it refused or failed any. A stage already
+renamed is left alone, so running it again after a fix renames only what is
+left.
 
 `check` converges nothing: it reads what is on disk and names the fix for what it
 finds, such as that leftover file or a missing `.gitignore` that the next command
@@ -219,7 +248,8 @@ item count, or `empty` when no stage holds an item; that line answers whether
 everything is done. No command creates `RULES.md`; standing rules are written
 from the user's words when the user states them, and the inventory reports the
 file like any other. `ledger/` appears with its first entry, and `context/`
-when an agent first writes there.
+when an agent first writes there. `meta/` is scaffolded empty; nothing writes a
+fact into it yet, and a session without it is sound.
 
 ## Refresh context
 
@@ -799,27 +829,34 @@ never leave duplicate IDs. Moving a file into or out of a group directory is a
 hand move too, because the directory is the group.
 
 `check` rejects malformed records, duplicate IDs, missing stage-specific
-sections, `# ` headings inside item files, Queue or Execute items belonging to no
-batch, a directory inside a group directory, a group name that is empty or has
-surrounding spaces, two directories naming one group in a stage, entries whose
-names break the numbering pattern, a missing `.gitignore`, a `.session` that is
-a symlink, and a leftover `STAGE.md`. It closes the session
-root: any entry other than the five stages, `archive/`, `ignore/`, `context/`,
-`ledger/`, `RULES.md`, `.gitignore` and names starting with a dot is an error
-that names it and says to move it under `context/` or delete it, or to rename
-it when only its case differs from one of these. The directories must be
-directories, and `RULES.md` and `.gitignore` files. In `ledger/` it rejects a
-directory, a link, and a `ledger` that is itself a link, and an entry whose
-frontmatter is missing `date`, `title` or `by`, carries any other key, holds
-anything but one line of text per key or a value YAML reads differently from
-how it is written, or has a `date` that is not a UTC instant to the second;
-whose name is not the one its date and title give; or whose body, read the way
-the board renders it, has a heading. It does not look inside `context/`. It does
-not judge acceptance criteria or user approval. An empty stage is an empty
-directory. A directory in a stage that holds nothing, or nothing but names
-starting with a dot, is no group to `check` or to any other reader, whatever
-its name, and the next write removes it; so one that an interrupted write
-leaves beside the entry that took its prefix or its name fails nothing.
+sections, `# ` headings inside item files, Queue or Execute items belonging to
+no batch, a directory inside a group directory, a group name that is empty or
+has surrounding spaces, two directories naming one group in a stage, entries
+whose names break the numbering pattern, a missing `.gitignore`, a `.session`
+that is a symlink, and a leftover stage file such as `TRIAGE.md`. It closes the
+session root: any entry other than the five stage directories, `archive/`,
+`ignore/`, `context/`, `ledger/`, `meta/`, `RULES.md`, `.gitignore` and names
+starting with a dot is an error that names it and says to move it under
+`context/` or delete it, or to rename it when only its case differs from one of
+these. A directory that holds a stage under another name, bare as before the
+stages were numbered (`TRIAGE/`), in another case, or behind a prefix that is
+not its place (`2-Triage/`), is named with its rename to the stage's directory,
+or, when that directory is there too, with the fix to move what it holds into it
+and delete it. The directories must be directories, and `RULES.md` and
+`.gitignore` files. In `meta/` it rejects every entry but a fact the session
+defines, and no fact is defined yet; names starting with a dot are outside the
+rule. In `ledger/` it rejects a directory, a link, and a `ledger` that is itself
+a link, and an entry whose frontmatter is missing `date`, `title` or `by`,
+carries any other key, holds anything but one line of text per key or a value
+YAML reads differently from how it is written, or has a `date` that is not a UTC
+instant to the second; whose name is not the one its date and title give; or
+whose body, read the way the board renders it, has a heading. It does not look
+inside `context/`. It does not judge acceptance criteria or user approval. An
+empty stage is an empty directory. A directory in a stage that holds nothing, or
+nothing but names starting with a dot, is no group to `check` or to any other
+reader, whatever its name, and the next write removes it; so one that an
+interrupted write leaves beside the entry that took its prefix or its name fails
+nothing.
 
 ## App development
 

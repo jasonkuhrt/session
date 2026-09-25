@@ -5,21 +5,24 @@ Before editing this project, read and follow the durable
 explicitly changes them.
 
 The workflow contract lives in `src/session/SKILL.md`. The five stage records —
-TRIAGE, DESIGN, BATCH, QUEUE, EXECUTE — are the work record, and each stage is a
-directory of numbered item files; the app must not maintain a second task
-database or lifecycle. The board is a viewer with workflow actions and never
-writes an item's content. The ledger is the session's log: dated, immutable
-entries under `ledger/`, written with `session log` or by hand; the engine never
-writes one of its own, and the board only shows them.
+Triage, Design, Batch, Queue, Execute — are the work record, and each stage is a
+directory of numbered item files, named for its place in the flow and its name,
+`1-Triage` to `5-Execute`; the app must not maintain a second task database or
+lifecycle. The board is a viewer with workflow actions and never writes an
+item's content. The ledger is the session's log: dated, immutable entries under
+`ledger/`, written with `session log` or by hand; the engine never writes one of
+its own, and the board only shows them.
 
-Commands scaffold the session as they go, so nothing depends on an imperative
-setup step, and the CLI never migrates an old one. One daemon serves every
-tracked worktree's board. It is known by what answers on its port and by
-nothing else, and only `session open` and `session daemon restart` replace it.
-It starts with the environment of whatever started it, less what Claude Code,
-Codex, cmux and Git set for the processes they run and the `node_modules/.bin`
-a package runner put on PATH, because it outlives them and passes its
-environment to everything it runs; the user's own settings stay.
+Commands scaffold the session as they go, its `meta/` of per-worktree facts
+included, so nothing depends on an imperative setup step, and the CLI never
+migrates an old one: a stage kept under its old name, such as `TRIAGE/`, is
+refused with its rename rather than scaffolded beside. One daemon serves every
+tracked worktree's board. It is known by what answers on its port and by nothing
+else, and only `session open` and `session daemon restart` replace it. It starts
+with the environment of whatever started it, less what Claude Code, Codex, cmux
+and Git set for the processes they run and the `node_modules/.bin` a package
+runner put on PATH, because it outlives them and passes its environment to
+everything it runs; the user's own settings stay.
 
 A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
 each tracked worktree's session, its reflog and the repository's remote-tracking
@@ -80,5 +83,8 @@ nothing in them reaches the daemon. A new setting is a field of the schema with
 its default, which is all its storage needs, and an item in the settings menu
 that says what it does.
 
-Keep stage names identical in files, CLI, and UI. Design collaboration and focused
-explanations compose through `design-together` and `show-me`.
+Keep stage names identical in the stage directories, the CLI's output and the
+UI: a directory is the stage's place in the flow, a hyphen and its name,
+`2-Design`. The CLI also accepts a name in any case, and archive records keep
+the lowercase state word. Design collaboration and focused explanations compose
+through `design-together` and `show-me`.
