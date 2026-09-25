@@ -176,9 +176,10 @@ export function WorktreeIndex() {
             const request = naming
             setNaming(null)
             if (request === null || rows === null) return
-            // A new epic's two worktrees are written against the epics drawn
-            // when one was dropped on the other, so a join that lands while
-            // the dialog is open is refused rather than overwritten.
+            // A new epic's worktrees, one dropped on the `+` or two, one
+            // dropped on the other, are written against the epics drawn at
+            // the drop, so a join that lands while the dialog is open is
+            // refused rather than overwritten.
             if (request.kind === 'epic') {
               void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
               return

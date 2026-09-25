@@ -41,4 +41,5 @@ export const nameMeaning = (session: ClaudeSession): string => {
 }
 
 /** What a Codex thread's name is, since the listing may name it by its preview. */
-export const threadNameMeaning = "The thread's name in Codex; one without a name goes by the first line of its preview."
+export const threadNameMeaning =
+  "The thread's name in Codex; one without a name goes by the first line of its preview, and one with neither by its id."

@@ -71,8 +71,9 @@ const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: Co
 
 /**
  * A worktree in an epic's card, held by its row: dragged onto another epic it
- * joins it, onto a worktree in no epic the two make one, and onto the space
- * between the cards it leaves its epic and becomes a card of its own.
+ * joins it, onto a worktree in no epic the two make one, onto the `+` after the
+ * cards it makes an epic alone, once named, and onto the space between the
+ * cards it leaves its epic and becomes a card of its own.
  */
 function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext }) {
   const canMove = movable(row)
@@ -179,8 +180,9 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
 
 /**
  * A worktree in no epic, as a card of its own. Held, it is its worktree: onto
- * an epic it joins it, and onto another card like it the two make an epic,
- * named in the dialog. It takes another worktree dropped on it the same way.
+ * an epic it joins it, onto another card like it the two make an epic, and
+ * onto the `+` after the cards it makes an epic alone, each named in the
+ * dialog. It takes another worktree dropped on it the same way.
  */
 export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 'loose' }>; context: DragContext }) {
   const { row } = card
@@ -231,7 +233,7 @@ export function NewEpicTarget({ name, context }: { name: string; context: DragCo
   return (
     <div
       ref={ref}
-      title={tip(`New epic with ${name}`)}
+      title={tip(`New epic of ${name}`)}
       className={cn(
         'flex min-h-16 items-center justify-center rounded-xl border border-dashed text-muted-foreground',
         context.landingOn === onto && landing,

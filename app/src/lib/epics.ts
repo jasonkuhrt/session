@@ -196,22 +196,25 @@ export function dropOutcome({ rows, dragged, target }: {
 }
 
 /**
- * Whom a new epic is made with, as the words over the held card name it: the
- * worktree it was dropped on, or itself when it was dropped on the `+` alone.
+ * The words over a held card that would make a new epic: the worktree it would
+ * be made with, when it is dropped on another, or the one it would be made of,
+ * alone on the `+`.
  */
-function newEpicWith({ outcome, rows }: {
+function newEpicWords({ outcome, rows }: {
   readonly outcome: Extract<DropOutcome, { kind: 'make' }>
   readonly rows: readonly WorktreeSummary[]
 }) {
-  const named = outcome.paths.at(-1)
-  return rows.find((row) => row.path === named)?.name ?? 'this worktree'
+  const nameAt = (path: string) => rows.find((row) => row.path === path)?.name ?? 'this worktree'
+  return outcome.paths.length === 1
+    ? `New epic of ${nameAt(outcome.paths[0])}`
+    : `New epic with ${nameAt(outcome.paths[1])}`
 }
 
 /** What a drop will do, in the few words the held card carries while it is over its target. */
 export function outcomeWords({ outcome, rows }: { readonly outcome: DropOutcome; readonly rows: readonly WorktreeSummary[] }) {
   if (outcome.kind === 'join') return outcome.merge ? `Merge into “${outcome.epic}”` : `Join “${outcome.epic}”`
   if (outcome.kind === 'leave') return `Leave “${outcome.epic}”`
-  return `New epic with ${newEpicWith({ outcome, rows })}`
+  return newEpicWords({ outcome, rows })
 }
 
 /**

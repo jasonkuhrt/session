@@ -49,7 +49,8 @@ const startingName = (request: NameRequest | null) =>
   request?.kind === 'batch' ? request.group ?? '' : request?.kind === 'rename' ? request.epic : ''
 
 function epicCopyOf(request: EpicNameRequest) {
-  const common = { label: 'Epic name', placeholder: 'What do these worktrees serve together?' }
+  const placeholder = request.ids.length === 1 ? 'What does this worktree serve?' : 'What do these worktrees serve together?'
+  const common = { label: 'Epic name', placeholder }
   if (request.kind === 'epic') {
     const [first, second] = request.names
     return {

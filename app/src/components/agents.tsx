@@ -81,18 +81,21 @@ function StartedAge({ session, now }: { session: ClaudeSession; now: number }) {
 
 /**
  * How many tokens are in a live session's context, as its last reply left
- * them: a count at a glance, with the exact count and the line it was read
- * from behind it. There is no share of a window, because neither the listing
- * nor the line says how large the window is.
+ * them: a count at a glance, with the exact count, the line it was read from
+ * and the listing that read it behind it. It is as old as that listing,
+ * since nothing watches a transcript. There is no share of a window, because
+ * neither the listing nor the line says how large the window is.
  */
-function ContextCount({ context }: { context: ContextFill }) {
+function ContextCount({ context, listedAt }: { context: ContextFill; listedAt: string | null }) {
   const written = context.lineAt === null ? '' : `, written ${absoluteTime(context.lineAt)}`
+  const listing = listedAt === null ? 'the last listing' : `the listing at ${absoluteTime(listedAt)}`
   return (
     <Explained
       meaning={
         <Blocks
           blocks={[
             `${context.tokens.toLocaleString()} tokens: the input, cache-creation and cache-read tokens of its last reply, the count Claude Code's status line works from.`,
+            `It is the count as of ${listing}: nothing watches a transcript, so a status change is what lists the agents again, and a turn that stays busy keeps this count until then.`,
             `Read from the usage on the last assistant line of its transcript${written}:`,
             context.transcript,
           ]}
@@ -105,9 +108,11 @@ function ContextCount({ context }: { context: ContextFill }) {
 }
 
 /** One Claude Code session: what it is called, how it is doing, and what acts on it. */
-function ClaudeRow({ session, now, onFocus }: {
+function ClaudeRow({ session, now, listedAt, onFocus }: {
   session: ClaudeSession
   now: number
+  /** When the daemon listed the agents this row was read from. */
+  listedAt: string | null
   onFocus: (pid: number) => Promise<FocusResult>
 }) {
   const [failure, setFailure] = React.useState<string | null>(null)
@@ -141,7 +146,7 @@ function ClaudeRow({ session, now, onFocus }: {
         </Explained>
         {held === null ? <StartedAge session={session} now={now} /> : null}
       </span>
-      <span>{session.context === null ? null : <ContextCount context={session.context} />}</span>
+      <span>{session.context === null ? null : <ContextCount context={session.context} listedAt={listedAt} />}</span>
       <span className={actionsCell}>
         <Actions actions={actionsFor(session)} name={name} onFocus={onFocus} onFailure={setFailure} />
       </span>
@@ -231,11 +236,13 @@ export function AgentsStrip({ agents, error, now, onFocus }: {
   // only live rows the words and ages in them already say what they are.
   const tiered = parked.length + parkedThreads.length > 0
 
+  const listedAt = agents?.fetchedAt ?? null
   const row = (session: ClaudeSession) => (
     <ClaudeRow
       key={session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`}
       session={session}
       now={now}
+      listedAt={listedAt}
       onFocus={onFocus}
     />
   )
