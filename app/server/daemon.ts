@@ -30,19 +30,21 @@ import type {
   AgentsSummary,
   DaemonCapabilities,
   DaemonInfo,
+  EpicWrite,
   IssuesReport,
   Links,
   PullRequestReports,
   Stage,
   TrailerProblem,
+  WorktreeEpic,
   WorktreeSummary,
 } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { eventStream, focusResponse, makeRequestHandler, namedChannels, openResponse } from './http.ts';
-import { contextDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
+import { epicResponse, eventStream, focusResponse, makeRequestHandler, namedChannels, openResponse } from './http.ts';
+import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
   issuesFor,
@@ -51,7 +53,7 @@ import {
   pullRequestReport,
 } from './links/index.ts';
 import { aliasHostnames } from './portless.ts';
-import { makeRepository, type SessionRepository } from './repository.ts';
+import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
@@ -61,6 +63,7 @@ import {
   ensureSession,
   listRepositories,
   resolveWorktreeSession,
+  setWorktreeEpic,
   type WorktreeError,
   type WorktreeSession,
 } from './worktree.ts';
@@ -470,11 +473,18 @@ type Tracked = {
   readonly session: WorktreeSession;
   /** The one repository the board and the trailer passes both write through, so they share a lock. */
   readonly repository: SessionRepository;
+  /**
+   * Why its board is not served: another tracked worktree owned its key when
+   * it was taken on. The first worktree to claim a key owns it until it
+   * leaves, and then the next one to have claimed it does, as a restart would
+   * give it.
+   */
   conflict: string | null;
   handler: ((request: Request) => Promise<Response>) | undefined;
   /** Every tracked worktree has these from the moment it is tracked: the
-   *  watcher is what notices its session changing and what notices it leave,
-   *  which is not something a board being open can be a condition of. */
+   *  watcher is what notices its session changing, for its boards and the
+   *  index alike, which is not something a board being open can be a
+   *  condition of. Its leaving is noticed a level up; see `parentWatchers`. */
   readonly events: SessionEventSource;
   readonly watcher: Fiber.Fiber<void, never>;
   /** The worktree's trailer passes and link re-reads, over one set of watches; see `worktreeLoops`. */
@@ -566,12 +576,59 @@ const agentsFreshnessMilliseconds = 30_000;
  */
 const agentsDebounceMilliseconds = 1_000;
 
-/** What a board follows as its files change, and what the agent sources fire. */
+/**
+ * An agent moving items, or a lead joining its workers to an epic one command
+ * each, writes sessions in a burst, and the index reads every row once it
+ * settles: longer than a board's settle, since the index's read is every
+ * board's, and short enough to follow a command at once.
+ */
+const indexSettleMilliseconds = 500;
+
+/** Writes that never let the index's settle go quiet still reach it this often. */
+const indexCeilingMilliseconds = 2_000;
+
+/** What the agent sources fire: any change in the directories they keep. */
 const watchDirectory = (directory: string, events: SessionEventSource) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.watch(directory, { recursive: true }).pipe(
       Stream.runForEach(() => Effect.sync(() => events.changed())),
+    );
+  }).pipe(
+    Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
+  );
+
+/**
+ * The parts of a session the index shows nothing of: what agents keep in
+ * `context/`, the ledger's entries, and the history under `archive/` and
+ * `ignore/`. A change anywhere else can change a row: an item file moves its
+ * counts, its batch and its newest item, and `meta/epic` its epic.
+ */
+const indexQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory, archiveDirectory, ignoreDirectory]);
+
+/** Whether a change under a session, by its path there, can change what the index shows of it. */
+const showsOnIndex = (event: FileSystem.WatchEvent): boolean =>
+  !indexQuiet.has(event.path.split(/[\\/]/u)[0] ?? '');
+
+/**
+ * A tracked worktree's session, watched once for both of its readers: its
+ * boards follow every change, the pages under them included, and the index
+ * the ones a row shows, which the daemon settles across every worktree before
+ * the index reads its rows again.
+ */
+const watchSession = (directory: string, readers: {
+  readonly boards: SessionEventSource;
+  readonly index: SessionEventSource;
+}) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.watch(directory, { recursive: true }).pipe(
+      Stream.runForEach((event) =>
+        Effect.sync(() => {
+          readers.boards.changed();
+          if (showsOnIndex(event)) readers.index.changed();
+        })
+      ),
     );
   }).pipe(
     Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
@@ -773,6 +830,10 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   return best;
 };
 
+/** Why a worktree has no board: another tracked worktree owns the key its name gives it. */
+const keyConflict = (input: { readonly path: string; readonly key: string; readonly owner: string }) =>
+  `${input.path} has no board: its key ${input.key} already belongs to ${input.owner}.`;
+
 /**
  * A file of the built app, and `index.html` for a path without an extension,
  * which is a route the app draws itself. Nothing outside the build is served.
@@ -801,8 +862,16 @@ export const runDaemon = async () => {
   // The agents overlay is derived, never owned: one listing for every tracked
   // worktree, kept only so a board and the index can read the same answer.
   let agents: { at: number; byPath: ReadonlyMap<string, AgentsSummary> } = { at: 0, byPath: new Map() };
-  const agentsEvents = makeSessionEvents(0);
-  const worktreeEvents = makeSessionEvents(0);
+  const agentsEvents = makeSessionEvents({ settle: 0 });
+  const worktreeEvents = makeSessionEvents({ settle: 0 });
+  /**
+   * A change under any tracked worktree's session that a row shows, settled
+   * across all of them, since the index reads every row again, and passed on
+   * to it as `worktrees`: without it the index learnt of new counts, a batch
+   * or an epic only when something unrelated made it read.
+   */
+  const sessionChanges = makeSessionEvents({ settle: indexSettleMilliseconds, ceiling: indexCeilingMilliseconds });
+  sessionChanges.subscribe(() => worktreeEvents.changed());
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */
   const pullRequestEvents = makeSessionEvents();
   /**
@@ -1046,14 +1115,23 @@ export const runDaemon = async () => {
   const untrack = (path: string) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
-    // Out of the map first: the watcher's own finalizer asks whether this path
-    // is still tracked, and the answer by then has to be no.
+    // Out of the map first, so a trailer pass or a link re-read already under
+    // way finds nothing to write its answer to.
     tracked.delete(path);
     Effect.runFork(entry.watcher.pipe(Fiber.interrupt));
     Effect.runFork(entry.loops.pipe(Fiber.interrupt));
     entry.events.close();
     entry.trailerEvents.close();
     entry.linksEvents.close();
+    // A key it owned passes to the next worktree that claimed it, as a restart
+    // would give it, so that one's board is served, and any others still
+    // waiting on the key name their new owner.
+    if (entry.conflict !== null) return;
+    const claimants = [...tracked.values()].filter((candidate) => candidate.key === entry.key);
+    const [next, ...waiting] = claimants;
+    if (next === undefined) return;
+    next.conflict = null;
+    for (const claimant of waiting) claimant.conflict = keyConflict({ path: claimant.path, key: entry.key, owner: next.path });
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -1061,7 +1139,7 @@ export const runDaemon = async () => {
     if (tracked.has(path)) return;
     const key = encodeWorktreeKey(session.worktree.name);
     const owner = [...tracked.values()].find((entry) => entry.key === key);
-    const conflict = owner === undefined ? null : `${path} has no board: its key ${key} already belongs to ${owner.path}.`;
+    const conflict = owner === undefined ? null : keyConflict({ path, key, owner: owner.path });
     if (conflict !== null) console.error(conflict);
     const events = makeSessionEvents();
     tracked.set(path, {
@@ -1072,20 +1150,20 @@ export const runDaemon = async () => {
       conflict,
       handler: undefined,
       events,
-      watcher: forkNode(watchDirectory(session.directory, events)),
+      watcher: forkNode(watchSession(session.directory, { boards: events, index: sessionChanges })),
       loops: forkNode(worktreeLoops(session, {
         pass: Effect.promise(() => reconcile(path)),
         answeredRef: (ref) => answeredRef(path, ref),
         onLinksTrigger: (trigger) => Effect.promise(() => onLinksTrigger(path, trigger)),
       })),
       trailerProblems: [],
-      trailerEvents: makeSessionEvents(0),
+      trailerEvents: makeSessionEvents({ settle: 0 }),
       pullRequest: null,
       pullRequestRead: undefined,
       issues: null,
       issuesRead: undefined,
       moves: 0,
-      linksEvents: makeSessionEvents(0),
+      linksEvents: makeSessionEvents({ settle: 0 }),
     });
   };
 
@@ -1226,13 +1304,19 @@ export const runDaemon = async () => {
   /**
    * One row of the index. What the worktree has checked out comes from its
    * repository's listing, which the route asked once for all of that
-   * repository's rows.
+   * repository's rows. Its epic is read on its own, from its file, so a row
+   * whose items or Git cannot be read stays in its epic, and a file the rules
+   * reject puts the row in no epic with the sentence `check` gives, and serves
+   * it all the same: the file is about the index, not about the work. Whether
+   * it is main was settled by Git when it was taken on, since a path that is
+   * its repository's main worktree stays one for as long as it exists.
    */
   const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
     const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
+    const epic = await runNode(entry.repository.epic.pipe(Effect.result));
     const base = {
       key: entry.key,
       name: entry.session.worktree.name,
@@ -1241,6 +1325,9 @@ export const runDaemon = async () => {
       detached: entry.session.worktree.detached,
       agents: overlay,
       trailerProblems: entry.trailerProblems,
+      epic: Result.isSuccess(epic) ? epic.success : null,
+      epicProblem: Result.isFailure(epic) ? epic.failure.message : null,
+      main: entry.session.worktree.main,
     };
     try {
       if (Result.isFailure(checkout)) throw checkout.failure;
@@ -1376,6 +1463,27 @@ export const runDaemon = async () => {
   };
 
   /**
+   * Set a worktree's epic for the index's drags, as `session join` and
+   * `session leave` set it, by the worktree's path, as a terminal and Zed are
+   * asked for: every row the index lists has one of its own, served or not,
+   * so no key two rows share can send a write to the wrong worktree. The write
+   * is refused when the file names another epic than the one the index read. A
+   * path the daemon does not track, or whose session has gone, is not written,
+   * and a session is never brought back by it. Nothing else is converged:
+   * `meta/epic` depends on no stage, so an old session that every command
+   * refuses can still be dragged into an epic and out of one, and `setEpic`
+   * makes `meta/` itself. The watch on the session is what tells the index.
+   */
+  const setEpicAt = async (input: EpicWrite): Promise<WorktreeEpic> => {
+    const entry = await liveWorktree(input.path);
+    if (entry === null) {
+      throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
+    }
+    await runNode(setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from }));
+    return { epic: input.epic === null ? null : input.epic.trim() };
+  };
+
+  /**
    * The index's stream. It subscribes as it is made, so an index that listens
    * for pull requests hears every answer to the asks it starts.
    */
@@ -1420,6 +1528,10 @@ export const runDaemon = async () => {
       }
       if (request.method === 'POST' && url.pathname === '/api/zed') {
         return await openResponse({ request, open: zedAt });
+      }
+      // The index's drags set a worktree's epic, by its path, as a terminal is asked for.
+      if (request.method === 'POST' && url.pathname === '/api/worktrees/epic') {
+        return await epicResponse({ request, write: setEpicAt });
       }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));

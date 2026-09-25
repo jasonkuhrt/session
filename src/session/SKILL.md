@@ -56,8 +56,9 @@ reports anything else there by name, with its fix, and names starting with `.`
 are outside the rule. `context/` is for agents: any file, in any layout, with no
 lifecycle, and `check` does not look inside it. `ledger/` is the session's
 shared log, described below. `meta/` holds facts about this worktree's session,
-one file each; no fact is defined yet, so `check` reports anything in it.
-`archive/` and `ignore/` hold inactive history, outside agent context.
+one file each: `epic`, below, is the one defined, and `check` reports anything
+else in it. `archive/` and `ignore/` hold inactive history, outside agent
+context.
 
 Nothing has to be set up. A command that touches the records creates `.session`,
 the five stage directories, `meta/`, and the `.gitignore` when they are missing;
@@ -108,6 +109,19 @@ entry of its own; moves and closes are already in the files and in Git.
 On the first refresh, read `RULES.md`, then the ledger, then the stages. A later
 refresh reports each new entry as an added path; read it, because that is how
 agents sharing a session hear from each other.
+
+## Epics
+
+An epic gathers worktrees on the index: a name, and the linked worktrees whose
+sessions name it in `meta/epic`, one line, and nothing else, so it has no stage,
+lifecycle or owner and exists while a worktree names it. `session join
+"<epic>"` puts the worktree in the epic of that name, creating it when no
+worktree names it yet and taking the worktree out of any other, since it is in
+one at most; `session leave` takes it out. A lead puts its workers' worktrees in
+one epic with `-C`, one command each. A main worktree is never in an epic, and
+`join` refuses it. An agent belongs to the worktree its working directory is
+in, and to an epic only through that worktree, which the index shows it under,
+so work from inside the worktree you are working on.
 
 ## Work with the files
 

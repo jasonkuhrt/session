@@ -53,10 +53,14 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
     // what the sortable's keyboard sensor listens on. It carries the name a
-    // grip would carry, and no button role: it holds a link and a checkbox,
-    // and a button may not contain those.
+    // grip would carry, and a role of its own, a group: the drag library
+    // gives an activator without one the role of a button, and a button's
+    // content is presentational, so the link and the checkbox it holds would
+    // stop being controls of their own.
     <div
       ref={ref}
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
+      role="group"
       tabIndex={frozen ? undefined : 0}
       aria-roledescription={frozen ? undefined : 'Draggable card'}
       aria-label={frozen ? undefined : `Drag ${item.title}`}

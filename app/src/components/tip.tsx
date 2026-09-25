@@ -55,9 +55,13 @@ export function Explained({ children, meaning, className }: {
   const tips = useTips()
   const layout = cn('flex items-center gap-1.5 text-left', className)
   if (!tips) return <span className={layout}>{children}</span>
+  // Marked, so a drag reads it as the word it is and not as a control: with
+  // Tips on it is drawn as a button, with Tips off as plain text, and turning
+  // tips on must not change what can be dragged.
   return (
     <Tooltip>
       <TooltipTrigger
+        data-explained=""
         className={cn(
           'cursor-default rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
           layout,

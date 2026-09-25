@@ -3,8 +3,18 @@ import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import { stageNames } from '../contract.ts';
-import type { AgentsSummary, FocusResult, Links, Session, StreamEvent, OpenResult, TrailerProblem } from '../contract.ts';
+import type {
+  AgentsSummary,
+  EpicWrite,
+  FocusResult,
+  Links,
+  OpenResult,
+  Session,
+  StreamEvent,
+  TrailerProblem,
+  WorktreeEpic,
+} from '../contract.ts';
+import { EpicWriteSchema, stageNames } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
@@ -162,6 +172,17 @@ export const openResponse = ({ request, open }: {
       ? json({ error: 'The daemon tracks no worktree at that path.' }, { status: 404 })
       : json(result);
   });
+
+/**
+ * A worktree's epic, at the root, for the index's drags: the worktree by its
+ * path, the epic's name to put it in or null to take it out, and the epic the
+ * index last read for it, answered with the epic it is in now. The daemon owns
+ * which worktrees it tracks and the rule they join by.
+ */
+export const epicResponse = ({ request, write }: {
+  readonly request: Request;
+  readonly write: (input: EpicWrite) => Promise<WorktreeEpic>;
+}) => sharedWrite(request, EpicWriteSchema, async (input) => json(await write(input)));
 
 /** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
  *  by default, so a quiet session must still say something. */

@@ -229,7 +229,9 @@ export const ArchiveListingSchema = Schema.Struct({
  * - `agents`: the Claude Code registry or a Codex writer lock changed
  * - `trailers`: the unpushed commits' trailer problems changed
  * - `links`: gh or linear was asked about the worktree's links again
- * - `worktrees`: the set of tracked worktrees changed
+ * - `worktrees`: the set of tracked worktrees changed, a trailer report
+ *   changed, or a tracked worktree's `.session` changed where a row shows it:
+ *   its items or its epic
  * - `pull-requests`: gh was asked about a tracked worktree's pull request again
  */
 export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees' | 'pull-requests';
@@ -574,12 +576,51 @@ export type WorktreeSummary = {
   lastChange: string | null;
   /** The newest of the agents' moments and `lastChange`; null when there is none. */
   activity: Activity | null;
-  /** Set when another tracked worktree already owns this key; the row is not served. */
+  /**
+   * Why the row's board is not served: another tracked worktree already owns
+   * this key, or its session or Git could not be read; null when it is served.
+   */
   conflict: string | null;
   agents: AgentsSummary;
   /** Trailers on this worktree's unpushed commits that could not be acted on. */
   trailerProblems: readonly TrailerProblem[];
+  /**
+   * The epic this worktree is in: the name its session's `meta/epic` holds,
+   * or null when it names none, and when the file breaks the rules. The index
+   * never draws a main worktree in one.
+   */
+  epic: string | null;
+  /**
+   * Why `meta/epic` could not be read as an epic's name, in the sentence
+   * `session check` gives with its fix; null when the file is sound or absent.
+   * The row is served all the same, in no epic.
+   */
+  epicProblem: string | null;
+  /** Whether this is its repository's main worktree, which Git lists first and the index pins above the epics. */
+  main: boolean;
 };
+
+/**
+ * What `POST /api/worktrees/epic` takes: the worktree by its path, as
+ * `/api/terminal` takes it, so no row is ever out of reach and no key shared
+ * by two rows can route a write to the wrong one; the epic to put it in, or
+ * null for none; and the epic the index last read for it. A file that names
+ * anything else by then refuses the write, as a stale revision refuses a move.
+ */
+export type EpicWrite = { path: string; epic: string | null; from: string | null };
+
+export const EpicWriteSchema = Schema.Struct({
+  path: Schema.String,
+  epic: Schema.NullOr(Schema.String),
+  from: Schema.NullOr(Schema.String),
+});
+
+/** What the epic route answers: the epic the worktree is in now. */
+export type WorktreeEpic = { epic: string | null };
+
+export const WorktreeEpicSchema = Schema.Struct({
+  epic: Schema.NullOr(Schema.String),
+});
 
 export const WorktreeSummarySchema = Schema.Struct({
   key: Schema.String,
@@ -600,6 +641,9 @@ export const WorktreeSummarySchema = Schema.Struct({
   conflict: Schema.NullOr(Schema.String),
   agents: AgentsSummarySchema,
   trailerProblems: Schema.Array(TrailerProblemSchema),
+  epic: Schema.NullOr(Schema.String),
+  epicProblem: Schema.NullOr(Schema.String),
+  main: Schema.Boolean,
 });
 
 /** The result of asking the daemon to focus a session's terminal. */

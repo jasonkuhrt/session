@@ -204,10 +204,41 @@ anything in `ledger/` that breaks one of these rules.
 ## Meta
 
 `meta/` holds facts about this worktree's session, one file each, named for the
-fact it holds. No fact is defined yet, so `check` reports anything in it by name
-with its fix, to move it under `context/` or delete it; names starting with `.`
-are outside the rule. Scaffolding creates it empty; a session without it is
-sound and sets no fact.
+fact it holds. It is a directory of its own, never a link, since a worktree's
+facts are its own. The session defines one fact, `epic`; `check` reports
+anything else in it by name with its fix, to move it under `context/` or delete
+it, and names starting with `.` are outside the rule. Scaffolding creates it
+empty; a session without it is sound and sets no fact.
+
+`meta/epic` names the epic this worktree is in: one line, the epic's name,
+ending in a newline, and nothing else.
+
+```
+Back burner
+```
+
+- The name follows the rules for a group's: non-empty, with no surrounding
+  spaces and no `/`. No file means no epic.
+- The file is the membership. An epic is the name its worktrees' files share,
+  so two worktrees naming one epic are in the same epic, an epic exists while
+  one names it, and a worktree is in one at most. Renaming an epic rewrites the
+  file in each of its worktrees, so a name another epic has merges the two.
+- `meta/epic` is a regular file, not a link or a directory. `check` names a
+  file or a link that breaks any of these rules with its fix, to rewrite it
+  with `session join "<epic>"` or remove it with `session leave`, and the index
+  shows the same sentence on the worktree's row, which it draws in no epic and
+  serves as ever.
+- A directory under that name is not mended that way: `check` and the index
+  name it with `meta/epic must be a file; move this directory under context/ or
+  delete it.`, and `join` and `leave` refuse it until it is gone.
+- `check` and the index read it, and so do `join` and `leave`, to say which
+  epic the worktree left. A command about the items does not: nothing about
+  them depends on it.
+- A main worktree is never in an epic, since Git keeps the repository there and
+  lists it first: `session join` refuses one, and the index pins it above the
+  epics whatever its file says.
+- It is ignored with the rest of `.session/`, so it never enters a repository,
+  and it goes with the worktree when the worktree is removed.
 
 ## Archive
 

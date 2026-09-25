@@ -21,6 +21,8 @@ start                      move the first Queue batch into Execute
 done <ID>                  finish an Execute item into archive/
 archive <ID>               archive an item from any stage into archive/, recording the stage
 log "<by>" "<title>"       write a ledger entry, body on stdin; prints "Logged <date> — <title>"
+join "<epic>"              put this worktree in the named epic, out of any other; refuses a main worktree
+leave                      take this worktree out of its epic
 open                       ensure the daemon and this worktree, then open its board
 daemon status              whether the daemon runs and was started from the sources on disk; its pid, port, start and log
 daemon restart             stop the daemon and start one from the sources on disk, current or not; prints the pids
@@ -200,6 +202,42 @@ item elsewhere does not stop an entry. There is no board button and no HTTP
 route for it, because the board never writes content; an agent may also write
 an entry by hand, in the same form.
 
+## Epics
+
+`session join "<epic>"` puts the worktree in the epic of that name by writing
+its `meta/epic`, which [records.md](records.md#meta) describes, and so takes it
+out of any other epic, since a worktree is in one at most; creating an epic and
+joining it are the same act. `session leave` removes the file. Neither takes an
+option of its own: each acts on the worktree `-C` names, one command per
+worktree, so a lead puts its workers in an epic one command each, and each
+converges the session and registers it with a running daemon as every command
+does. `join` trims the name, as `group` does, and refuses one that is empty,
+holds a `/` or breaks a line. It refuses a main worktree, naming the rule: a
+main worktree is never in an epic, since Git keeps the repository there and
+lists it first. `leave` works in any worktree, a main one included, and in one
+in no epic it has nothing to do. Success prints one line: `Joined "Back
+burner"`, `Joined "Back burner", leaving "Epics"` when the worktree moved,
+`Left "Back burner"`, or `In no epic, so nothing to leave`. Renaming an epic is
+a `join` in each of its worktrees, and a name another epic has merges the two.
+Deleting a worktree takes its membership with it, and nothing else has to be
+done.
+
+The index writes the same file through `POST /api/worktrees/epic {path, epic,
+from}`: the worktree by its path, as `POST /api/terminal` takes it, so a row
+the index lists but does not serve is reached as well and a key two rows share
+can never send a write to the wrong one; the epic's name, or `null` for none;
+and `from`, the epic the index had read for that worktree when the change was
+asked for. When the file names anything else by then, a file the rules reject
+reading as none, the write is refused with 409, changed on disk, as a stale
+revision refuses a move. The route answers with the epic the worktree is in
+now. It converges nothing else: `meta/epic` depends on no stage, so a session
+from before the stages were numbered, which every command refuses, can still be
+dragged into an epic and out of one, and `meta/` is made when nothing holds its
+name. It refuses a main worktree, a name the rules reject, and, with 404, a
+path it does not track or whose session has gone, which it never brings back.
+The watch on the session is what tells the index, as it is for a `join` in a
+terminal.
+
 ## Set up
 
 Nothing has to be set up. A command that touches the records creates the session
@@ -248,8 +286,8 @@ item count, or `empty` when no stage holds an item; that line answers whether
 everything is done. No command creates `RULES.md`; standing rules are written
 from the user's words when the user states them, and the inventory reports the
 file like any other. `ledger/` appears with its first entry, and `context/`
-when an agent first writes there. `meta/` is scaffolded empty; nothing writes a
-fact into it yet, and a session without it is sound.
+when an agent first writes there. `meta/` is scaffolded empty; `session join`
+writes its one fact, and a session without it is sound.
 
 ## Refresh context
 
@@ -361,36 +399,96 @@ refresh button. A worktree joins it as soon as a session exists: every command
 but `check` converges the session it was pointed at, and when that scaffolds
 anything it registers the worktree with a daemon that is already running. It
 never starts one; `open` is the command that does that. A worktree leaves it as
-soon as its session is gone: each tracked worktree's own watcher re-asks whether
-the `.session` is still a real directory on every event and when the watch ends,
-and the first `no` drops the row, rewrites the state file and pushes a
-`worktrees` event to every open index. `POST /api/worktrees/refresh` remains as
-the route the CLI registers through.
+soon as its session is gone: a watch on each directory that holds tracked
+worktrees re-asks whether their `.session` is still a real directory on every
+change there, since on macOS a watch on a directory that is removed hears
+nothing at all, and every read of the index re-asks it for all of them; the
+first `no` drops the row, rewrites the state file and pushes a `worktrees` event
+to every open index. A change under a tracked worktree's `.session` that a row
+shows, an item file or `meta/epic`, pushes `worktrees` as well, once the writes
+of every worktree have settled for half a second, and at least every two
+seconds while they keep coming, so a `join` in a terminal or an agent moving
+items reaches an open index at once; a change under `context/`,
+`ledger/`, `archive/` or `ignore/` pushes nothing, since the index shows nothing
+of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
+through.
 
-The index at `/` lists the tracked worktrees: name, branch, the pull request gh
-reports for that branch, the agents at work in it, the item counts per stage,
-and activity, with a terminal icon and a Zed icon beside each name and the
-settings icon at the far end of its header. A name stands without its path, which is its tip: the
-name already tells the worktrees apart, since one whose folder shares the main
-checkout's name carries its parent folder's name before it. A worktree with a
-commit checked out rather than a branch reads `Detached HEAD` where the branch
-would be, and a folder outside Git reads `No branch`. What every row has checked
-out comes from one `git worktree list` per repository, run in the Git directory
-the repository's worktrees share, rather than from Git asked once per row. The
-pull request is the chip a board's header carries, or gh's sentence in its
-place, and a branch with no pull request leaves its cell empty. A repository
-with no remote on GitHub has no pull request to show either. The batch in
-Execute is
-named beside that stage's count, which is the only place a batch is named, and a
-stage holding nothing renders an empty cell, so the five columns read as a
-pipeline by what is in them. Each board sits under `/w/<key>/`, where the key is
-the worktree name, `Heartbeat` or `email-backend/Heartbeat`. Two tracked
-worktrees whose names collide are a conflict: the later one is listed with a
-reason that names both folders, and is not served.
+The index at `/`, headed Worktrees, draws the tracked worktrees as cards rather
+than as a table, with the settings icon at the far end of its header. A strip on
+top holds the main worktrees, one per repository whose main checkout has a
+session, each marked with a house and ordered by name, and they are never
+dragged: a main worktree is never in an epic. Below it is a card per epic,
+headed by the epic's name, how many worktrees are in it and an icon that renames
+it, with its worktrees inside, and a card of its own for each worktree in no
+epic. The cards are ordered by what is happening in them: a card with a live
+agent first, live as a pill counts it, then the newest activity first, and a
+card with nothing live and nothing in five days is drawn dim and last, as a quiet
+main worktree is drawn dim in the strip; the worktrees in an epic's card follow
+the same order, and a name settles a tie. Nothing stores an order or a fold,
+since every read draws them again. The cards stand in columns as wide as a card
+needs, and where the browser lays grid items out as masonry, with `display:
+grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
+above it; elsewhere each starts at the top of its row. No script lays them out.
+
+A worktree is two lines wherever it is drawn: its name, a terminal icon and a
+Zed icon, and a pill per live agent, then its branch and the pull request gh
+reports for it. A
+name stands without its path, which is its tip: the name already tells the
+worktrees apart, since one whose folder shares the main checkout's name carries
+its parent folder's name before it. A worktree with a commit checked out rather
+than a branch reads `Detached HEAD` where the branch would be, and a folder
+outside Git reads `No branch`. What every row has checked out comes from one
+`git worktree list` per repository, run in the Git directory the repository's
+worktrees share, rather than from Git asked once per row. The pull request is
+the chip a board's header carries, or gh's sentence in its place, and a branch
+with no pull request, like a repository with no remote on GitHub, shows none.
+Beside the two lines a glyph says what the session holds, in place of words:
+one small bar per stage in the flow's order, Triage to Execute, as tall as its
+share of the fullest stage and a dim stub when the stage is empty, then the
+total. The Execute bar takes the accent while a batch runs there, and the tip
+names each stage with its count and the batch under way, which is where a batch
+is named. Each board sits under `/w/<key>/`, where the key is the worktree name,
+`Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees whose names
+collide are a conflict: the later one is listed with a reason that names both
+folders, and is not served until the first one leaves. A row the daemon does
+not serve, for such a conflict or for a session or a Git it cannot read, reads
+Not served with the reason in place of its second line and has no link to its
+board; it stays in its epic's card while its file names one. A `meta/epic` the
+rules reject puts its worktree in no epic and says why on the second line, in
+the sentence `check` gives, and the row is served as ever: the file is about the
+index, not the work.
+
+The cards change their epics by drag. A worktree is held by its row, and a whole
+epic by its heading; the pointer carries a copy of what is held while the card
+itself stays in place, faint, and the copy says above it what dropping it there
+would do, `Join "Back burner"`, `Merge into "Back burner"`, `New epic with
+alpha-two` or `Leave "Back burner"`, and nothing when the drop would change
+nothing; the card it would land in is outlined. Where the pointer is decides
+the drop. A worktree dropped onto an epic's card joins it, and so do all of a
+whole epic's worktrees. A worktree dropped onto another worktree's card in no
+epic makes an epic of the two, named in the dialog groups and batches are
+named in, which starts empty and makes nothing without a name. A worktree
+dragged out of its epic onto the space between and below the cards leaves it
+and becomes a card of its own. Escape puts it back. The rename icon opens the
+same dialog with the epic's name in it and moves every worktree in the epic to
+the new name, so a name another epic already has merges the two. A drop is
+written with the epic route, one request per worktree, which is drawn where it
+lands at once and read again once it is written; a refusal, such as a file
+changed since the index read it, shows above the cards in the daemon's words.
+While a card is held, the index draws what it drew when the card was picked up,
+its rows, pull requests and clock alike, so no card moves under the pointer: a
+change it is told of meanwhile is read once the card is let go, and a read
+already under way at pickup lands unseen until then. While a drop is being
+written it holds its reads the same way, and then reads once. Every worktree
+the index lists can be dragged but a main one, a worktree it does not serve
+included, since the epic route takes a path. Each drop is written against the
+epic drawn for every worktree when it was dropped, a new epic's two worktrees
+through the dialog as well, so one whose file was changed in the meantime is
+refused as changed on disk, and the index reads again.
 
 ## Use the board
 
-A board's header starts with "All sessions", which links back to the index,
+A board's header starts with "All worktrees", which links back to the index,
 then the worktree picker with the terminal and Zed icons beside it, since both
 open that worktree, then the branch's pull request, the Linear issues the
 worktree names, an icon for the session's rules when it has `RULES.md`, which
@@ -677,7 +775,7 @@ the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
 
 The header's icons for those three listings open a page apiece, and a fourth
-page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All sessions / worktree / page,
+page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All worktrees / worktree / page,
 with the settings at its far end, reads at the item page's width, and follows
 the files as the board does. The ledger page, `/w/<key>/ledger`, shows the
 entries newest first as cards: the title, the age with the exact moment on
@@ -798,8 +896,8 @@ that carries "Copy resume command", because Codex refuses to resume a thread
 that already has an active writer, and an `unknown` thread is never demoted as
 if nothing held it.
 
-The index carries one column per worktree, a pill per live session rather than a
-count: its dot, its word, and its name, ordered as the board orders its rows. A
+On the index each worktree carries a pill per live session rather than a count:
+its dot, its word, and its name, ordered as the board orders its rows. A
 pill opens the menu of that session's actions, which is the board's own list
 rendered as a menu with each action's name written beside its icon, under a line
 naming the session, its harness, what its word means, and its age. Copying keeps
@@ -808,17 +906,16 @@ open showing the line cmux returned. Only live things are named here: a session
 whose process is gone and a thread nothing holds are handles, not work under
 way, and listing them would say something is happening where nothing is. They
 are on that worktree's own board, which is where a reader has already chosen the
-scope. A worktree with nothing live shows a dash, and notices are printed once
+scope. A worktree with nothing live shows no pill, and notices are printed once
 under the header rather than on every row.
 
-Its Activity column answers when the worktree last did anything and who did it:
-`Claude Code` for a session's status change, `Codex` for a thread's update,
-`Items` for an item file written, each with the age beside it and the exact
-moment in the sentence behind it. What is happening now is the Agents column's
-answer, not this one's. A worktree where none of the three has happened reads a
-dash and falls into the last band. A status time is when that status last
-changed and nothing more: it dates activity, it is not a heartbeat, and an old
-one is an agent that has held still rather than an agent that has gone.
+The index orders its cards by activity, when the worktree last did anything: a
+Claude Code session's status change, a Codex thread's update, or an item file
+written, whichever is newest. What is happening now is the pills' answer, not
+this one's. A worktree where none of the three has happened has no activity and
+is quiet. A status time is when that status last changed and nothing more: it
+dates activity, it is not a heartbeat, and an old one is an agent that has held
+still rather than an agent that has gone.
 
 The listing is recomputed when the index renders and when the Claude session
 registry or the Codex writer-lock directory changes. A change pushes an `agents`
@@ -875,9 +972,10 @@ stages were numbered (`TRIAGE/`), in another case, or behind a prefix that is
 not its place (`2-Triage/`), is named with its rename to the stage's directory,
 or, when that directory is there too, with the fix to move what it holds into it
 and delete it. The directories must be directories, and `RULES.md` and
-`.gitignore` files. In `meta/` it rejects every entry but a fact the session
-defines, and no fact is defined yet; names starting with a dot are outside the
-rule. In `ledger/` it rejects a directory, a link, and a `ledger` that is itself
+`.gitignore` files. It rejects a `meta` that is a link, and in `meta/` every
+entry but the one fact the session defines, `epic`, which must be a regular
+file of one line holding an epic's name, as [records.md](records.md#meta) has
+it; names starting with a dot are outside the rule. In `ledger/` it rejects a directory, a link, and a `ledger` that is itself
 a link, and an entry whose frontmatter is missing `date`, `title` or `by`,
 carries any other key, holds anything but one line of text per key or a value
 YAML reads differently from how it is written, or has a `date` that is not a UTC

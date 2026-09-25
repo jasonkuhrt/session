@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import type { StreamEvent } from '../../contract'
+import type { EpicWrite, StreamEvent } from '../../contract'
 import {
   AgentsSummarySchema,
   ArchiveListingSchema,
@@ -16,6 +16,7 @@ import {
   SessionSchema,
   OpenResultSchema,
   TrailerProblemSchema,
+  WorktreeEpicSchema,
   WorktreeSummarySchema,
 } from '../../contract'
 import { basePath, rawFileHref } from './base'
@@ -43,6 +44,7 @@ const decodeOpen = Schema.decodeUnknownEffect(OpenResultSchema)
 const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
 const decodeContext = Schema.decodeUnknownEffect(ContextListingSchema)
 const decodeArchive = Schema.decodeUnknownEffect(ArchiveListingSchema)
+const decodeEpic = Schema.decodeUnknownEffect(WorktreeEpicSchema)
 
 const send = <A, E>(
   request: HttpClientRequest.HttpClientRequest,
@@ -194,6 +196,16 @@ export const IndexApi = {
     run(send(
       HttpClientRequest.post('/api/agents/focus').pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
       decodeFocus,
+    )),
+
+  /**
+   * Puts a worktree in the epic of that name, or in none with null, by its
+   * path, refused when its file no longer names the epic the index read.
+   */
+  setEpic: (write: EpicWrite) =>
+    run(send(
+      HttpClientRequest.post('/api/worktrees/epic').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+      decodeEpic,
     )),
 }
 

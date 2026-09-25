@@ -27,6 +27,7 @@ import {
   ensureSession,
   headCommit,
   resolveWorktreeSession,
+  setWorktreeEpic,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
 
@@ -49,6 +50,8 @@ const commands = {
   done: { operands: '<ID>', least: 1, most: 1 },
   archive: { operands: '<ID>', least: 1, most: 1 },
   log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
+  join: { operands: '"<epic>"', least: 1, most: 1 },
+  leave: { operands: '', least: 0, most: 0 },
   open: { operands: '', least: 0, most: 0 },
   daemon: { operands: '<status|restart>', least: 1, most: 1 },
 } as const;
@@ -74,6 +77,8 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   done <ID>                             complete an Execute item
   archive <ID>                          file an item away, from any stage
   log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
+  join "<epic>"                         put this worktree in the named epic, out of any other
+  leave                                 take this worktree out of its epic
   open                                  ensure the daemon and open this worktree's board
   daemon status                         say whether the daemon runs and was started from these sources
   daemon restart                        stop the daemon and start it again from these sources`;
@@ -483,6 +488,32 @@ const log = (options: Options, repository: SessionRepository, resolved: Worktree
     }
   });
 
+/**
+ * Put this worktree in an epic, by writing its `meta/epic`, which also takes it
+ * out of any other: a worktree is in one epic at most. Creating an epic and
+ * joining it are one act. A main worktree is refused.
+ */
+const join = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const epic = options.operands[0]!.trim();
+    const { previous } = yield* setWorktreeEpic({ session: resolved, repository, epic });
+    yield* Console.log(
+      previous === null || previous === epic ? `Joined ${quote(epic)}` : `Joined ${quote(epic)}, leaving ${quote(previous)}`,
+    );
+  });
+
+/**
+ * Take this worktree out of its epic, by removing its `meta/epic`; in none,
+ * there is nothing to do. A file the rules reject names no epic, so removing
+ * one says so rather than naming an epic left.
+ */
+const leave = (repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const { previous, removed } = yield* setWorktreeEpic({ session: resolved, repository, epic: null });
+    const none = removed ? 'Removed meta/epic, which named no epic' : 'In no epic, so nothing to leave';
+    yield* Console.log(previous === null ? none : `Left ${quote(previous)}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -531,6 +562,8 @@ const runCommand = (options: Options) =>
       case 'start': { yield* start(repository); break; }
       case 'done': { yield* complete(options, repository); break; }
       case 'log': { yield* log(options, repository, resolved); break; }
+      case 'join': { yield* join(options, repository, resolved); break; }
+      case 'leave': { yield* leave(repository, resolved); break; }
     }
   });
 

@@ -57,6 +57,9 @@ export const contextDirectory = 'context';
 /** Facts about this worktree's session, one file each. */
 export const metaDirectory = 'meta';
 
+/** The fact of `meta/` that names the epic this worktree is in: one line, the epic's name. */
+export const epicFact = 'epic';
+
 /** The session's shared log, one immutable entry per file. */
 export const ledgerDirectory = 'ledger';
 

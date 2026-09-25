@@ -4,6 +4,7 @@ import type * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
+import { landing } from '../lib/drag'
 import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
@@ -22,9 +23,6 @@ export type LaneActions = CardActions & {
   readonly onUngroup: (ids: readonly string[]) => void
   readonly onStart: () => void
 }
-
-/** The outline of the list a held card would be dropped into, the lane's own cards or one group's. */
-const landing = 'outline-2 outline-primary outline-dashed outline-offset-2'
 
 /**
  * A part of a lane that takes a card into the lane itself, in no group. The

@@ -1,9 +1,9 @@
-import { PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragMoveEvent, DragOverEvent } from '@dnd-kit/react'
-import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
+import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
 import type { StageFile } from '../../contract'
+import { dragSensors } from '../lib/drag'
 import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { isInList, lanesOf, moved, placementInto, placementOf, placementOver } from '../lib/lanes'
 import { isStage, moveAvailability } from '../lib/workflow'
@@ -11,23 +11,6 @@ import type { LaneActions } from './lane'
 import { Lane } from './lane'
 import { TooltipProvider } from './ui/tooltip'
 import type { DropTarget } from './workflow-card'
-
-/**
- * A card is dragged by its whole self, so nobody has to hit a grip. Without a
- * handle the pointer sensor's own default is a 200ms press, which reads as the
- * card refusing to move; a short distance instead means the gesture is decided
- * by whether you moved, so a plain click on the title, the checkbox or the
- * complete button is still a click. The keyboard sensor is the stock one, kept
- * so cards still sort from the keyboard.
- */
-const dragThresholdPixels = 5
-
-const sensors = [
-  PointerSensor.configure({
-    activationConstraints: [new PointerActivationConstraints.Distance({ value: dragThresholdPixels })],
-  }),
-  KeyboardSensor,
-]
 
 type BoardProps = Omit<LaneActions, 'accepts'> & {
   stages: StageFile[]
@@ -135,7 +118,7 @@ export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardPro
   return (
     <TooltipProvider>
       <DragDropProvider
-        sensors={sensors}
+        sensors={dragSensors}
         onDragStart={event => {
           const id = event.operation.source?.id
           const origin = typeof id === 'string' ? placementOf({ lanes: committed, id }) : null

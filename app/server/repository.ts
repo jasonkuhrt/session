@@ -23,6 +23,7 @@ import {
   archiveDirectory,
   contextDirectory,
   entryName,
+  epicFact,
   ignoreDirectory,
   ledgerDirectory,
   metaDirectory,
@@ -52,7 +53,16 @@ import {
   validateItemSections,
   validateUniqueIds,
 } from './model.ts';
-import { leftoverStageFile, metaEntryProblem, misnamedStages, rootEntryProblem } from './root.ts';
+import {
+  epicLinkProblem,
+  epicNameProblem,
+  leftoverStageFile,
+  metaEntryProblem,
+  metaLinkProblem,
+  misnamedStages,
+  parseEpicFile,
+  rootEntryProblem,
+} from './root.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
@@ -701,9 +711,34 @@ export const makeRepository = (directory: string) =>
     }).pipe(Effect.mapError(asRepositoryError));
 
     /**
+     * The epic this worktree's session names in `meta/epic`, or null when it
+     * names none: no `meta/`, no file in it, or a `meta` that is a file, which
+     * the root's rules report. A file the rules reject is refused with the
+     * sentence `check` gives rather than read as no epic, because the file is
+     * the membership, and a reader that guessed would place the worktree where
+     * its file does not. `load` does not read it: no item depends on it.
+     */
+    const readEpic = Effect.gen(function*() {
+      const meta = absolute(metaDirectory);
+      if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
+      if ((yield* pathType(meta)) !== 'Directory') return null;
+      const path = join(meta, epicFact);
+      if (yield* isLink(path)) return yield* new RepositoryError({ kind: 'validation', message: epicLinkProblem });
+      const type = yield* pathType(path);
+      if (type === null) return null;
+      if (type !== 'File') {
+        const kind = metaEntryProblem({ name: epicFact, type: type === 'Directory' ? 'directory' : 'other' });
+        return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${epicFact} must be a file.` });
+      }
+      const parsed = parseEpicFile(yield* fs.readFileString(path));
+      if ('problem' in parsed) return yield* new RepositoryError({ kind: 'validation', message: parsed.problem });
+      return parsed.epic;
+    }).pipe(Effect.mapError(asRepositoryError));
+
+    /**
      * What `load` reads past: leftover stage files, the closed root and what
-     * `meta/` holds, self-ignoring, the sections each stage requires, and the
-     * ledger.
+     * `meta/` holds, the epic's file among it, self-ignoring, the sections each
+     * stage requires, and the ledger.
      */
     const check = semaphore.withPermit(
       Effect.gen(function*() {
@@ -724,14 +759,21 @@ export const makeRepository = (directory: string) =>
           const problem = rootEntryProblem({ name, type: yield* entryType(absolute(name)) }, present);
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
         }
-        // No fact is defined yet, so `meta/` holding anything is reported; a
-        // `meta` that is not a directory was reported with the root.
+        // `meta/` holds only the facts the session defines, each its own kind,
+        // and the epic's file its one line. The epic's file is judged by the
+        // read every reader makes, links and all, so `check` and the index
+        // give one sentence for it. A `meta` that is not a directory was
+        // reported with the root; one that is a link is reported here, since a
+        // worktree's facts are its own.
         if (present.has(metaDirectory)) {
           const meta = absolute(metaDirectory);
+          if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
           for (const name of (yield* fs.readDirectory(meta).pipe(Effect.mapError(asRepositoryError))).toSorted()) {
+            if (name === epicFact) continue;
             const problem = metaEntryProblem({ name, type: yield* entryType(join(meta, name)) });
             if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
           }
+          yield* readEpic;
         }
         const gitignore = yield* pathType(absolute(gitignorePath)).pipe(Effect.mapError(asRepositoryError));
         if (gitignore === null) {
@@ -1492,6 +1534,80 @@ export const makeRepository = (directory: string) =>
       );
 
     /**
+     * Replace a file whole: write a dot-named neighbour that no other writer
+     * shares, which every reader ignores, then rename it into place, so a
+     * reader sees the old file or the new one, and two writers at once each
+     * land whole with the last one standing.
+     */
+    const replaceFile = (relativePath: string, content: string) =>
+      Effect.gen(function*() {
+        const target = absolute(relativePath);
+        const parent = dirname(target);
+        yield* fs.makeDirectory(parent, { recursive: true });
+        const temp = join(parent, `.${yield* crypto.randomUUIDv4}.tmp`);
+        yield* fs.writeFileString(temp, content).pipe(
+          Effect.andThen(fs.rename(temp, target)),
+          Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)),
+        );
+      }).pipe(
+        Effect.mapError((cause) => new RepositoryError({ kind: 'io', message: `Could not write ${relativePath}.`, cause })),
+      );
+
+    /**
+     * Put this worktree in the epic of that name, or in none with null: the one
+     * write of membership. The name is trimmed, as a group's is, and follows an
+     * epic's rules. The file is written whole, so a lead's parallel joins, each
+     * in its own worktree, never touch one file, and null removes it. `meta/`
+     * is made when nothing holds its name; nothing is written through a `meta`
+     * that is a link or not a directory, or over an `epic` that is a directory.
+     * `from`, when given, is the epic the writer last read, a file the rules
+     * reject reading as none: a file that names anything else refuses the
+     * write, as a stale revision refuses a move. It answers the epic the file
+     * named before, for the caller to say what changed, and whether a leave
+     * removed a file, which one the rules reject names no epic to have left.
+     */
+    const setEpic = (input: { readonly epic: string | null; readonly from?: string | null | undefined }) =>
+      semaphore.withPermit(
+        Effect.gen(function*() {
+          const name = input.epic === null ? null : input.epic.trim();
+          const problem = name === null ? null : epicNameProblem(name);
+          if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: `Not joined: ${problem}.` });
+          if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
+          if ((yield* pathType(root)) !== 'Directory') {
+            return yield* new RepositoryError({
+              kind: 'not-found',
+              message: `${root} does not exist; run any session command to create it.`,
+            });
+          }
+          const meta = absolute(metaDirectory);
+          if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
+          const metaType = yield* pathType(meta);
+          if (metaType !== null && metaType !== 'Directory') {
+            const kind = rootEntryProblem({ name: metaDirectory, type: metaType === 'File' ? 'file' : 'other' }, new Set());
+            return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory} must be a directory.` });
+          }
+          const path = join(meta, epicFact);
+          const linked = yield* isLink(path);
+          const type = yield* pathType(path);
+          if (type === 'Directory' && !linked) {
+            const kind = metaEntryProblem({ name: epicFact, type: 'directory' });
+            return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${epicFact} must be a file.` });
+          }
+          const previous = yield* readEpic.pipe(Effect.orElseSucceed(() => null));
+          if (input.from !== undefined && input.from !== previous) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: `${metaDirectory}/${epicFact} changed on disk since it was read; try again.`,
+            });
+          }
+          const removed = name === null && (linked || type !== null);
+          if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, `${name}\n`);
+          else if (removed) yield* fs.remove(path);
+          return { previous, removed };
+        }).pipe(Effect.mapError(asRepositoryError)),
+      );
+
+    /**
      * Write one ledger entry: the date from the clock, the batch Execute is
      * running, and whatever else the caller observed. The entry is read back by
      * the rules `check` applies before anything is written, so `log` can never
@@ -1630,6 +1746,9 @@ export const makeRepository = (directory: string) =>
       root,
       initialize,
       load,
+      /** The epic this worktree's session names, read as `check` reads it; null for none. */
+      epic: semaphore.withPermit(readEpic),
+      setEpic,
       check,
       addItem,
       moveItem,
