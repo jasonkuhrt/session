@@ -5,10 +5,10 @@ import { LinearIssues } from './linear-issues'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
 import { SettingsMenu } from './settings-menu'
-import { TerminalAction } from './terminal-action'
 import { useTip } from './tip'
 import { Button } from './ui/button'
 import { TooltipProvider } from './ui/tooltip'
+import { TerminalAction, ZedAction } from './worktree-actions'
 import { WorktreePicker } from './worktree-picker'
 
 /**
@@ -20,13 +20,13 @@ import { WorktreePicker } from './worktree-picker'
  * rather than a control.
  *
  * Left to right: "All sessions", where every trail starts too, then the
- * worktree with its terminal beside it, since the terminal opens in that
+ * worktree with its terminal and Zed beside it, since both open in that
  * worktree, then where the work lives outside the files, then the session's
  * rules, ledger, context and archive; the settings stay at the far end. A
  * source that could not answer says so where its chip would be, and a control
  * that cannot act is not drawn.
  */
-export function SessionHeader({ worktree, rules, links, linksError, terminal }: {
+export function SessionHeader({ worktree, rules, links, linksError, terminal, zed }: {
   worktree: Session['worktree'] | undefined
   /** Whether the session holds `RULES.md`. */
   rules: boolean
@@ -36,6 +36,8 @@ export function SessionHeader({ worktree, rules, links, linksError, terminal }: 
   linksError: string | null
   /** Whether the daemon can run cmux. */
   terminal: boolean
+  /** Whether the daemon can run zed. */
+  zed: boolean
 }) {
   const tip = useTip()
   return (
@@ -56,6 +58,7 @@ export function SessionHeader({ worktree, rules, links, linksError, terminal }: 
           <div className="flex items-center gap-1.5">
             <WorktreePicker current={worktree} />
             {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+            {zed ? <ZedAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
           </div>
         ) : null}
         <LinksGroup links={links} linksError={linksError} />

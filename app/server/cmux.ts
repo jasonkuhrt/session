@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { FocusResult, TerminalResult } from '../contract.ts';
+import type { FocusResult, OpenResult } from '../contract.ts';
 import { capture, type Command } from './command.ts';
 
 /**
@@ -131,12 +131,12 @@ export const say = ({ command, args, timeout = budget }: {
   readonly timeout?: Command['timeout'];
 }) =>
   capture({ command, args, env: quiet, timeout }).pipe(
-    Effect.map((result): TerminalResult =>
+    Effect.map((result): OpenResult =>
       result.exitCode === 0
         ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
         : { ok: false, line: refusal(`${command} ${args[0] ?? ''}`.trim(), result) }
     ),
-    Effect.catch((error) => Effect.succeed<TerminalResult>({ ok: false, line: error.message })),
+    Effect.catch((error) => Effect.succeed<OpenResult>({ ok: false, line: error.message })),
   );
 
 /** One command of the focus sequence: `null` when it worked, else why not. */
