@@ -413,78 +413,96 @@ items reaches an open index at once; a change under `context/`,
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through.
 
-The index at `/`, headed Worktrees, draws the tracked worktrees as cards rather
-than as a table, with the settings icon at the far end of its header. A strip on
-top holds the main worktrees, one per repository whose main checkout has a
-session, each marked with a house and ordered by name, and they are never
-dragged: a main worktree is never in an epic. Below it is a card per epic,
-headed by the epic's name, how many worktrees are in it and an icon that renames
-it, with its worktrees inside, and a card of its own for each worktree in no
-epic. The cards are ordered by what is happening in them: a card with a live
-agent first, live as a pill counts it, then the newest activity first, and a
-card with nothing live and nothing in five days is drawn dim and last, as a quiet
-main worktree is drawn dim in the strip; the worktrees in an epic's card follow
-the same order, and a name settles a tie. Nothing stores an order or a fold,
-since every read draws them again. The cards stand in columns as wide as a card
-needs, and where the browser lays grid items out as masonry, with `display:
+The index at `/` draws the tracked worktrees as cards rather than as a table,
+under a header that holds only the settings icon, at its far end. It has no
+heading: the browser's tab names it Worktrees, and every card says what it is
+and how it moves from where it is, in the tips of the mark before a worktree's
+name, of an epic's heading and of a dim card, so nothing needs a page-wide
+sentence. A strip on top holds the main worktrees, one per repository whose main
+checkout has a session, each marked with a house and ordered by name, and they
+are never dragged: a main worktree is never in an epic. Below it is a card per
+epic, headed by the epic's name, how many worktrees are in it and an icon that
+renames it, with its worktrees inside, and a card of its own for each worktree
+in no epic. The cards are ordered by what is happening in them: a card with a
+live agent first, live as a pill counts it, then the newest activity first, and
+a card with nothing live and nothing in five days is drawn dim and last, as a
+quiet main worktree is drawn dim in the strip; the worktrees in an epic's card
+follow the same order, and a name settles a tie. Nothing stores an order or a
+fold, since every read draws them again. The cards stand in columns as wide as a
+card needs, and where the browser lays grid items out as masonry, with `display:
 grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
 above it; elsewhere each starts at the top of its row. No script lays them out.
 
-A worktree is two lines wherever it is drawn: its name, a terminal icon and a
-Zed icon, and a pill per live agent, then its branch and the pull request gh
-reports for it. A
-name stands without its path, which is its tip: the name already tells the
-worktrees apart, since one whose folder shares the main checkout's name carries
-its parent folder's name before it. A worktree with a commit checked out rather
-than a branch reads `Detached HEAD` where the branch would be, and a folder
-outside Git reads `No branch`. What every row has checked out comes from one
-`git worktree list` per repository, run in the Git directory the repository's
-worktrees share, rather than from Git asked once per row. The pull request is
-the chip a board's header carries, or gh's sentence in its place, and a branch
-with no pull request, like a repository with no remote on GitHub, shows none.
-Beside the two lines a glyph says what the session holds, in place of words:
-one small bar per stage in the flow's order, Triage to Execute, as tall as its
-share of the fullest stage and a dim stub when the stage is empty, then the
-total. The Execute bar takes the accent while a batch runs there, and the tip
-names each stage with its count and the batch under way, which is where a batch
-is named. Each board sits under `/w/<key>/`, where the key is the worktree name,
-`Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees whose names
-collide are a conflict: the later one is listed with a reason that names both
-folders, and is not served until the first one leaves. A row the daemon does
-not serve, for such a conflict or for a session or a Git it cannot read, reads
-Not served with the reason in place of its second line and has no link to its
-board; it stays in its epic's card while its file names one. A `meta/epic` the
-rules reject puts its worktree in no epic and says why on the second line, in
-the sentence `check` gives, and the row is served as ever: the file is about the
-index, not the work.
+A worktree is two lines wherever it is drawn, beside the glyph of what its
+session holds at its top left: a folder and its name, a terminal icon and a Zed
+icon, and a pill per live agent, then a branch mark and its branch and the pull
+request gh reports for it. The marks are the worktree picker's, a folder, a
+branch, and a commit in place of the branch for a detached HEAD, so a name and a
+branch are told apart wherever a worktree is drawn. The folder's tip says what
+the worktree is here: on the page while it has a session, in an epic or in none,
+and where it can be dropped. A name stands without its path, which is its tip:
+the name already tells the worktrees apart, since one whose folder shares the
+main checkout's name carries its parent folder's name before it. A worktree with
+a commit checked out rather than a branch reads `Detached HEAD` where the branch
+would be, and a folder outside Git reads `No branch`. What every row has checked
+out comes from one `git worktree list` per repository, run in the Git directory
+the repository's worktrees share, rather than from Git asked once per row. The
+pull request is the chip a board's header carries, or gh's sentence in its
+place, and a branch with no pull request, like a repository with no remote on
+GitHub, shows none. The glyph says what the session holds in place of words: one
+small bar per stage in the flow's order, Triage to Execute, and no total beside
+it. Every glyph on the page is measured against one range, the fewest and the
+most items any stage drawn on the page holds, so a bar's height is the same
+count on every card: the fewest sits at the baseline and the most is full
+height, which with an empty stage anywhere is a count's share of the page's
+largest. An empty stage is a dim stub at the baseline, and when every stage on
+the page holds the same number every bar is drawn there. The range is read from
+the rows each time the page draws them and kept nowhere, and a row the daemon
+does not serve draws no glyph and counts for none of it. The Execute bar takes
+the accent while a batch runs there, and the tip names each stage with its
+count, the batch under way, which is where a batch is named, and the total. Each
+board sits under `/w/<key>/`, where the key is the worktree name, `Heartbeat` or
+`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
+conflict: the later one is listed with a reason that names both folders, and is
+not served until the first one leaves. A row the daemon does not serve, for such
+a conflict or for a session or a Git it cannot read, reads Not served with the
+reason in place of its second line and has no link to its board; it stays in its
+epic's card while its file names one. A `meta/epic` the rules reject puts its
+worktree in no epic and says why on the second line, in the sentence `check`
+gives, and the row is served as ever: the file is about the index, not the work.
 
 The cards change their epics by drag. A worktree is held by its row, and a whole
 epic by its heading; the pointer carries a copy of what is held while the card
 itself stays in place, faint, and the copy says above it what dropping it there
 would do, `Join "Back burner"`, `Merge into "Back burner"`, `New epic with
 alpha-two` or `Leave "Back burner"`, and nothing when the drop would change
-nothing; the card it would land in is outlined. Where the pointer is decides
-the drop. A worktree dropped onto an epic's card joins it, and so do all of a
-whole epic's worktrees. A worktree dropped onto another worktree's card in no
-epic makes an epic of the two, named in the dialog groups and batches are
-named in, which starts empty and makes nothing without a name. A worktree
-dragged out of its epic onto the space between and below the cards leaves it
-and becomes a card of its own. Escape puts it back. The rename icon opens the
-same dialog with the epic's name in it and moves every worktree in the epic to
-the new name, so a name another epic already has merges the two. A drop is
-written with the epic route, one request per worktree, which is drawn where it
-lands at once and read again once it is written; a refusal, such as a file
-changed since the index read it, shows above the cards in the daemon's words.
-While a card is held, the index draws what it drew when the card was picked up,
-its rows, pull requests and clock alike, so no card moves under the pointer: a
-change it is told of meanwhile is read once the card is let go, and a read
-already under way at pickup lands unseen until then. While a drop is being
-written it holds its reads the same way, and then reads once. Every worktree
-the index lists can be dragged but a main one, a worktree it does not serve
-included, since the epic route takes a path. Each drop is written against the
-epic drawn for every worktree when it was dropped, a new epic's two worktrees
-through the dialog as well, so one whose file was changed in the meantime is
-refused as changed on disk, and the index reads again.
+nothing; the card it would land in is outlined. Where the pointer is decides the
+drop. A worktree dropped onto an epic's card joins it, and so do all of a whole
+epic's worktrees. A worktree dropped onto another worktree's card in no epic
+makes an epic of the two, named in the dialog groups and batches are named in,
+which starts empty and makes nothing without a name. While a worktree is held,
+from a card of its own or out of an epic, a `+` is drawn after the cards, and
+only then, since it can do nothing otherwise; its tip is `New epic with
+<name>`, and so are the words over the held copy. A worktree dropped on it opens
+the same dialog and makes an epic of that one worktree, or puts it in the epic
+that already has the name given, and no name makes nothing. A worktree dragged
+out of its epic onto the space between and below the cards leaves it and becomes
+a card of its own. Escape puts it back. The rename icon opens the same dialog
+with the epic's name in it and moves every worktree in the epic to the new name,
+so a name another epic already has merges the two. A drop is written with the
+epic route, one request per worktree, which is drawn where it lands at once and
+read again once it is written; a refusal, such as a file changed since the index
+read it, shows above the cards in the daemon's words. While a card is held, the
+index draws what it drew when the card was picked up, its rows, pull requests
+and clock alike, so no card moves under the pointer: a change it is told of
+meanwhile is read once the card is let go, and a read already under way at
+pickup lands unseen until then. While a drop is being written it holds its reads
+the same way, and then reads once. Every worktree the index lists can be dragged
+but a main one, a worktree it does not serve included, since the epic route
+takes a path. Each drop is written against the epic drawn for every worktree
+when it was dropped, a new epic's worktrees through the dialog as well, so one
+whose file was changed in the meantime is refused as changed on disk, and the
+index reads again.
 
 ## Use the board
 
