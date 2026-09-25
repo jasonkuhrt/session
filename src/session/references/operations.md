@@ -468,8 +468,8 @@ and becomes a card of its own. Escape puts it back. The rename icon opens the
 same dialog with the epic's name in it and moves every worktree in the epic to
 the new name, so a name another epic already has merges the two. A drop is
 written with the epic route, one request per worktree, which is drawn where it
-lands at once and read again once it is written; a refusal, such as a main
-worktree's, shows above the cards in the daemon's words. While a card is held,
+lands at once and read again once it is written; a refusal, such as a file
+changed since the index read it, shows above the cards in the daemon's words. While a card is held,
 and while a drop is being written, the index reads nothing, remembers that it
 was told something changed, and reads once when it is let go, so no card moves
 under the pointer. Every worktree the index lists can be dragged but a main
