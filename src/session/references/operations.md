@@ -361,9 +361,11 @@ reason that names both folders, and is not served.
 ## Use the board
 
 A board's header starts with "All sessions", which links back to the index,
-then the worktree picker, the branch's pull request, the Linear issues the
-worktree names, one icon apiece for the session's Ledger, Context and Archive
-pages, and a terminal icon; the settings icon is at the far end. The picker is
+then the worktree picker with the terminal icon beside it, since the terminal
+opens in that worktree, then the branch's pull request, the Linear issues the
+worktree names, an icon for the session's rules when it has `RULES.md`, which
+opens it on the file page, and one icon apiece for its Ledger, Context and
+Archive pages; the settings icon is at the far end. The picker is
 where the worktree and its branch are named: the control shows the worktree's
 name over the branch checked out in it, and opens a list of every worktree the
 daemon serves, each as the same two lines, its name over its branch, cut short
@@ -407,23 +409,27 @@ draw no chip. Any other way gh can fail, missing from the daemon's PATH, signed
 out, or offline, reads "gh did not answer, so the pull request is not shown."
 where the chip would be.
 
-Each Linear issue the worktree names is one chip after the pull request's, and
-the chip is a link to the issue that shows its identifier, such as `HEA-5454`,
-and nothing else. The tooltip gives the issue's title, its state in linear's
-own words, and when linear was asked. The identifiers are read from the branch
+The Linear issues the worktree names are one chip after the pull request's,
+however many there are. One issue's chip is a link to it that shows its
+identifier, such as `HEA-5454`, and nothing else; the tooltip gives the issue's
+title, its state in linear's own words, and when linear was asked. Several
+issues share a chip that shows the first one named and how many more, such as
+`HEA-5523 +3`, and opens a list of them all, each with its identifier, title
+and state in linear's own words, under a line saying when linear was asked;
+each opens its issue as a single chip does. The identifiers are read from the branch
 name and from the pull request's title and body: anything written the way
 Linear writes one, a team key of two or more letters and digits that starts with a letter, a hyphen, and a number
 that does not start with 0, in any case, so `jason/hea-5454-upgrade` names
 `HEA-5454`. They are uppercased and kept once each, in the order they are first
 named. Each is asked for with `linear issue view <ID> --json` in the worktree,
-so linear reads that worktree's own configuration, and a chip is drawn only
-when linear answers with the issue. An identifier linear cannot find draws
+so linear reads that worktree's own configuration, and an issue is shown only
+when linear answers with it. An identifier linear cannot find draws
 nothing, so a word that only looks like one, such as `to-400` in a branch name,
 costs one ask and nothing else. Linear answers a moved issue's old identifier
-with the issue under its new one, so two names for one issue draw one chip. A
+with the issue under its new one, so two names for one issue show it once. A
 worktree that names no identifier asks linear nothing. linear without an API
 key reads "linear is not authenticated, so issues are not shown." where the
-chips would be. linear missing from the daemon's PATH, offline, slower than
+chip would be. linear missing from the daemon's PATH, offline, slower than
 fifteen seconds, or answering any other way reads "linear did not answer, so
 issues are not shown.", and when linear printed a reason, the daemon's log has
 it. Either way no issue is drawn, because a partial list would read as the
@@ -498,7 +504,13 @@ PATH draws none.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
-there is no way to type a body or create an item in it. A card's title is a link
+there is no way to type a body or create an item in it. A card shows the start of
+the item's first paragraph under its title, up to 180 characters, as a reader
+of the Markdown sees it, without the marks around its words. Headings, code,
+tables and HTML are not paragraphs and a footnote is not where a body starts,
+so a body that opens with an example shows the paragraph after it, and a body
+with no paragraph shows nothing more than the title. The item's id sits
+under that, very dim until pointed at, and a click copies it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and above
 its title the name of its group when it has one, labelled Batch in Queue and
@@ -547,12 +559,15 @@ Every lane draws its groups as they are filed: a group is a heading over its
 cards, in its place in the lane's file order among the cards in no group. The
 heading's tooltip says what a group is in that lane: candidates or work
 gathered under one name in Triage and Design, a proposed batch in Batch, and a
-batch in Queue and Execute. Select cards in Triage, Design or Batch and
-"Group (n)" appears, which names them as a group of that lane in the dialog
-"Queue batch" uses; a name the lane already has adds them to that group, as
-`group` does. In Batch, "Queue batch (n)" appears beside it, to name the
-selected items as a batch and append it to Queue. Selected items join the group
-or the batch in the order the lane shows them. A group's heading in Batch offers
+batch in Queue and Execute. A card carries no checkbox until its lane is
+choosing: "Group…" beside the heading of Triage, Design or Batch starts it, and
+in Batch "Queue batch…" too. Only then do that lane's cards offer a checkbox,
+the lane says "Choose the items for the group" or "for the batch" until one is
+chosen, and "Cancel" stops it with nothing changed. With cards chosen, "Group
+(n)" names them as a group of that lane in the dialog "Queue batch" uses; a
+name the lane already has adds them to that group, as `group` does. "Queue
+batch (n)" names them as a batch and appends it to Queue. Chosen items join the
+group or the batch in the order the lane shows them. A group's heading in Batch offers
 "Queue batch" too: the dialog starts from the group's name, and it queues
 exactly that group's items, which takes the group with them. A group's heading
 in Triage, Design or Batch offers "Ungroup", which takes its items out of the
@@ -560,7 +575,7 @@ group, each to the end of its lane, as `ungroup` does. A batch's heading in
 Queue and Execute offers nothing, because a batch is composed in Batch and a
 queued card leaves it only by leaving Queue. The Queue lane offers "Start next
 batch" while there is a batch to start and Execute is empty. None of these is
-ever drawn disabled with a reason: an empty selection and an occupied Execute
+ever drawn disabled with a reason: an empty choice and an occupied Execute
 are already visible in the lanes themselves. Execute is frozen: its cards can
 only be completed, which files them under `archive/`.
 
@@ -599,8 +614,8 @@ what refresh reads there: a directory named `archive` or `ignore` under
 the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
 
-The header's three icons open a page apiece for those listings, and a fourth
-page renders one file. Each carries the trail All sessions / worktree / page,
+The header's icons for those three listings open a page apiece, and a fourth
+page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All sessions / worktree / page,
 with the settings at its far end, reads at the item page's width, and follows
 the files as the board does. The ledger page, `/w/<key>/ledger`, shows the
 entries newest first as cards: the title, the age with the exact moment on

@@ -37,10 +37,15 @@ export type StageFile = {
   items: Item[];
 };
 
+/** The user's standing rules for the session, a file at its root that nothing scaffolds. */
+export const rulesFile = 'RULES.md';
+
 export type Session = {
   directory: string;
   revision: string;
   stages: StageFile[];
+  /** Whether the session holds `RULES.md`. */
+  rules: boolean;
   worktree?: {
     name: string;
     path: string;
@@ -63,6 +68,7 @@ export const ItemSchema = Schema.Struct({
 export const SessionSchema = Schema.Struct({
   directory: Schema.String,
   revision: Schema.String,
+  rules: Schema.Boolean,
   worktree: Schema.optionalKey(Schema.Struct({
     name: Schema.String,
     path: Schema.String,
