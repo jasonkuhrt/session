@@ -2,6 +2,7 @@ import * as Data from 'effect/Data';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage } from '../contract.ts';
 import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
+import { markdown, type MarkdownNode } from './markdown.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
   readonly kind: 'conflict' | 'io' | 'not-found' | 'validation';
@@ -26,13 +27,32 @@ export const fail = (message: string): never => {
 /** Quote a name inside a message without reaching for JSON. */
 export const quote = (value: string): string => `"${value}"`;
 
+/** What a reader sees of a node: its words and its code, without the marks written around them. */
+const textOf = (node: MarkdownNode): string => {
+  if (node.type === 'text' || node.type === 'inlineCode') return node.value ?? '';
+  if (node.type === 'image') return node.alt ?? '';
+  if (node.type === 'break') return ' ';
+  return (node.children ?? []).map((child) => textOf(child)).join('');
+};
+
+/**
+ * A card's line: the text of the body's first paragraph, in a list or a quote
+ * as much as at the top, as a reader sees it, without the Markdown marks around
+ * its words; the title when the body has none. Headings, code, tables and HTML
+ * are not paragraphs, so a body that opens with an example reads from its
+ * first sentence rather than its fence.
+ */
 const summarize = (body: string, title: string): string => {
-  const line = body
-    .split(/\r?\n/u)
-    .map((candidate) => candidate.trim())
-    .find((candidate) => candidate !== '' && !candidate.startsWith('#'));
-  if (line === undefined) return title;
-  return line.replace(/^[-*>\d.\s]+/u, '').slice(0, 180);
+  const pending: MarkdownNode[] = [markdown.parse(body)];
+  for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
+    if (node.type !== 'paragraph') {
+      pending.unshift(...(node.children ?? []));
+      continue;
+    }
+    const text = textOf(node).replaceAll(/\s+/gu, ' ').trim();
+    if (text !== '') return text.slice(0, 180);
+  }
+  return title;
 };
 
 /** What a stage calls its groups: in QUEUE and EXECUTE a group is a batch. */

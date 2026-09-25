@@ -17,7 +17,7 @@ import type {
   Stage,
   StageFile,
 } from '../contract.ts';
-import { isBatchedStage, stageNames } from '../contract.ts';
+import { isBatchedStage, rulesFile, stageNames } from '../contract.ts';
 import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, parseArchiveName } from './archive.ts';
 import {
   archiveDirectory,
@@ -130,6 +130,7 @@ type Loaded = {
   readonly root: string;
   readonly revision: string;
   readonly stages: StageState[];
+  readonly rules: boolean;
 };
 
 const toStageFile = (state: StageState): StageFile => ({
@@ -150,6 +151,7 @@ const toSession = (loaded: Loaded): Session => ({
   directory: loaded.root,
   revision: loaded.revision,
   stages: loaded.stages.map(toStageFile),
+  rules: loaded.rules,
 });
 
 const stageOf = (loaded: Loaded, stage: Stage): StageState =>
@@ -555,11 +557,17 @@ export const makeRepository = (directory: string) =>
           .join('\u0000'),
       );
 
+    /** Whether `RULES.md` is there as the file the layout allows, which is what the board links to. */
+    const hasRules = fs.stat(join(root, rulesFile)).pipe(
+      Effect.map((info) => info.type === 'File'),
+      Effect.orElseSucceed(() => false),
+    );
+
     const loadUnlocked = Effect.gen(function*() {
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
       yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
-      return { root, revision, stages } satisfies Loaded;
+      return { root, revision, stages, rules: yield* hasRules } satisfies Loaded;
     });
 
     const mutate = (

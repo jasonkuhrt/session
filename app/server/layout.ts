@@ -1,5 +1,5 @@
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage, stageNames } from '../contract.ts';
+import { isBatchedStage, rulesFile, stageNames } from '../contract.ts';
 import {
   fail,
   groupNoun,
@@ -55,9 +55,6 @@ export const contextDirectory = 'context';
 
 /** The session's shared log, one immutable entry per file. */
 export const ledgerDirectory = 'ledger';
-
-/** The user's standing rules for the session. */
-export const rulesFile = 'RULES.md';
 
 /**
  * The session root is closed: it holds the stages, these directories and

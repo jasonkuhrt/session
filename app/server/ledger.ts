@@ -1,11 +1,9 @@
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
-import remarkGfm from 'remark-gfm';
-import remarkParse from 'remark-parse';
-import { unified } from 'unified';
 import type { LedgerEntry } from '../contract.ts';
 import { ledgerDirectory } from './layout.ts';
+import { markdown, type MarkdownNode } from './markdown.ts';
 
 /**
  * The ledger's entry format. An entry is one file under `ledger/`: YAML
@@ -87,18 +85,6 @@ export type LedgerParse =
 const problem = (line: number | null, text: string): { readonly problem: LedgerProblem } => ({
   problem: { line, text },
 });
-
-/** The Markdown reader the board renders with: react-markdown's parser, with the board's one plugin. */
-const markdown = unified().use(remarkParse).use(remarkGfm);
-
-/** What the heading search reads of a parsed node: its kind, what it holds, and where it sits. */
-type MarkdownNode = {
-  readonly type: string;
-  readonly children?: ReadonlyArray<MarkdownNode> | undefined;
-  readonly position?:
-    | { readonly start: { readonly line: number }; readonly end: { readonly line: number } }
-    | undefined;
-};
 
 /**
  * The first heading the board would draw in some Markdown, as the lines it

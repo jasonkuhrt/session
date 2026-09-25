@@ -1,7 +1,7 @@
 import * as React from 'react'
 
 import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '../contract'
-import { isBatchedStage, stageNames } from '../contract'
+import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
 import type { NameRequest } from './components/session-dialogs'
@@ -9,6 +9,7 @@ import { CompleteDialog, NameDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
 import { useTerminalAvailable } from './components/terminal-action'
 import { TrailerProblems } from './components/trailer-problems'
+import type { Choosing } from './components/workflow-card'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
@@ -29,6 +30,7 @@ function App() {
   const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
   const [naming, setNaming] = React.useState<NameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
+  const [choosing, setChoosing] = React.useState<Choosing>(null)
   const [selection, setSelection] = React.useState<Set<string>>(new Set())
   const now = useNow()
   const terminal = useTerminalAvailable()
@@ -154,16 +156,15 @@ function App() {
     void load()
   }, [busy, load])
 
-  // A selection is gathered into a group, or composed into a batch, only in the
-  // lanes where an item may be in no group; one that has moved on to Queue or
-  // Execute is no longer selected.
-  const selectableIds = new Set(
-    session?.stages.flatMap(stage => (isBatchedStage(stage.stage) ? [] : stage.items.map(item => item.id))),
+  // Only the lane that is choosing has chosen items; one that has moved out of
+  // it since is no longer chosen.
+  const choosableIds = new Set(
+    choosing === null ? [] : session?.stages.find(stage => stage.stage === choosing.stage)?.items.map(item => item.id),
   )
-  const selectedIds = new Set([...selection].filter(id => selectableIds.has(id)))
-  const deselect = (ids: readonly string[]) => {
-    const done = new Set(ids)
-    setSelection(current => new Set([...current].filter(id => !done.has(id))))
+  const selectedIds = new Set([...selection].filter(id => choosableIds.has(id)))
+  const choose = (next: Choosing) => {
+    setChoosing(next)
+    setSelection(new Set())
   }
 
   // A write that failed and a write the board recovered from read differently:
@@ -174,7 +175,13 @@ function App() {
     <div className="min-h-dvh bg-background text-foreground">
       {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
-      <SessionHeader worktree={session?.worktree} links={links.answer} linksError={links.problem} terminal={terminal} />
+      <SessionHeader
+        worktree={session?.worktree}
+        rules={session?.rules ?? false}
+        links={links.answer}
+        linksError={links.problem}
+        terminal={terminal}
+      />
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
       <TrailerProblems problems={trailers} />
       {problem === null ? null : (
@@ -192,6 +199,8 @@ function App() {
           <Board
             stages={session.stages}
             pending={pending}
+            choosing={choosing}
+            onChoose={choose}
             selectedIds={selectedIds}
             onSelect={(id, selected) => setSelection(current => {
               const next = new Set(current)
@@ -218,7 +227,7 @@ function App() {
           if (naming === null) return
           const path = naming.kind === 'group' ? '/api/group' : '/api/batch'
           if (await mutate(path, { ids: naming.ids, name })) {
-            deselect(naming.ids)
+            choose(null)
             setNaming(null)
           }
         }}
