@@ -69,9 +69,9 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   mv <ID> <STAGE> [--before ID|GROUP]   move an item, or reorder it where it is
   group "<name>" <ID...>                gather items of one stage into a named group
   ungroup <ID...>                       take items out of their groups
-  batch "<name>" <ID...>                queue BATCH items as a named batch
-  start                                 move the first queued batch into EXECUTE
-  done <ID>                             complete an EXECUTE item
+  batch "<name>" <ID...>                queue Batch items as a named batch
+  start                                 move the first queued batch into Execute
+  done <ID>                             complete an Execute item
   archive <ID>                          file an item away, from any stage
   log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
   open                                  ensure the daemon and open this worktree's board
@@ -144,8 +144,9 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
   return { command, operands: rest, directory, previous, before };
 };
 
+/** A stage by its name in any case, `design`, `DESIGN` or `Design`; what the CLI prints is the stage's own name, `Design`. */
 const asStage = (value: string): Stage => {
-  const stage = stageNames.find((candidate) => candidate === value.toUpperCase());
+  const stage = stageNames.find((candidate) => candidate.toLowerCase() === value.toLowerCase());
   if (stage === undefined) {
     throw new Error(`Unknown stage ${value}. Stages: ${stageNames.join(', ')}.`);
   }
@@ -438,7 +439,7 @@ const start = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.load;
     const started = yield* repository.startBatch({ revision: session.revision });
-    const execute = stageIn(started, 'EXECUTE');
+    const execute = stageIn(started, 'Execute');
     yield* Console.log(
       `Started ${quote(execute.items[0]?.group ?? '')} (${counted(execute.items.length, 'item')})`,
     );

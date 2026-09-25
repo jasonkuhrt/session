@@ -38,7 +38,7 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
   stage: Stage
 }) {
   // Execute is frozen: its cards leave only by completing, never by dragging.
-  const frozen = stage === 'EXECUTE'
+  const frozen = stage === 'Execute'
   const { ref, isDragSource } = useSortable({
     id: item.id,
     index,

@@ -2,16 +2,27 @@ import { Schema } from 'effect';
 
 /* eslint-disable max-lines -- The one wire contract: every shape the server and the browser exchange is declared here beside its schema, so neither side can read a shape the other does not write. */
 
-export const stageNames = ['TRIAGE', 'DESIGN', 'BATCH', 'QUEUE', 'EXECUTE'] as const;
+/**
+ * The stages by name, in the flow's order. A name is written the same way in
+ * the files, the CLI and the board, and the order is the lanes' order.
+ */
+export const stageNames = ['Triage', 'Design', 'Batch', 'Queue', 'Execute'] as const;
 export type Stage = typeof stageNames[number];
+
+/**
+ * A stage's directory in the session root: its place in the flow, a hyphen,
+ * and its name, `1-Triage` to `5-Execute`, so a file tree lists the stages in
+ * the order work moves through them.
+ */
+export const stageDirectory = (stage: Stage): string => `${stageNames.indexOf(stage) + 1}-${stage}`;
 
 /**
  * Stages where every item belongs to a group, and the group is a batch: a
  * group that gets started as a unit. Elsewhere a group is optional.
  */
-export type BatchedStage = 'QUEUE' | 'EXECUTE';
+export type BatchedStage = 'Queue' | 'Execute';
 export const isBatchedStage = (stage: Stage): stage is BatchedStage =>
-  stage === 'QUEUE' || stage === 'EXECUTE';
+  stage === 'Queue' || stage === 'Execute';
 
 export type Item = {
   id: string;
@@ -20,18 +31,18 @@ export type Item = {
   summary: string;
   /**
    * The group the item belongs to: the name of the directory its file sits in
-   * inside the stage. Always set in QUEUE and EXECUTE, where the group is the
-   * batch; null for an item filed directly in TRIAGE, DESIGN or BATCH.
+   * inside the stage. Always set in Queue and Execute, where the group is the
+   * batch; null for an item filed directly in Triage, Design or Batch.
    */
   group: string | null;
-  /** The item's file, relative to the session root: `TRIAGE/010-BE-1.md`, `TRIAGE/020-Name/010-BE-2.md` or `QUEUE/010-Name/010-BE-3.md`. */
+  /** The item's file, relative to the session root: `1-Triage/010-BE-1.md`, `1-Triage/020-Name/010-BE-2.md` or `4-Queue/010-Name/010-BE-3.md`. */
   path: string;
 };
 
 /** A stage is a directory of numbered item files and group directories. */
 export type StageFile = {
   stage: Stage;
-  /** Absolute path of the `STAGE/` directory. */
+  /** Absolute path of the stage's directory, such as `…/.session/1-Triage`. */
   path: string;
   /** In file order, which is card order: a group's items are consecutive, in its directory's order. */
   items: Item[];
@@ -578,11 +589,11 @@ export const WorktreeSummarySchema = Schema.Struct({
   detached: Schema.Boolean,
   executing: Schema.NullOr(Schema.String),
   counts: Schema.Struct({
-    TRIAGE: Schema.Int,
-    DESIGN: Schema.Int,
-    BATCH: Schema.Int,
-    QUEUE: Schema.Int,
-    EXECUTE: Schema.Int,
+    Triage: Schema.Int,
+    Design: Schema.Int,
+    Batch: Schema.Int,
+    Queue: Schema.Int,
+    Execute: Schema.Int,
   }),
   lastChange: Schema.NullOr(Schema.String),
   activity: Schema.NullOr(ActivitySchema),
