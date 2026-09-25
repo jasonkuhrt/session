@@ -17,7 +17,7 @@ import type {
   Stage,
   StageFile,
 } from '../contract.ts';
-import { isBatchedStage, stageDirectory, stageNames } from '../contract.ts';
+import { isBatchedStage, rulesFile, stageDirectory, stageNames } from '../contract.ts';
 import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, parseArchiveName } from './archive.ts';
 import {
   archiveDirectory,
@@ -131,6 +131,7 @@ type Loaded = {
   readonly root: string;
   readonly revision: string;
   readonly stages: StageState[];
+  readonly rules: boolean;
 };
 
 const toStageFile = (state: StageState): StageFile => ({
@@ -151,6 +152,7 @@ const toSession = (loaded: Loaded): Session => ({
   directory: loaded.root,
   revision: loaded.revision,
   stages: loaded.stages.map(toStageFile),
+  rules: loaded.rules,
 });
 
 const stageOf = (loaded: Loaded, stage: Stage): StageState =>
@@ -595,11 +597,23 @@ export const makeRepository = (directory: string) =>
           .join('\u0000'),
       );
 
+    /**
+     * Whether the session holds `RULES.md` as the board can serve it: named
+     * exactly so, which a disk that ignores case would not insist on, and a
+     * file inside the session, which a link to somewhere else is not. The
+     * board links to it only then, so the link never leads to a refusal.
+     */
+    const hasRules = Effect.gen(function*() {
+      if (!(yield* fs.readDirectory(root)).includes(rulesFile)) return false;
+      yield* servedFile(rulesFile);
+      return true;
+    }).pipe(Effect.orElseSucceed(() => false));
+
     const loadUnlocked = Effect.gen(function*() {
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
       yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
-      return { root, revision, stages } satisfies Loaded;
+      return { root, revision, stages, rules: yield* hasRules } satisfies Loaded;
     });
 
     const mutate = (

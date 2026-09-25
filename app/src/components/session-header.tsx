@@ -1,7 +1,7 @@
 import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
-import { LinearIssueChip } from './linear-issue-chip'
+import { LinearIssues } from './linear-issues'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
 import { SettingsMenu } from './settings-menu'
@@ -20,13 +20,16 @@ import { WorktreePicker } from './worktree-picker'
  * rather than a control.
  *
  * Left to right: "All sessions", where every trail starts too, then the
- * worktree, then where the work lives outside the files, then the ledger,
- * context and archive pages, then the terminal; the settings stay at the far
- * end. A source that could not answer says so where its chip would be, and a
- * control that cannot act is not drawn.
+ * worktree with its terminal beside it, since the terminal opens in that
+ * worktree, then where the work lives outside the files, then the session's
+ * rules, ledger, context and archive; the settings stay at the far end. A
+ * source that could not answer says so where its chip would be, and a control
+ * that cannot act is not drawn.
  */
-export function SessionHeader({ worktree, links, linksError, terminal }: {
+export function SessionHeader({ worktree, rules, links, linksError, terminal }: {
   worktree: Session['worktree'] | undefined
+  /** Whether the session holds `RULES.md`. */
+  rules: boolean
   /** Null until the daemon has answered once. */
   links: Links | null
   /** Why the latest read of the links failed; the last answer stays on screen. */
@@ -49,10 +52,14 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
         >
           <LayoutGrid /> All sessions
         </Button>
-        {worktree ? <WorktreePicker current={worktree} /> : null}
+        {worktree ? (
+          <div className="flex items-center gap-1.5">
+            <WorktreePicker current={worktree} />
+            {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+          </div>
+        ) : null}
         <LinksGroup links={links} linksError={linksError} />
-        <PageLinks />
-        {terminal && worktree ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+        <PageLinks rules={rules} />
         <SettingsMenu className="ml-auto" />
       </header>
     </TooltipProvider>
@@ -74,9 +81,7 @@ function LinksGroup({ links, linksError }: { links: Links | null; linksError: st
   return (
     <div className="flex flex-wrap items-center gap-2">
       {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.pullRequest.reportedAt} />}
-      {links === null
-        ? null
-        : issues.map((issue) => <LinearIssueChip key={issue.id} issue={issue} reportedAt={links.issues.reportedAt} />)}
+      {links === null ? null : <LinearIssues issues={issues} reportedAt={links.issues.reportedAt} />}
       {notices.length === 0 ? null : <span className="text-xs text-muted-foreground">{notices.join(' · ')}</span>}
     </div>
   )

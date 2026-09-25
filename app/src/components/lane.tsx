@@ -1,5 +1,6 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { useDroppable } from '@dnd-kit/react'
+import type * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
@@ -10,11 +11,12 @@ import { groupMeta, stageMeta } from '../lib/workflow'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-import type { CardActions } from './workflow-card'
+import type { CardActions, Choosing } from './workflow-card'
 import { WorkflowCard } from './workflow-card'
 
 /** What a lane can do with its cards, besides what each card does itself. */
 export type LaneActions = CardActions & {
+  readonly onChoose: (choosing: Choosing) => void
   readonly onGroup: (stage: Stage, ids: readonly string[]) => void
   readonly onQueue: (ids: readonly string[], group: string | null) => void
   readonly onUngroup: (ids: readonly string[]) => void
@@ -63,7 +65,13 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
   return (
     <section ref={wholeRef} className="min-w-0 space-y-3">
       <div ref={startRef} className="space-y-3">
-        <LaneHeading stage={stage} count={count} />
+        <LaneHeading stage={stage} count={count}>
+          {/* Choosing starts from the lane, named for what the chosen cards
+              become, in the lanes where an item may be in no group. */}
+          {!isBatchedStage(stage) && count > 0 && actions.choosing?.stage !== stage
+            ? <ChooseEntries stage={stage} pending={actions.pending} onChoose={actions.onChoose} />
+            : null}
+        </LaneHeading>
         <LaneControls {...actions} stage={stage} selected={selected} count={count} executeOccupied={executeOccupied} />
       </div>
       <div className={cn('min-h-32 space-y-3 rounded-lg', held?.to === stage && held.group === null && landing)}>
@@ -78,7 +86,7 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
   )
 }
 
-function LaneHeading({ stage, count }: { stage: Stage; count: number }) {
+function LaneHeading({ stage, count, children }: { stage: Stage; count: number; children?: React.ReactNode }) {
   const meta = stageMeta[stage]
   const tip = useTip()
   return (
@@ -95,47 +103,108 @@ function LaneHeading({ stage, count }: { stage: Stage; count: number }) {
       >
         {count}
       </Badge>
+      <div className="ml-auto flex items-center gap-1">{children}</div>
     </div>
   )
 }
 
 /**
- * What the lane can do with its selection, and Queue's start. A control
- * appears when it can act. An empty selection and an occupied Execute are both
+ * The ways into choosing a lane's cards, each named for what the chosen cards
+ * become: a group in any lane where an item may be in no group, and a batch
+ * for Queue from Batch.
+ */
+function ChooseEntries({ stage, pending, onChoose }: {
+  stage: Stage
+  pending: boolean
+  onChoose: (choosing: Choosing) => void
+}) {
+  return (
+    <>
+      <Tip
+        meaning={`Choose items of ${stageMeta[stage].label} to name as a group.`}
+        render={<Button variant="ghost" size="xs" disabled={pending} onClick={() => onChoose({ stage, purpose: 'group' })} />}
+      >
+        Group…
+      </Tip>
+      {stage === 'Batch' ? (
+        <Tip
+          meaning="Choose items of Batch to name as a batch and append to Queue."
+          render={<Button variant="ghost" size="xs" disabled={pending} onClick={() => onChoose({ stage, purpose: 'batch' })} />}
+        >
+          Queue batch…
+        </Tip>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * While the lane is choosing: what the chosen cards become, once there is one,
+ * and the way out. Until a card is chosen the lane says what to do instead.
+ */
+function ChoosingControls({ stage, purpose, selected, pending, onGroup, onQueue, onChoose }: Pick<
+  LaneActions,
+  'pending' | 'onGroup' | 'onQueue' | 'onChoose'
+> & {
+  stage: Stage
+  purpose: 'group' | 'batch'
+  /** The lane's chosen items, in lane order. */
+  selected: readonly string[]
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {selected.length === 0
+        ? <p className="flex-1 text-sm text-muted-foreground">Choose the items for the {purpose}.</p>
+        : purpose === 'group'
+        ? (
+          <Tip
+            meaning={`Name the chosen items as a group in ${stageMeta[stage].label}.`}
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
+          >
+            Group ({selected.length})
+          </Tip>
+        )
+        : (
+          <Tip
+            meaning="Name the chosen items as a batch and append it to Queue."
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(selected, null)} />}
+          >
+            Queue batch ({selected.length})
+          </Tip>
+        )}
+      <Tip meaning="Stop choosing. Nothing changes." render={<Button variant="ghost" onClick={() => onChoose(null)} />}>
+        Cancel
+      </Tip>
+    </div>
+  )
+}
+
+/**
+ * What the lane can do while it is choosing, and Queue's start. A control
+ * appears when it can act. An empty choice and an occupied Execute are both
  * visible in the lanes themselves, so a disabled button carrying the reason
  * would say a second time what the board already shows.
  */
-function LaneControls({ stage, selected, count, executeOccupied, pending, onGroup, onQueue, onStart }: LaneActions & {
+function LaneControls({ stage, choosing, selected, count, executeOccupied, pending, onGroup, onQueue, onChoose, onStart }: LaneActions & {
   stage: Stage
-  /** The lane's selected items, in lane order. */
+  /** The lane's chosen items, in lane order. */
   selected: readonly string[]
   count: number
   executeOccupied: boolean
 }) {
-  const canGroup = !isBatchedStage(stage) && selected.length > 0
-  const canQueue = stage === 'Batch' && selected.length > 0
   const canStart = stage === 'Queue' && count > 0 && !executeOccupied
   return (
     <>
-      {canGroup || canQueue ? (
-        <div className="flex gap-2">
-          {canGroup ? (
-            <Tip
-              meaning={`Name the selected items as a group in ${stageMeta[stage].label}.`}
-              render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
-            >
-              Group ({selected.length})
-            </Tip>
-          ) : null}
-          {canQueue ? (
-            <Tip
-              meaning="Name the selected items as a batch and append it to Queue."
-              render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(selected, null)} />}
-            >
-              Queue batch ({selected.length})
-            </Tip>
-          ) : null}
-        </div>
+      {choosing?.stage === stage ? (
+        <ChoosingControls
+          stage={stage}
+          purpose={choosing.purpose}
+          selected={selected}
+          pending={pending}
+          onGroup={onGroup}
+          onQueue={onQueue}
+          onChoose={onChoose}
+        />
       ) : null}
       {canStart ? (
         <Tip
