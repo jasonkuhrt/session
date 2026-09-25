@@ -43,8 +43,9 @@ command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root lists every worktree
-the daemon knows, with its branch, the agents live in it, item counts per stage,
-and activity; each board sits under `/w/<worktree name>/`. Activity is when the
+the daemon knows by name, with its branch, the pull request gh reports for it,
+the agents live in it, item counts per stage, and activity; each board sits
+under `/w/<worktree name>/`. Activity is when the
 worktree last did anything and who did it: `Claude Code` for a session's status
 change, `Codex` for a thread, `Items` for an item file, with the exact moment
 behind it. The index has no refresh button and needs none: any command that
