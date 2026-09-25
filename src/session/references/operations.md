@@ -482,19 +482,19 @@ epic's worktrees. A worktree dropped onto another worktree's card in no epic
 makes an epic of the two, named in the dialog groups and batches are named in,
 which starts empty and makes nothing without a name. While a worktree is held,
 from a card of its own or out of an epic, a `+` is drawn after the cards, and
-only then, since it can do nothing otherwise; its tip is `New epic with
-<name>`, and so are the words over the held copy. A worktree dropped on it opens
-the same dialog and makes an epic of that one worktree, or puts it in the epic
-that already has the name given, and no name makes nothing. A worktree dragged
-out of its epic onto the space between and below the cards leaves it and becomes
-a card of its own. Escape puts it back. The rename icon opens the same dialog
-with the epic's name in it and moves every worktree in the epic to the new name,
-so a name another epic already has merges the two. A drop is written with the
-epic route, one request per worktree, which is drawn where it lands at once and
-read again once it is written; a refusal, such as a file changed since the index
-read it, shows above the cards in the daemon's words. While a card is held, the
-index draws what it drew when the card was picked up, its rows, pull requests
-and clock alike, so no card moves under the pointer: a change it is told of
+only then, since it can do nothing otherwise; its tip is `New epic of <name>`,
+and so are the words over the held copy. A worktree dropped on it opens the same
+dialog and makes an epic of that one worktree, or puts it in the epic that
+already has the name given, and no name makes nothing. A worktree dragged out of
+its epic onto the space between and below the cards leaves it and becomes a card
+of its own. Escape puts it back. The rename icon opens the same dialog with the
+epic's name in it and moves every worktree in the epic to the new name, so a
+name another epic already has merges the two. A drop is written with the epic
+route, one request per worktree, which is drawn where it lands at once and read
+again once it is written; a refusal, such as a file changed since the index read
+it, shows above the cards in the daemon's words. While a card is held, the index
+draws what it drew when the card was picked up, its rows, pull requests and
+clock alike, so no card moves under the pointer: a change it is told of
 meanwhile is read once the card is let go, and a read already under way at
 pickup lands unseen until then. While a drop is being written it holds its reads
 the same way, and then reads once. Every worktree the index lists can be dragged
@@ -916,13 +916,21 @@ line-aligned, which holds the last reply for nearly every transcript whatever
 its size, and the count is the last assistant line's `usage`: its input,
 cache-creation and cache-read tokens, the count Claude Code's own status line
 works from, taken from the last message pass when the usage lists passes. It
-reads `128k in context`, and its tip carries the exact count, when the line was
-written and the transcript's path. It is a count and never a share, because
-neither the listing nor the line says how large the window is. A line Claude
-Code wrote without asking the model, such as an API error, counts nothing and is
-passed over; a reply that cannot be read ends the search, so an older reply
+reads `128k in context`, and its tip carries the exact count, when the listing
+it came from ran, when the line was written and the transcript's path. It is a
+count and never a share, because neither the listing nor the line says how large
+the window is. The lines Claude Code leaves out of its own count are passed over
+here too, before anything else about them is read: one with no usage, one naming
+the `<synthetic>` model, as an API error does, an unmetered one, and one that
+opens with Claude Code's own canned text, an interruption, a refused or rejected
+tool use, or "No response requested."; a count Claude Code writes as null counts
+as none. A reply whose count cannot be read ends the search, so an older reply
 never stands in for a newer one. A session whose transcript cannot be found or
-read, or whose tail holds no reply, shows nothing there and no notice. The
+read, or whose tail holds no reply, shows nothing there and no notice. The count
+is read when the agents are listed and at no other time, since only the registry
+and Codex's writer locks are watched and never a transcript: it is as of the
+last listing, which a status change brings, so a turn that stays busy keeps the
+count it was listed with beside a time in status that keeps growing. The
 transcript's modification time is never read: hooks, progress and link entries
 move it when nothing has been said.
 
