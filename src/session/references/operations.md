@@ -503,16 +503,35 @@ reports as `terminal`, so a daemon started from a shell without cmux on its
 PATH draws none.
 
 The Zed icon beside it asks the daemon for Zed on that worktree with
-`POST /api/zed`. The daemon runs `zed --classic <path>`, then brings Zed forward
-with `open -b dev.zed.Zed`, since a request that starts in a background process
-cannot count on Zed reaching the front by itself. `--classic` asks for the same
-thing whatever the user's `cli_default_open_behavior`: Zed brings forward the
-window one of whose projects has the worktree itself as a root, never a window
-on a folder that holds it or sits beside it, and opens a worktree it finds in
-no window in a new window rather than in another window's sidebar, so a window
-on another worktree is never changed. An explicit behaviour also keeps the CLI
-from stopping to ask which default the user wants. When zed or `open` refuses,
-its line shows beside the icon. The icon is drawn only while `zed` is on the
+`POST /api/zed`, and the daemon runs `zed --classic <path>`. `--classic`
+decides the same whatever the user's `cli_default_open_behavior`:
+- **Focus.** Zed brings forward the window one of whose projects has the
+  worktree itself as a root.
+- **New window.** A worktree no window has opens in a new window, never in
+  another window's sidebar.
+- **Parent folders.** A window on a folder that holds the worktree matches
+  only while that project has not scanned the worktree as a folder yet, or
+  excludes it from scanning.
+- **Without the flag.** A CLI that no one can answer settles on the existing
+  window, and Zed writes that choice into the user's settings and puts the
+  worktree in the active window's sidebar.
+
+The Zed CLI hands Zed its whole environment, and Zed gives it to the new
+window's terminals, tasks and language servers in place of the one Zed would
+load for the folder. So the daemon runs the CLI where Zed itself would look. It
+starts the user's login shell from only what launchd gives every app. The shell
+moves into the worktree, so its directory hooks such as direnv run; fish is
+first given a prompt, which its hooks wait for. Then the shell becomes the CLI.
+
+Afterwards the daemon brings forward, with `open -a`, the app that CLI lies
+in, since a request that starts in a background process cannot count on Zed
+reaching the front by itself. A worktree whose session has gone opens nothing,
+in Zed or in cmux, and leaves the index. Zed would read a path that has gone as
+a file, and open it in the active window.
+
+When zed or `open` refuses, its line shows beside the icon. When Zed is not
+running, it first restores its last session, so a worktree that was in it can
+end up with a second window. The icon is drawn only while `zed` is on the
 daemon's PATH, which `GET /api/daemon` reports as `zed`.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage

@@ -5,7 +5,7 @@ import type * as FileSystem from 'effect/FileSystem';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { OpenResult } from '../contract.ts';
-import { list, say } from './cmux.ts';
+import { cmuxSay, list } from './cmux.ts';
 import { ownerOf, realPaths } from './paths.ts';
 
 /**
@@ -110,7 +110,7 @@ const focusWorkspace = (found: Workspace) =>
     ];
     let line = '';
     for (const [command, args] of sequence) {
-      const result = yield* say({ command, args });
+      const result = yield* cmuxSay({ command, args });
       if (!result.ok) return result;
       if (command === 'cmux' && result.line !== '') line = result.line;
     }
@@ -133,8 +133,8 @@ export const openTerminal = ({ path, worktrees }: {
   Effect.gen(function*() {
     const search = yield* workspaceIn(path, worktrees);
     if (search.kind === 'found') return yield* focusWorkspace(search.workspace);
-    if (search.kind === 'none') return yield* say({ command: 'cmux', args: [path], timeout: openBudget });
-    const ping = yield* say({ command: 'cmux', args: ['ping'] });
+    if (search.kind === 'none') return yield* cmuxSay({ command: 'cmux', args: [path], timeout: openBudget });
+    const ping = yield* cmuxSay({ command: 'cmux', args: ['ping'] });
     if (ping.ok) return { ok: false, line: search.line } satisfies OpenResult;
-    return yield* say({ command: 'cmux', args: [path], timeout: openBudget });
+    return yield* cmuxSay({ command: 'cmux', args: [path], timeout: openBudget });
   }).pipe(Effect.catchCause(() => Effect.succeed<OpenResult>({ ok: false, line: 'The terminal could not be reached.' })));

@@ -1,8 +1,8 @@
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { FocusResult, OpenResult } from '../contract.ts';
-import { capture, type Command } from './command.ts';
+import type { FocusResult } from '../contract.ts';
+import { capture, type Command, refusal, say } from './command.ts';
 
 /**
  * cmux, the one window manager the board knows: the calls every use of it
@@ -75,15 +75,6 @@ const terminalOf = (tree: ReadonlyMap<string, Node>, pid: number): Terminal | nu
   return null;
 };
 
-/** What cmux said went wrong, verbatim, or the plainest true sentence about it. */
-const refusal = (
-  command: string,
-  result: { readonly stderr: string; readonly exitCode: number },
-): string => {
-  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
-  return line ?? `${command} exited ${result.exitCode}.`;
-};
-
 /**
  * The running tree, or the line cmux refused with. cmux finds its own socket,
  * which has moved between releases, so nothing here guesses at where it is: a
@@ -95,7 +86,7 @@ const runningTree = capture({
   env: quiet,
   timeout: budget,
 }).pipe(
-  Effect.map((listing) => (listing.exitCode === 0 ? parseTree(listing.stdout) : refusal('cmux top', listing))),
+  Effect.map((listing) => (listing.exitCode === 0 ? parseTree(listing.stdout) : refusal({ command: 'cmux top', result: listing }))),
   Effect.catchTag('CommandError', (error) => Effect.succeed(error.message)),
 );
 
@@ -120,28 +111,16 @@ export const terminalsFor = (
     return found;
   });
 
-/**
- * One command, and what it printed: its first line when it worked, the line
- * it complained with when it did not, and the plainest true sentence when it
- * never ran or never finished.
- */
-export const say = ({ command, args, timeout = budget }: {
+/** One step of cmux's, quiet and within cmux's budget, and what it printed. */
+export const cmuxSay = ({ command, args, timeout = budget }: {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly timeout?: Command['timeout'];
-}) =>
-  capture({ command, args, env: quiet, timeout }).pipe(
-    Effect.map((result): OpenResult =>
-      result.exitCode === 0
-        ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
-        : { ok: false, line: refusal(`${command} ${args[0] ?? ''}`.trim(), result) }
-    ),
-    Effect.catch((error) => Effect.succeed<OpenResult>({ ok: false, line: error.message })),
-  );
+}) => say({ command, args, env: quiet, timeout });
 
 /** One command of the focus sequence: `null` when it worked, else why not. */
 const step = (command: string, args: ReadonlyArray<string>) =>
-  say({ command, args }).pipe(Effect.map((result) => (result.ok ? null : result.line)));
+  cmuxSay({ command, args }).pipe(Effect.map((result) => (result.ok ? null : result.line)));
 
 /** The two answers the focus route can give, built where their shape is checked. */
 const refuse = (reason: string): FocusResult => ({ ok: false, reason });
@@ -189,7 +168,7 @@ export const list = <A>({ args, schema }: {
 }): Effect.Effect<Listing<A>, never, Services> =>
   Effect.gen(function*() {
     const result = yield* capture({ command: 'cmux', args, env: quiet, timeout: budget });
-    if (result.exitCode !== 0) return { ok: false, line: refusal(`cmux ${args.join(' ')}`, result) } as const;
+    if (result.exitCode !== 0) return { ok: false, line: refusal({ command: `cmux ${args.join(' ')}`, result }) } as const;
     return { ok: true, value: yield* Schema.decodeEffect(schema)(result.stdout) } as const;
   }).pipe(
     Effect.catchTags({

@@ -239,7 +239,8 @@
               "app/server/http.ts",
               "app/server/portless.ts",
               "app/server/repository.ts",
-              "app/server/worktree.ts"
+              "app/server/worktree.ts",
+              "app/server/zed.ts"
             ],
             "options": {
               "diagnosticSeverity": {

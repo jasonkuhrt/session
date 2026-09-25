@@ -15,7 +15,7 @@ import { WorktreePicker } from './worktree-picker'
  * The board's header: the way back to every session, the worktree you are
  * looking at with the branch checked out in it and a way to switch, where the
  * work lives outside the files, the session's pages beside its lanes, a
- * terminal here, and the board's own settings. A page deeper than the board
+ * terminal and Zed here, and the board's own settings. A page deeper than the board
  * carries its own trail instead, because by then where you are is a position
  * rather than a control.
  *
