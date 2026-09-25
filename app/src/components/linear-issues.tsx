@@ -71,7 +71,7 @@ function LinearIssueChip({ issue, reportedAt }: { issue: LinearIssue; reportedAt
 /**
  * Several issues as one chip, the first one named and how many more, whose
  * list gives each one's identifier, title and the state linear reports it in,
- * in the order the branch and the pull request name them. Each opens once, as
+ * in the order the branch and then its pull request name them. Each opens once, as
  * a single chip does.
  */
 function LinearIssueList({ first, issues, reportedAt }: {
@@ -86,7 +86,7 @@ function LinearIssueList({ first, issues, reportedAt }: {
         nativeButton={false}
         render={<Badge variant="outline" />}
         aria-label={`${issues.length} Linear issues`}
-        title={tip(`The ${issues.length} Linear issues the branch and the pull request name. Lists them.`)}
+        title={tip(`The ${issues.length} Linear issues the branch or its pull request names. Lists them.`)}
         className="cursor-pointer"
       >
         {first.id}
@@ -97,7 +97,7 @@ function LinearIssueList({ first, issues, reportedAt }: {
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-normal">
             <span className="block text-foreground">
-              {issues.length} Linear issues, named by the branch and the pull request
+              {issues.length} Linear issues, named by the branch or its pull request
             </span>
             <span className="block">linear was asked at {absoluteTime(reportedAt)}.</span>
           </DropdownMenuLabel>

@@ -504,11 +504,12 @@ PATH draws none.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
-there is no way to type a body or create an item in it. A card shows the text of
-the item's first paragraph under its title, as a reader of the Markdown sees
-it, without the marks around its words; headings, code, tables and HTML are not
-paragraphs, so a body that opens with an example shows its first sentence, and
-a body with no paragraph shows nothing more than the title. The item's id sits
+there is no way to type a body or create an item in it. A card shows the start of
+the item's first paragraph under its title, up to 180 characters, as a reader
+of the Markdown sees it, without the marks around its words. Headings, code,
+tables and HTML are not paragraphs and a footnote is not where a body starts,
+so a body that opens with an example shows the paragraph after it, and a body
+with no paragraph shows nothing more than the title. The item's id sits
 under that, very dim until pointed at, and a click copies it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and above

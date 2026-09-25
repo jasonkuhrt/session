@@ -166,6 +166,10 @@ function App() {
     setChoosing(next)
     setSelection(new Set())
   }
+  // A lane left with nothing to choose stops choosing, and an item that has
+  // left the lane is not chosen again if it comes back.
+  if (choosing !== null && session !== null && choosableIds.size === 0) choose(null)
+  else if (selectedIds.size !== selection.size) setSelection(selectedIds)
 
   // A write that failed and a write the board recovered from read differently:
   // one is a problem to look at, the other is the board saying it caught up.
@@ -225,9 +229,20 @@ function App() {
         onClose={() => setNaming(null)}
         onName={async name => {
           if (naming === null) return
-          const path = naming.kind === 'group' ? '/api/group' : '/api/batch'
-          if (await mutate(path, { ids: naming.ids, name })) {
+          // A name the lane's choice asked for names what is still chosen,
+          // since the files may have moved under the open dialog, and ends
+          // the choice; one a group's heading asked for names that group and
+          // leaves any lane's choice as it is.
+          const fromChoice = naming.kind === 'group' || naming.group === null
+          const ids = fromChoice ? naming.ids.filter(id => selectedIds.has(id)) : naming.ids
+          if (ids.length === 0) {
             choose(null)
+            setNaming(null)
+            return
+          }
+          const path = naming.kind === 'group' ? '/api/group' : '/api/batch'
+          if (await mutate(path, { ids, name })) {
+            if (fromChoice) choose(null)
             setNaming(null)
           }
         }}

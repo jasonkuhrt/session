@@ -30,29 +30,55 @@ export const quote = (value: string): string => `"${value}"`;
 /** What a reader sees of a node: its words and its code, without the marks written around them. */
 const textOf = (node: MarkdownNode): string => {
   if (node.type === 'text' || node.type === 'inlineCode') return node.value ?? '';
-  if (node.type === 'image') return node.alt ?? '';
+  if (node.type === 'image' || node.type === 'imageReference') return node.alt ?? '';
   if (node.type === 'break') return ' ';
   return (node.children ?? []).map((child) => textOf(child)).join('');
 };
 
+/** The longest card line, counted as a reader counts characters, so an emoji is never cut in half. */
+const summaryLength = 180;
+
 /**
- * A card's line: the text of the body's first paragraph, in a list or a quote
- * as much as at the top, as a reader sees it, without the Markdown marks around
- * its words; the title when the body has none. Headings, code, tables and HTML
- * are not paragraphs, so a body that opens with an example reads from its
- * first sentence rather than its fence.
+ * The text of a body's first paragraph, in a list or a quote as much as at the
+ * top, as a reader sees it, without the Markdown marks around its words; empty
+ * when the body has none. Headings, code, tables and HTML are not paragraphs,
+ * so a body that opens with an example reads from the paragraph after it, and
+ * a footnote, which the page draws at its foot, is not where the body starts.
  */
-const summarize = (body: string, title: string): string => {
+const firstParagraph = (body: string): string => {
   const pending: MarkdownNode[] = [markdown.parse(body)];
   for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
+    if (node.type === 'footnoteDefinition') continue;
     if (node.type !== 'paragraph') {
       pending.unshift(...(node.children ?? []));
       continue;
     }
     const text = textOf(node).replaceAll(/\s+/gu, ' ').trim();
-    if (text !== '') return text.slice(0, 180);
+    if (text !== '') return [...text].slice(0, summaryLength).join('');
   }
-  return title;
+  return '';
+};
+
+/**
+ * Card lines by body. A body reads the same until it changes, while every load
+ * reads every item, on each change a board is told of and twice in each write,
+ * so a body is parsed once rather than on every load. The oldest line goes
+ * once the cache holds more than any board shows.
+ */
+const summaries = new Map<string, string>();
+const summaryCacheLimit = 2048;
+
+/** A card's line, the text of the body's first paragraph; empty when it has none. */
+const summarize = (body: string): string => {
+  const known = summaries.get(body);
+  if (known !== undefined) return known;
+  const summary = firstParagraph(body);
+  if (summaries.size >= summaryCacheLimit) {
+    const oldest = summaries.keys().next();
+    if (oldest.done !== true) summaries.delete(oldest.value);
+  }
+  summaries.set(body, summary);
+  return summary;
 };
 
 /** What a stage calls its groups: in QUEUE and EXECUTE a group is a batch. */
@@ -110,7 +136,7 @@ export const makeItem = (input: {
     id: input.id,
     title: input.title,
     body,
-    summary: summarize(body, input.title),
+    summary: summarize(body),
     group: input.group,
   };
 };

@@ -557,11 +557,17 @@ export const makeRepository = (directory: string) =>
           .join('\u0000'),
       );
 
-    /** Whether `RULES.md` is there as the file the layout allows, which is what the board links to. */
-    const hasRules = fs.stat(join(root, rulesFile)).pipe(
-      Effect.map((info) => info.type === 'File'),
-      Effect.orElseSucceed(() => false),
-    );
+    /**
+     * Whether the session holds `RULES.md` as the board can serve it: named
+     * exactly so, which a disk that ignores case would not insist on, and a
+     * file inside the session, which a link to somewhere else is not. The
+     * board links to it only then, so the link never leads to a refusal.
+     */
+    const hasRules = Effect.gen(function*() {
+      if (!(yield* fs.readDirectory(root)).includes(rulesFile)) return false;
+      yield* servedFile(rulesFile);
+      return true;
+    }).pipe(Effect.orElseSucceed(() => false));
 
     const loadUnlocked = Effect.gen(function*() {
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));

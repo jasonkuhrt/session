@@ -18,8 +18,8 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 
 /**
- * What the name dialog is naming: selected items of one lane as a group, or
- * Batch items as a batch for Queue, either the selection or the items of one
+ * What the name dialog is naming: items chosen in one lane as a group, or
+ * Batch items as a batch for Queue, either the ones chosen or the items of one
  * group there, in which case the group's name is where the name starts.
  */
 export type NameRequest =
@@ -30,12 +30,12 @@ const startingName = (request: NameRequest | null) => (request?.kind === 'batch'
 
 function copyOf(request: NameRequest) {
   const count = request.ids.length
-  const selected = `${count} selected ${count === 1 ? 'item' : 'items'}`
+  const chosen = `${count} chosen ${count === 1 ? 'item' : 'items'}`
   if (request.kind === 'group') {
     const lane = stageMeta[request.stage].label
     return {
       title: 'Gather a group',
-      description: `${selected} in ${lane} will be gathered under one name. A name ${lane} already has adds them to that group.`,
+      description: `${chosen} in ${lane} will be gathered under one name. A name ${lane} already has adds them to that group.`,
       label: 'Group name',
       placeholder: 'What do these items have in common?',
       submit: 'Group items',
@@ -45,7 +45,7 @@ function copyOf(request: NameRequest) {
   return {
     title: 'Queue a focused batch',
     description: request.group === null
-      ? `${selected} will wait in Queue as one named batch.`
+      ? `${chosen} will wait in Queue as one named batch.`
       : `The items of the group “${request.group}” will wait in Queue as one named batch, and the group goes with them.`,
     label: 'Batch name',
     placeholder: 'What outcome unites this work?',
@@ -55,9 +55,9 @@ function copyOf(request: NameRequest) {
 }
 
 /**
- * The one dialog that names something: a group gathered from a lane's
- * selection, and a batch composed for Queue from the Batch selection or from
- * one group in Batch. Every name the board asks for is asked for here, so a
+ * The one dialog that names something: a group gathered from what a lane
+ * chose, and a batch composed for Queue from what Batch chose or from one
+ * group in Batch. Every name the board asks for is asked for here, so a
  * group and a batch are named the same way.
  */
 export function NameDialog({
@@ -76,7 +76,7 @@ export function NameDialog({
   const shown = useLastPresent(request)
   const [name, setName] = React.useState(() => startingName(request))
   // Each request starts from its own name: a group's batch from the group's
-  // name, a selection from nothing.
+  // name, a choice from nothing.
   const [named, setNamed] = React.useState(request)
   if (request !== null && request !== named) {
     setNamed(request)
