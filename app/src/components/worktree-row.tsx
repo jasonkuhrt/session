@@ -30,6 +30,8 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
+const quietTileMeaning = 'Nothing is live here and nothing has happened in five days, so this tile is dim.'
+
 const mainMeaning =
   'The main worktree of its repository: Git keeps the repository here and lists it first, so it is pinned above the epics and is never in one.'
 
@@ -134,11 +136,17 @@ function NotServed({ reason }: { reason: string }) {
  * in an epic.
  */
 export function MainStrip({ mains, context }: { mains: readonly MainTile[]; context: RowContext }) {
+  const tip = useTip()
   if (mains.length === 0) return null
   return (
     <section aria-label="Main worktrees" className="worktree-strip">
       {mains.map(tile => (
-        <Card key={tile.row.path} size="sm" className={cardClass({ quiet: tile.quiet, lands: false, held: false })}>
+        <Card
+          key={tile.row.path}
+          size="sm"
+          title={tile.quiet ? tip(quietTileMeaning) : undefined}
+          className={cardClass({ quiet: tile.quiet, lands: false, held: false })}
+        >
           <div className="px-3 py-2.5">
             <WorktreeRow row={tile.row} context={context} />
           </div>

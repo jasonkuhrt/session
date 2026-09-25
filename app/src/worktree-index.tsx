@@ -1,7 +1,7 @@
 import { DragDropProvider, DragOverlay, useDragOperation } from '@dnd-kit/react'
 import * as React from 'react'
 
-import type { WorktreeSummary } from '../contract'
+import type { PullRequestReports, WorktreeSummary } from '../contract'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
@@ -44,8 +44,23 @@ const headingMeaning = (
   </span>
 )
 
-/** One worktree's new epic, as a write sends it. */
-type EpicChange = { readonly row: WorktreeSummary; readonly epic: string | null }
+/**
+ * One worktree's new epic, as a write sends it: the worktree by its path, the
+ * epic to put it in, and the epic the page had read for it when the change was
+ * asked for, which the daemon refuses the write against if the file has moved.
+ */
+type EpicChange = { readonly path: string; readonly epic: string | null; readonly from: string | null }
+
+/**
+ * What the page draws while a card is held: the rows, the pull requests and the
+ * clock as they were when it was picked up. A read already under way can land
+ * while it is held, and nothing it brings is drawn until the card is let go.
+ */
+type Snapshot = {
+  readonly at: number
+  readonly rows: readonly WorktreeSummary[] | null
+  readonly pullRequests: PullRequestReports
+}
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The daemon did not answer.')
 
@@ -53,53 +68,52 @@ const reasonOf = (error: unknown) => (error instanceof Error ? error.message : '
 const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
   paths.flatMap((path) => rows.filter((row) => row.path === path))
 
-/** What a drop writes: every worktree it names, put in its epic or in none. */
+/** What a drop writes: every worktree it names, put in its epic or in none, against the epic drawn for it when it was dropped. */
 const changesOf = (outcome: Exclude<DropOutcome, { kind: 'make' }>, rows: readonly WorktreeSummary[]): EpicChange[] =>
   outcome.kind === 'join'
-    ? rowsAt(rows, outcome.paths).map((row) => ({ row, epic: outcome.epic }))
-    : rowsAt(rows, [outcome.path]).map((row) => ({ row, epic: null }))
+    ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
+    : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
 
 export function WorktreeIndex() {
-  const [holding, setHolding] = React.useState(false)
   const [writing, setWriting] = React.useState(false)
   /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
   const [writes, setWrites] = React.useState<ReadonlyMap<string, string | null>>(new Map())
   const [failure, setFailure] = React.useState<string | null>(null)
   const [naming, setNaming] = React.useState<EpicNameRequest | null>(null)
-  // The page's clock as it read when a card was picked up: which cards are
-  // quiet, and so where they are, does not move while one is held.
-  const [heldAt, setHeldAt] = React.useState<number | null>(null)
-  const busy = holding || writing
-  const { rows: listed, notice, pullRequests, pullRequestsNotice, reload } = useTrackedWorktrees({ held: busy })
+  // What was drawn when a card was picked up, drawn for as long as it is held,
+  // so no card moves under the pointer: a pushed read waits for the drop, and
+  // one already under way at pickup lands unseen until then.
+  const [snapshot, setSnapshot] = React.useState<Snapshot | null>(null)
+  const busy = snapshot !== null || writing
+  const { rows: listed, notice, pullRequests: readPullRequests, pullRequestsNotice, reload } = useTrackedWorktrees({ held: busy })
   const clock = useNow()
-  const now = heldAt ?? clock
+  const now = snapshot?.at ?? clock
+  const pullRequests = snapshot?.pullRequests ?? readPullRequests
   const capabilities = useCapabilities()
-  const rows = listed === null ? null : withEpics({ rows: listed, epics: writes })
+  const drawn = snapshot === null ? listed : snapshot.rows
+  const rows = drawn === null ? null : withEpics({ rows: drawn, epics: writes })
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
 
   /**
    * Put worktrees in epics, one request per worktree, since each worktree's
-   * file is its own, each carrying the epic the index read for it, so a file
-   * changed since is refused rather than overwritten; and draw them there
-   * until the rows read afterwards, which are what the page shows from then
-   * on, whatever landed.
+   * file is its own, each carrying the epic the page had read for it when the
+   * change was asked for, so a file changed since is refused rather than
+   * overwritten; and draw them there until the rows read afterwards, which are
+   * what the page shows from then on, whatever landed. That read is made
+   * whether or not reads are held, and it lands, since nothing is held then.
    */
   const write = async (changes: readonly EpicChange[]) => {
     if (changes.length === 0) return
-    const read = new Map((listed ?? []).map((row) => [row.path, row.epic]))
     setWriting(true)
     setFailure(null)
-    setWrites(new Map(changes.map((change) => [change.row.path, change.epic])))
-    const results = await Promise.allSettled(changes.map((change) =>
-      IndexApi.setEpic({ path: change.row.path, epic: change.epic, from: read.get(change.row.path) ?? null })
-    ))
+    setWrites(new Map(changes.map((change) => [change.path, change.epic])))
+    const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
     const refusals = [...new Set(results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : [])))]
     await reload()
     setWrites(new Map())
     setFailure(refusals.length === 0 ? null : refusals.join(' '))
     setWriting(false)
-    setHeldAt(null)
   }
 
   const context: DragContext = {
@@ -139,18 +153,15 @@ export function WorktreeIndex() {
           {dashboard === null || rows === null ? <LoadingCards /> : rows.length === 0 ? <EmptyState /> : (
             <DragDropProvider
               sensors={dragSensors}
-              onDragStart={() => {
-                setHolding(true)
-                setHeldAt(clock)
-                setFailure(null)
-              }}
+              onDragStart={() => setSnapshot({ at: clock, rows: listed, pullRequests: readPullRequests })}
               onDragEnd={(event) => {
-                setHolding(false)
+                // The drop is read from what was drawn, which is what it was
+                // made on, and the epics drawn then are what it writes against.
+                setSnapshot(null)
                 const dragged = draggedOf(event.operation.source?.id)
                 const outcome = event.canceled || dragged === null
                   ? null
                   : dropOutcome({ rows, dragged, target: targetOf(event.operation.target?.id) })
-                if (outcome === null || outcome.kind === 'make') setHeldAt(null)
                 if (outcome === null) return
                 if (outcome.kind !== 'make') {
                   void write(changesOf(outcome, rows))
@@ -158,7 +169,12 @@ export function WorktreeIndex() {
                 }
                 const named = rowsAt(rows, outcome.paths)
                 if (named.length === 2) {
-                  setNaming({ kind: 'epic', ids: outcome.paths, names: [named[0]!.name, named[1]!.name] })
+                  setNaming({
+                    kind: 'epic',
+                    ids: outcome.paths,
+                    names: [named[0]!.name, named[1]!.name],
+                    from: [named[0]!.epic, named[1]!.epic],
+                  })
                 }
               }}
             >
@@ -174,14 +190,19 @@ export function WorktreeIndex() {
             const request = naming
             setNaming(null)
             if (request === null || rows === null) return
+            // A new epic's two worktrees are written against the epics drawn
+            // when one was dropped on the other, so a join that lands while
+            // the dialog is open is refused rather than overwritten.
             if (request.kind === 'epic') {
-              void write(rowsAt(rows, request.ids).map((row) => ({ row, epic: name })))
+              void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
               return
             }
             // A rename moves whoever is in the epic now, since the files may
             // have changed while the dialog was open.
             if (name === request.epic) return
-            void write(rows.filter((row) => !row.main && row.epic === request.epic).map((row) => ({ row, epic: name })))
+            void write(
+              rows.filter((row) => !row.main && row.epic === request.epic).map((row) => ({ path: row.path, epic: name, from: row.epic })),
+            )
           }}
         />
       </div>

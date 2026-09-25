@@ -760,13 +760,16 @@ export const makeRepository = (directory: string) =>
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
         }
         // `meta/` holds only the facts the session defines, each its own kind,
-        // and the epic's file its one line, read as every reader reads it. A
-        // `meta` that is not a directory was reported with the root; one that
-        // is a link is reported here, since a worktree's facts are its own.
+        // and the epic's file its one line. The epic's file is judged by the
+        // read every reader makes, links and all, so `check` and the index
+        // give one sentence for it. A `meta` that is not a directory was
+        // reported with the root; one that is a link is reported here, since a
+        // worktree's facts are its own.
         if (present.has(metaDirectory)) {
           const meta = absolute(metaDirectory);
           if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
           for (const name of (yield* fs.readDirectory(meta).pipe(Effect.mapError(asRepositoryError))).toSorted()) {
+            if (name === epicFact) continue;
             const problem = metaEntryProblem({ name, type: yield* entryType(join(meta, name)) });
             if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
           }
@@ -1560,7 +1563,8 @@ export const makeRepository = (directory: string) =>
      * `from`, when given, is the epic the writer last read, a file the rules
      * reject reading as none: a file that names anything else refuses the
      * write, as a stale revision refuses a move. It answers the epic the file
-     * named before, for the caller to say what changed.
+     * named before, for the caller to say what changed, and whether a leave
+     * removed a file, which one the rules reject names no epic to have left.
      */
     const setEpic = (input: { readonly epic: string | null; readonly from?: string | null | undefined }) =>
       semaphore.withPermit(
@@ -1593,12 +1597,13 @@ export const makeRepository = (directory: string) =>
           if (input.from !== undefined && input.from !== previous) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: `${metaDirectory}/${epicFact} changed on disk since it was read; reload and try again.`,
+              message: `${metaDirectory}/${epicFact} changed on disk since it was read; try again.`,
             });
           }
+          const removed = name === null && (linked || type !== null);
           if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, `${name}\n`);
-          else if (linked || type !== null) yield* fs.remove(path);
-          return { previous };
+          else if (removed) yield* fs.remove(path);
+          return { previous, removed };
         }).pipe(Effect.mapError(asRepositoryError)),
       );
 

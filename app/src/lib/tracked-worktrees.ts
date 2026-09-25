@@ -27,9 +27,10 @@ const pullRequestsProblem = (error: unknown) =>
  * and the index otherwise never polls.
  *
  * While `held`, for as long as a card is dragged or a drop is written, a push
- * reads nothing and is remembered instead, as the board holds its reads, so no
- * card moves under the pointer; the first moment it is not held, one read of
- * each catches up.
+ * reads nothing and is remembered instead, as the board holds its reads; the
+ * first moment it is not held, one read of each catches up. A read already
+ * under way when the hold begins still lands, so the page draws what it had
+ * at pickup for as long as a card is held.
  */
 export function useTrackedWorktrees({ held }: { readonly held: boolean }) {
   const rows = useNewestRead({ read: IndexApi.read, describe: rowsProblem })

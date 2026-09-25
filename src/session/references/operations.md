@@ -226,14 +226,17 @@ The index writes the same file through `POST /api/worktrees/epic {path, epic,
 from}`: the worktree by its path, as `POST /api/terminal` takes it, so a row
 the index lists but does not serve is reached as well and a key two rows share
 can never send a write to the wrong one; the epic's name, or `null` for none;
-and `from`, the epic the index last read for that worktree. When the file names
-anything else by then, a file the rules reject reading as none, the write is
-refused with 409, changed on disk, as a stale revision refuses a move. The
-route answers with the epic the worktree is in now. The daemon converges the
-session first, as a command does, and refuses a main worktree, a name the rules
-reject, and, with 404, a path it does not track or whose session has gone,
-which it never brings back. The watch on the session is what tells the index,
-as it is for a `join` in a terminal.
+and `from`, the epic the index had read for that worktree when the change was
+asked for. When the file names anything else by then, a file the rules reject
+reading as none, the write is refused with 409, changed on disk, as a stale
+revision refuses a move. The route answers with the epic the worktree is in
+now. It converges nothing else: `meta/epic` depends on no stage, so a session
+from before the stages were numbered, which every command refuses, can still be
+dragged into an epic and out of one, and `meta/` is made when nothing holds its
+name. It refuses a main worktree, a name the rules reject, and, with 404, a
+path it does not track or whose session has gone, which it never brings back.
+The watch on the session is what tells the index, as it is for a `join` in a
+terminal.
 
 ## Set up
 
@@ -403,8 +406,9 @@ nothing at all, and every read of the index re-asks it for all of them; the
 first `no` drops the row, rewrites the state file and pushes a `worktrees` event
 to every open index. A change under a tracked worktree's `.session` that a row
 shows, an item file or `meta/epic`, pushes `worktrees` as well, once the writes
-of every worktree have settled for half a second, so a `join` in a terminal or
-an agent moving items reaches an open index at once; a change under `context/`,
+of every worktree have settled for half a second, and at least every two
+seconds while they keep coming, so a `join` in a terminal or an agent moving
+items reaches an open index at once; a change under `context/`,
 `ledger/`, `archive/` or `ignore/` pushes nothing, since the index shows nothing
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through.
@@ -471,13 +475,16 @@ the new name, so a name another epic already has merges the two. A drop is
 written with the epic route, one request per worktree, which is drawn where it
 lands at once and read again once it is written; a refusal, such as a file
 changed since the index read it, shows above the cards in the daemon's words.
-While a card is held, and while a drop is being written, the index reads
-nothing, remembers that it was told something changed, and reads once when it
-is let go, so no card moves under the pointer. Every worktree the index lists can be dragged but a main
-one, a worktree it does not serve included, since the epic route takes a path.
-Each drop carries the epic the index read for every worktree it writes, so one
-whose file was changed in the meantime is refused as changed on disk, and the
-index reads again.
+While a card is held, the index draws what it drew when the card was picked up,
+its rows, pull requests and clock alike, so no card moves under the pointer: a
+change it is told of meanwhile is read once the card is let go, and a read
+already under way at pickup lands unseen until then. While a drop is being
+written it holds its reads the same way, and then reads once. Every worktree
+the index lists can be dragged but a main one, a worktree it does not serve
+included, since the epic route takes a path. Each drop is written against the
+epic drawn for every worktree when it was dropped, a new epic's two worktrees
+through the dialog as well, so one whose file was changed in the meantime is
+refused as changed on disk, and the index reads again.
 
 ## Use the board
 

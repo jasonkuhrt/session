@@ -25,12 +25,15 @@ const epicFix = 'rewrite it with `session join "<epic>"`, or remove it with `ses
 /**
  * Why a name cannot be an epic's, or null when it can. An epic's name follows
  * a group's rules, and it is one line of a file, so it holds no line break.
- * The clause starts in lower case, for a caller to lead into it.
+ * The line break is asked about first: a file saved with Windows line endings
+ * ends its name in a carriage return, which is a line break before it is a
+ * surrounding space. The clause starts in lower case, for a caller to lead
+ * into it.
  */
 export const epicNameProblem = (name: string): string | null => {
+  if (/[\n\r]/u.test(name)) return `an epic’s name is one line, and ${quote(name)} holds a line break`;
   const broken = nameRuleBroken(name);
   if (broken === 'blank') return 'an epic’s name must be non-empty and free of surrounding spaces';
-  if (/[\n\r]/u.test(name)) return `an epic’s name is one line, and ${quote(name)} holds a line break`;
   return broken === 'slash' ? `an epic’s name must not contain "/", and ${quote(name)} does` : null;
 };
 

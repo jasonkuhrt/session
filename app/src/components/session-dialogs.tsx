@@ -26,12 +26,19 @@ export type BoardNameRequest =
   | { readonly kind: 'batch'; readonly ids: readonly string[]; readonly group: string | null }
 
 /**
- * What the index names: an epic for two worktrees in none, one dropped onto
- * the other, or a new name for an epic, which every worktree in it takes, so a
- * name another epic has merges the two. `ids` are the worktrees' paths.
+ * What the index names: an epic for two worktrees, one dropped onto the other
+ * in no epic, or a new name for an epic, which every worktree in it takes, so a
+ * name another epic has merges the two. `ids` are the worktrees' paths; a new
+ * epic's `from` is the epic drawn for each when it was dropped, which its
+ * write is made against.
  */
 export type EpicNameRequest =
-  | { readonly kind: 'epic'; readonly ids: readonly string[]; readonly names: readonly [string, string] }
+  | {
+    readonly kind: 'epic'
+    readonly ids: readonly [string, string]
+    readonly names: readonly [string, string]
+    readonly from: readonly [string | null, string | null]
+  }
   | { readonly kind: 'rename'; readonly ids: readonly string[]; readonly epic: string }
 
 /** What the name dialog is naming. */

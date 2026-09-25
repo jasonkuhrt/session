@@ -40,6 +40,8 @@ const epicMeaning = (name: string) =>
 
 const worktreeCountMeaning = 'How many worktrees are in this epic.'
 
+const quietCardMeaning = 'Nothing is live here and nothing has happened in five days, so this card is dim, and last.'
+
 /**
  * One ref for an element that is two things to the drag library at once, a
  * card that is held and that takes others. It keeps its identity while both
@@ -69,7 +71,16 @@ function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext 
     disabled: !canMove || context.writing,
   })
   return (
-    <div ref={ref} className={cn('px-3 py-2.5', canMove && 'cursor-grab', isDragSource && 'opacity-40')}>
+    <div
+      ref={ref}
+      // A role of its own, so the drag library does not make it a button, whose
+      // content would stop being controls: the row holds a link and buttons.
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
+      role="group"
+      aria-roledescription="Draggable worktree"
+      aria-label={`Drag ${row.name}`}
+      className={cn('px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
+    >
       <WorktreeRow row={row} context={context} />
     </div>
   )
@@ -88,7 +99,16 @@ function EpicHeading({ card, movable: canMove, onRename, ref }: {
 }) {
   const tip = useTip()
   return (
-    <div ref={ref} className={cn('flex items-center gap-2 border-b px-3 py-2', canMove && 'cursor-grab')}>
+    <div
+      ref={ref}
+      // A role of its own, so the drag library does not make the handle a
+      // button, whose content would stop being controls: it holds the rename.
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
+      role="group"
+      aria-roledescription="Draggable epic"
+      aria-label={`Drag the epic ${card.name}`}
+      className={cn('flex items-center gap-2 border-b px-3 py-2 outline-none', canMove && 'cursor-grab')}
+    >
       <Boxes aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <h2 className="min-w-0 text-sm font-medium wrap-anywhere">
         <Explained meaning={epicMeaning(card.name)}>{card.name}</Explained>
@@ -129,9 +149,15 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
   })
   const { ref: dropRef } = useDroppable({ id: into, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
+  const tip = useTip()
   const actionable = !context.writing
   return (
-    <Card ref={ref} size="sm" className={cardClass({ quiet: card.quiet, lands: context.landingOn === into, held: isDragSource })}>
+    <Card
+      ref={ref}
+      size="sm"
+      title={card.quiet ? tip(quietCardMeaning) : undefined}
+      className={cardClass({ quiet: card.quiet, lands: context.landingOn === into, held: isDragSource })}
+    >
       <EpicHeading ref={handleRef} card={card} movable={actionable} onRename={actionable ? context.onRename : undefined} />
       <div className="divide-y">
         {card.rows.map(row => <EpicRow key={row.path} row={row} context={context} />)}
@@ -156,11 +182,23 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
   })
   const { ref: dropRef } = useDroppable({ id: onto, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
+  const tip = useTip()
   return (
     <Card
       ref={ref}
       size="sm"
-      className={cn(cardClass({ quiet: card.quiet, lands: context.landingOn === onto, held: isDragSource }), canMove && 'cursor-grab')}
+      // A role of its own, so the drag library does not make the card a button,
+      // whose content would stop being controls: it holds a link and buttons.
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
+      role="group"
+      aria-roledescription="Draggable worktree"
+      aria-label={`Drag ${row.name}`}
+      title={card.quiet ? tip(quietCardMeaning) : undefined}
+      className={cn(
+        cardClass({ quiet: card.quiet, lands: context.landingOn === onto, held: isDragSource }),
+        'outline-none',
+        canMove && 'cursor-grab',
+      )}
     >
       <div className="px-3 py-2.5">
         <WorktreeRow row={row} context={context} />

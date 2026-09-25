@@ -23,12 +23,28 @@ export type SessionEventSource = SessionEvents & {
 /** Editors and the engine write several files per change; collapse the burst. */
 const settleMilliseconds = 150;
 
-export const makeSessionEvents = (settle = settleMilliseconds): SessionEventSource => {
+/**
+ * A source that tells its listeners once a burst of changes has been quiet for
+ * `settle` milliseconds. With a `ceiling`, a burst that never goes quiet is
+ * told at least that often, measured from its first change, so changes that
+ * keep arriving hold its listeners back no longer than that.
+ */
+export const makeSessionEvents = (
+  { settle = settleMilliseconds, ceiling }: { readonly settle?: number; readonly ceiling?: number } = {},
+): SessionEventSource => {
   const listeners = new Set<() => void>();
   let pending: ReturnType<typeof setTimeout> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+
+  const stop = () => {
+    if (pending !== undefined) clearTimeout(pending);
+    if (deadline !== undefined) clearTimeout(deadline);
+    pending = undefined;
+    deadline = undefined;
+  };
 
   const flush = () => {
-    pending = undefined;
+    stop();
     for (const listener of listeners) listener();
   };
 
@@ -40,11 +56,11 @@ export const makeSessionEvents = (settle = settleMilliseconds): SessionEventSour
     changed: () => {
       if (pending !== undefined) clearTimeout(pending);
       pending = setTimeout(flush, settle);
+      if (ceiling !== undefined && deadline === undefined) deadline = setTimeout(flush, ceiling);
     },
     watched: () => listeners.size > 0,
     close: () => {
-      if (pending !== undefined) clearTimeout(pending);
-      pending = undefined;
+      stop();
       listeners.clear();
     },
   };

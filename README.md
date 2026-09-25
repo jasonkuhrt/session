@@ -187,13 +187,13 @@ accrues or asks for action, and it exists exactly while some worktree names it.
 A worktree is in at most one epic, since one file holds one name, and a main
 worktree is never in one: Git keeps the repository there, lists it first and
 will not move, lock or remove it, and the index pins it above the epics.
-Membership changes by a drag on the index or by `session join` and `session
-leave`; deleting a worktree takes its membership with it, nothing is pruned, no
-path is stored, and nothing stores an order or a fold. Everything else about a
-worktree is read where it is kept: its session, `.session/`, which it has at
-most one of and which puts it on the index; its branch, from `git worktree
-list`, and none when detached; that branch's pull request, from `gh pr view`,
-taken as the one while one is open; and the agents in it, by the working
+Membership changes by a drag or a rename on the index, or by `session join` and
+`session leave`; deleting a worktree takes its membership with it, nothing is
+pruned, no path is stored, and nothing stores an order or a fold. Everything
+else about a worktree is read where it is kept: its session, `.session/`, which
+it has at most one of and which puts it on the index; its branch, from `git
+worktree list`, and none when detached; that branch's pull request, from `gh pr
+view`, taken as the one while one is open; and the agents in it, by the working
 directory their harness reports. An agent reaches an epic only through the
 worktree it works in, and no fact ties an agent to an epic, because none could
 be derived or verified. Linear issues are what the branch and the pull request

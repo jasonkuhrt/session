@@ -224,10 +224,16 @@ Back burner
   one names it, and a worktree is in one at most. Renaming an epic rewrites the
   file in each of its worktrees, so a name another epic has merges the two.
 - `meta/epic` is a regular file, not a link or a directory. `check` names a
-  file that breaks any of these rules with its fix, to rewrite it with `session
-  join "<epic>"` or remove it with `session leave`, and the index shows the
-  same sentence on the worktree's row, which it draws in no epic and serves as
-  ever. No other command reads it: nothing about the items depends on it.
+  file or a link that breaks any of these rules with its fix, to rewrite it
+  with `session join "<epic>"` or remove it with `session leave`, and the index
+  shows the same sentence on the worktree's row, which it draws in no epic and
+  serves as ever.
+- A directory under that name is not mended that way: `check` and the index
+  name it with `meta/epic must be a file; move this directory under context/ or
+  delete it.`, and `join` and `leave` refuse it until it is gone.
+- `check` and the index read it, and so do `join` and `leave`, to say which
+  epic the worktree left. A command about the items does not: nothing about
+  them depends on it.
 - A main worktree is never in an epic, since Git keeps the repository there and
   lists it first: `session join` refuses one, and the index pins it above the
   epics whatever its file says.

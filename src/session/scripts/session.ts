@@ -502,11 +502,16 @@ const join = (options: Options, repository: SessionRepository, resolved: Worktre
     );
   });
 
-/** Take this worktree out of its epic, by removing its `meta/epic`; in none, there is nothing to do. */
+/**
+ * Take this worktree out of its epic, by removing its `meta/epic`; in none,
+ * there is nothing to do. A file the rules reject names no epic, so removing
+ * one says so rather than naming an epic left.
+ */
 const leave = (repository: SessionRepository, resolved: WorktreeSession) =>
   Effect.gen(function*() {
-    const { previous } = yield* setWorktreeEpic({ session: resolved, repository, epic: null });
-    yield* Console.log(previous === null ? 'In no epic, so nothing to leave' : `Left ${quote(previous)}`);
+    const { previous, removed } = yield* setWorktreeEpic({ session: resolved, repository, epic: null });
+    const none = removed ? 'Removed meta/epic, which named no epic' : 'In no epic, so nothing to leave';
+    yield* Console.log(previous === null ? none : `Left ${quote(previous)}`);
   });
 
 const check = (repository: SessionRepository) =>

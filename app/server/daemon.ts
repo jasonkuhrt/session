@@ -584,6 +584,9 @@ const agentsDebounceMilliseconds = 1_000;
  */
 const indexSettleMilliseconds = 500;
 
+/** Writes that never let the index's settle go quiet still reach it this often. */
+const indexCeilingMilliseconds = 2_000;
+
 /** What the agent sources fire: any change in the directories they keep. */
 const watchDirectory = (directory: string, events: SessionEventSource) =>
   Effect.gen(function*() {
@@ -827,6 +830,10 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   return best;
 };
 
+/** Why a worktree has no board: another tracked worktree owns the key its name gives it. */
+const keyConflict = (input: { readonly path: string; readonly key: string; readonly owner: string }) =>
+  `${input.path} has no board: its key ${input.key} already belongs to ${input.owner}.`;
+
 /**
  * A file of the built app, and `index.html` for a path without an extension,
  * which is a route the app draws itself. Nothing outside the build is served.
@@ -855,15 +862,15 @@ export const runDaemon = async () => {
   // The agents overlay is derived, never owned: one listing for every tracked
   // worktree, kept only so a board and the index can read the same answer.
   let agents: { at: number; byPath: ReadonlyMap<string, AgentsSummary> } = { at: 0, byPath: new Map() };
-  const agentsEvents = makeSessionEvents(0);
-  const worktreeEvents = makeSessionEvents(0);
+  const agentsEvents = makeSessionEvents({ settle: 0 });
+  const worktreeEvents = makeSessionEvents({ settle: 0 });
   /**
    * A change under any tracked worktree's session that a row shows, settled
    * across all of them, since the index reads every row again, and passed on
    * to it as `worktrees`: without it the index learnt of new counts, a batch
    * or an epic only when something unrelated made it read.
    */
-  const sessionChanges = makeSessionEvents(indexSettleMilliseconds);
+  const sessionChanges = makeSessionEvents({ settle: indexSettleMilliseconds, ceiling: indexCeilingMilliseconds });
   sessionChanges.subscribe(() => worktreeEvents.changed());
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */
   const pullRequestEvents = makeSessionEvents();
@@ -1117,10 +1124,14 @@ export const runDaemon = async () => {
     entry.trailerEvents.close();
     entry.linksEvents.close();
     // A key it owned passes to the next worktree that claimed it, as a restart
-    // would give it, so that one's board is served.
+    // would give it, so that one's board is served, and any others still
+    // waiting on the key name their new owner.
     if (entry.conflict !== null) return;
-    const next = [...tracked.values()].find((candidate) => candidate.key === entry.key && candidate.conflict !== null);
-    if (next !== undefined) next.conflict = null;
+    const claimants = [...tracked.values()].filter((candidate) => candidate.key === entry.key);
+    const [next, ...waiting] = claimants;
+    if (next === undefined) return;
+    next.conflict = null;
+    for (const claimant of waiting) claimant.conflict = keyConflict({ path: claimant.path, key: entry.key, owner: next.path });
   };
 
   /** In the caller's order: the first worktree to claim a key owns it. */
@@ -1128,7 +1139,7 @@ export const runDaemon = async () => {
     if (tracked.has(path)) return;
     const key = encodeWorktreeKey(session.worktree.name);
     const owner = [...tracked.values()].find((entry) => entry.key === key);
-    const conflict = owner === undefined ? null : `${path} has no board: its key ${key} already belongs to ${owner.path}.`;
+    const conflict = owner === undefined ? null : keyConflict({ path, key, owner: owner.path });
     if (conflict !== null) console.error(conflict);
     const events = makeSessionEvents();
     tracked.set(path, {
@@ -1146,13 +1157,13 @@ export const runDaemon = async () => {
         onLinksTrigger: (trigger) => Effect.promise(() => onLinksTrigger(path, trigger)),
       })),
       trailerProblems: [],
-      trailerEvents: makeSessionEvents(0),
+      trailerEvents: makeSessionEvents({ settle: 0 }),
       pullRequest: null,
       pullRequestRead: undefined,
       issues: null,
       issuesRead: undefined,
       moves: 0,
-      linksEvents: makeSessionEvents(0),
+      linksEvents: makeSessionEvents({ settle: 0 }),
     });
   };
 
@@ -1458,19 +1469,17 @@ export const runDaemon = async () => {
    * so no key two rows share can send a write to the wrong worktree. The write
    * is refused when the file names another epic than the one the index read. A
    * path the daemon does not track, or whose session has gone, is not written,
-   * and a session is never brought back by it; one that is there is converged
-   * first, as every command converges it. The watch on the session is what
-   * tells the index.
+   * and a session is never brought back by it. Nothing else is converged:
+   * `meta/epic` depends on no stage, so an old session that every command
+   * refuses can still be dragged into an epic and out of one, and `setEpic`
+   * makes `meta/` itself. The watch on the session is what tells the index.
    */
   const setEpicAt = async (input: EpicWrite): Promise<WorktreeEpic> => {
     const entry = await liveWorktree(input.path);
     if (entry === null) {
       throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
-    await runNode(Effect.gen(function*() {
-      yield* ensureSession(entry.session);
-      yield* setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from });
-    }));
+    await runNode(setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from }));
     return { epic: input.epic === null ? null : input.epic.trim() };
   };
 
