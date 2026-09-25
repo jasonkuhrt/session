@@ -24,6 +24,17 @@ and Git set for the processes they run and the `node_modules/.bin` a package
 runner put on PATH, because it outlives them and passes its environment to
 everything it runs; the user's own settings stay.
 
+The index's unit above the worktree is the epic: a name and the linked worktrees
+whose sessions name it in `.session/meta/epic`, one line, and nothing else, so
+it exists exactly while a worktree names it. A worktree is in at most one epic
+and a main worktree in none. Membership changes only by a drag on the index or
+`session join` and `session leave`, through the engine's one write, `setEpic`,
+which the daemon's route reaches by a worktree's path with the epic the index
+last read; nothing stores an order or a fold. An agent reaches an epic only
+through the worktree its working directory is in, and no fact ties an agent to
+an epic. Each tracked worktree's `.session` watch also feeds the index's
+`worktrees` event, settled, for every change a row shows.
+
 A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
 each tracked worktree's session, its reflog and the repository's remote-tracking
 logs, and the engine files the named item as done from any stage, with the
@@ -52,14 +63,14 @@ never a word mapped into another. Nothing is inferred from a timestamp, no Codex
 turn status is shown, no count is presented as all of a user's agents, and a
 source that fails shows a named notice instead of an empty list.
 
-The board's header and the index's pull request column hold to the overlay's
-rule: the pull request and Linear chips carry only what `gh` and `linear`
-answered when the daemon last asked, each source dated in its tooltips by its
-own ask, with a named notice in their place when a source cannot answer, and the
-terminal action asks `cmux` when it is clicked and shows cmux's own line when it
-refuses. The daemon asks a source only for a page that shows its answer: gh for
-the index or a board, linear for a board alone, so an open index never spends
-Linear's limit.
+The board's header and the pull request chips on the index's rows hold to the
+overlay's rule: the pull request and Linear chips carry only what `gh` and
+`linear` answered when the daemon last asked, each source dated in its tooltips
+by its own ask, with a named notice in their place when a source cannot answer,
+and the terminal action asks `cmux` when it is clicked and shows cmux's own line
+when it refuses. The daemon asks a source only for a page that shows its answer:
+gh for the index or a board, linear for a board alone, so an open index never
+spends Linear's limit.
 
 Every rendered thing says what it means from where it is: a word carries its
 sentence as a tip, a control says what it will do, and no surface needs a
