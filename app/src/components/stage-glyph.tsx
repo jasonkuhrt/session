@@ -1,33 +1,54 @@
 import type { Stage } from '../../contract'
 import { stageNames } from '../../contract'
+import type { StageRange } from '../lib/epics'
 import { cn } from '../lib/utils'
 import { Explained } from './tip'
 
-/** How tall the bar of the fullest stage is, in pixels. */
+/** How tall the bar at the top of the page's range is, in pixels. */
 const fullHeight = 16
 
 /** How tall a bar is at the least while its stage holds anything, so one item beside many still shows. */
 const leastHeight = 3
 
-/** How tall the bar of an empty stage is: a dim stub, so the five places of the flow always show. */
-const emptyHeight = 2
+/**
+ * The baseline: how tall the bar at the bottom of the range is, and a dim stub
+ * for an empty stage, so the five places of the flow always show.
+ */
+const baseline = 2
 
 /** How many items a count is, in words. */
 const itemsIn = (count: number) => (count === 1 ? '1 item' : `${count} items`)
 
 /**
- * What a worktree's session holds, as a glyph rather than words: one bar per
- * stage in the flow's order, Triage to Execute, as tall as its share of the
- * fullest stage and a dim stub when the stage is empty, then the total. While
- * a batch runs, the Execute bar takes the accent. Every bar is the count the
- * row already carries, so nothing more is read for it, and its tip names each
- * stage with its count.
+ * How tall a count's bar is: its place in the page's range, from the baseline
+ * at the fewest items any stage on the page holds to the full height at the
+ * most. An empty stage stays at the baseline, and so does every bar when every
+ * stage on the page holds the same number, since then no height says more
+ * than another.
  */
-export function StageGlyph({ counts, executing }: { counts: Record<Stage, number>; executing: string | null }) {
-  const fullest = Math.max(...stageNames.map(stage => counts[stage]))
+const heightOf = (count: number, range: StageRange) => {
+  if (count === 0 || range.most === range.least) return baseline
+  const place = (count - range.least) / (range.most - range.least)
+  return Math.max(leastHeight, Math.round(baseline + place * (fullHeight - baseline)))
+}
+
+/**
+ * What a worktree's session holds, as a glyph rather than words: one bar per
+ * stage in the flow's order, Triage to Execute, measured against the one range
+ * every glyph on the page shares, so the same height is the same count on
+ * every card, and a dim stub when the stage is empty. While a batch runs, the
+ * Execute bar takes the accent. Every bar is the count the row already
+ * carries, so nothing more is read for it, and its tip names each stage with
+ * its count and the total.
+ */
+export function StageGlyph({ counts, executing, range }: {
+  counts: Record<Stage, number>
+  executing: string | null
+  range: StageRange
+}) {
   const total = stageNames.reduce((sum, stage) => sum + counts[stage], 0)
   return (
-    <Explained meaning={<StageCounts counts={counts} executing={executing} total={total} />} className="gap-1.5">
+    <Explained meaning={<StageCounts counts={counts} executing={executing} total={total} />}>
       <span aria-hidden className="flex h-4 items-end gap-0.5">
         {stageNames.map(stage => {
           const count = counts[stage]
@@ -36,13 +57,10 @@ export function StageGlyph({ counts, executing }: { counts: Record<Stage, number
             <span
               key={stage}
               className={cn('w-1 rounded-[1px]', count === 0 ? 'bg-muted-foreground/25' : running ? 'bg-primary' : 'bg-muted-foreground')}
-              style={{ height: count === 0 ? emptyHeight : Math.max(leastHeight, Math.round((count / fullest) * fullHeight)) }}
+              style={{ height: heightOf(count, range) }}
             />
           )
         })}
-      </span>
-      <span className={cn('min-w-[2ch] text-right text-xs tabular-nums', total === 0 ? 'text-muted-foreground' : 'text-foreground')}>
-        {total}
       </span>
     </Explained>
   )

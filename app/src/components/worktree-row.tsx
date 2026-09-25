@@ -2,7 +2,7 @@ import { House } from 'lucide-react'
 
 import type { DaemonCapabilities, PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
 import { landing } from '../lib/drag'
-import type { MainTile } from '../lib/epics'
+import type { MainTile, StageRange } from '../lib/epics'
 import { checkoutLabel } from '../lib/format'
 import { cn } from '../lib/utils'
 import { AgentPills } from './agent-pills'
@@ -14,6 +14,7 @@ import { TrailerCount } from './trailer-problems'
 import { Badge } from './ui/badge'
 import { Card } from './ui/card'
 import { TerminalAction, ZedAction } from './worktree-actions'
+import { CheckoutMark, WorktreeMark } from './worktree-marks'
 
 /** What a row needs beyond itself, the same for every row on the page. */
 export type RowContext = {
@@ -22,7 +23,12 @@ export type RowContext = {
   readonly now: number
   /** What the daemon can open a worktree in: a terminal in cmux, and Zed. */
   readonly capabilities: DaemonCapabilities
+  /** The fewest and the most items any stage drawn on the page holds, which every row's glyph is measured against. */
+  readonly stageRange: StageRange
 }
+
+/** What any worktree on the index is, said by the mark before its name, since the page has no heading to say it. */
+const listedMeaning = 'A worktree, on this page while it has a session: it joins when a session is created in it, and leaves when that session is gone.'
 
 const detachedMeaning = 'Git has a commit checked out in this worktree rather than a branch, so it has no branch and no pull request.'
 
@@ -41,32 +47,45 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
 
 /**
  * One worktree in two lines, since there are no columns to carry the rest:
- * its name and the agents live in it, then its branch and pull request, with
- * the glyph of what its session holds beside both. A row the daemon cannot
- * serve says why in place of the second line, and a `meta/epic` it cannot
+ * the glyph of what its session holds at the top left, then its name and the
+ * agents live in it, then its branch and pull request under them, each line
+ * marked as the worktree picker marks it. A row the daemon cannot serve has no
+ * glyph and says why in place of the second line, and a `meta/epic` it cannot
  * read as a name says why on it, in the words `session check` gives.
+ * `meaning` is what the mark before the name says the worktree is here.
  */
-export function WorktreeRow({ row, context }: { row: WorktreeSummary; context: RowContext }) {
+export function WorktreeRow({ row, context, meaning = listedMeaning }: {
+  row: WorktreeSummary
+  context: RowContext
+  meaning?: string
+}) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
-      <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+    // The glyph's column is as wide as a glyph whether or not the row draws
+    // one, so the names in one card line up.
+    <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1">
+      <div className="col-start-1 row-start-1">
+        {row.conflict === null
+          ? <StageGlyph counts={row.counts} executing={row.executing} range={context.stageRange} />
+          : null}
+      </div>
+      <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         {row.main ? (
           <Explained meaning={mainMeaning} className="text-muted-foreground">
             <House aria-hidden className="size-3.5" />
           </Explained>
         ) : null}
-        <WorktreeName row={row} />
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Explained meaning={meaning}>
+            <WorktreeMark />
+          </Explained>
+          <WorktreeName row={row} />
+        </span>
         <TrailerCount problems={row.trailerProblems} />
         {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
         {context.capabilities.zed ? <ZedAction path={row.path} name={row.name} size="icon-xs" /> : null}
         <AgentPills agents={row.agents} now={context.now} />
       </div>
-      {row.conflict === null ? (
-        <div className="col-start-2 row-span-2 row-start-1">
-          <StageGlyph counts={row.counts} executing={row.executing} />
-        </div>
-      ) : null}
-      <div className="col-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+      <div className="col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
         {row.conflict === null
           ? (
             <>
@@ -102,12 +121,17 @@ function WorktreeName({ row }: { row: WorktreeSummary }) {
     : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{row.name}</span>
 }
 
-/** What the worktree has checked out, in Git's words: its branch, to copy, or why it has none. */
+/** What the worktree has checked out, in Git's words and under the picker's mark: its branch, to copy, or why it has none. */
 function Checkout({ row }: { row: WorktreeSummary }) {
   const tip = useTip()
-  return row.branch === null
-    ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
-    : <Copyable value={row.branch}><span className="wrap-anywhere">{row.branch}</span></Copyable>
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <CheckoutMark detached={row.detached} />
+      {row.branch === null
+        ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
+        : <Copyable value={row.branch}><span className="wrap-anywhere">{row.branch}</span></Copyable>}
+    </span>
+  )
 }
 
 /**

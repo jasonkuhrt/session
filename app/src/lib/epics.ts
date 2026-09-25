@@ -1,4 +1,5 @@
 import type { WorktreeSummary } from '../../contract'
+import { stageNames } from '../../contract'
 import { isLive } from './agents'
 import { hour } from './format'
 
@@ -102,6 +103,25 @@ export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSum
 }
 
 /**
+ * The fewest and the most items any stage drawn on the page holds. Every
+ * glyph's bars are measured against this one range, so a bar's height means
+ * the same on every card in one view.
+ */
+export type StageRange = { readonly least: number; readonly most: number }
+
+/**
+ * The range for the rows the page draws, read from them on every render and
+ * kept nowhere. Only a row whose glyph is drawn counts: a row the daemon does
+ * not serve has none.
+ */
+export function stageRangeOf(rows: readonly WorktreeSummary[]): StageRange {
+  const counts = rows
+    .filter((row) => row.conflict === null)
+    .flatMap((row) => stageNames.map((stage) => row.counts[stage]))
+  return counts.length === 0 ? { least: 0, most: 0 } : { least: Math.min(...counts), most: Math.max(...counts) }
+}
+
+/**
  * The rows with the epics a write is putting them in, drawn while it is
  * written, as a board draws a move until it lands, so nothing jumps back
  * before the daemon's answer does.
@@ -127,20 +147,26 @@ export const movable = (row: WorktreeSummary) => !row.main
 /** What is held: one worktree, by its row, or a whole epic, by its card's heading. */
 export type Dragged = { readonly kind: 'row'; readonly path: string } | { readonly kind: 'epic'; readonly name: string }
 
-/** What a held thing is over: an epic's card, a card of one worktree in no epic, or the space between and below the cards. */
+/**
+ * What a held thing is over: an epic's card, a card of one worktree in no
+ * epic, the `+` drawn after the cards while a worktree is held, or the space
+ * between and below the cards.
+ */
 export type DropTarget =
   | { readonly kind: 'epic'; readonly name: string }
   | { readonly kind: 'loose'; readonly path: string }
+  | { readonly kind: 'new' }
   | { readonly kind: 'space' }
 
 /**
  * What a drop does: worktrees join an epic, one epic's worktrees all joining
- * another's when it is a whole card that was dropped; two worktrees in no
- * epic make one, once it is named; or a worktree leaves its epic.
+ * another's when it is a whole card that was dropped; a worktree makes an
+ * epic, with the worktree in no epic it was dropped on or alone on the `+`,
+ * once it is named; or a worktree leaves its epic.
  */
 export type DropOutcome =
   | { readonly kind: 'join'; readonly epic: string; readonly paths: readonly string[]; readonly merge: boolean }
-  | { readonly kind: 'make'; readonly paths: readonly [string, string] }
+  | { readonly kind: 'make'; readonly paths: readonly [string] | readonly [string, string] }
   | { readonly kind: 'leave'; readonly epic: string; readonly path: string }
 
 /**
@@ -165,15 +191,27 @@ export function dropOutcome({ rows, dragged, target }: {
     return row.epic === target.name ? null : { kind: 'join', epic: target.name, paths: [row.path], merge: false }
   }
   if (target.kind === 'loose') return target.path === row.path ? null : { kind: 'make', paths: [row.path, target.path] }
+  if (target.kind === 'new') return { kind: 'make', paths: [row.path] }
   return row.epic === null ? null : { kind: 'leave', epic: row.epic, path: row.path }
+}
+
+/**
+ * Whom a new epic is made with, as the words over the held card name it: the
+ * worktree it was dropped on, or itself when it was dropped on the `+` alone.
+ */
+function newEpicWith({ outcome, rows }: {
+  readonly outcome: Extract<DropOutcome, { kind: 'make' }>
+  readonly rows: readonly WorktreeSummary[]
+}) {
+  const named = outcome.paths.at(-1)
+  return rows.find((row) => row.path === named)?.name ?? 'this worktree'
 }
 
 /** What a drop will do, in the few words the held card carries while it is over its target. */
 export function outcomeWords({ outcome, rows }: { readonly outcome: DropOutcome; readonly rows: readonly WorktreeSummary[] }) {
   if (outcome.kind === 'join') return outcome.merge ? `Merge into “${outcome.epic}”` : `Join “${outcome.epic}”`
   if (outcome.kind === 'leave') return `Leave “${outcome.epic}”`
-  const other = rows.find((row) => row.path === outcome.paths[1])
-  return `New epic with ${other?.name ?? 'this worktree'}`
+  return `New epic with ${newEpicWith({ outcome, rows })}`
 }
 
 /**
@@ -183,8 +221,10 @@ export function outcomeWords({ outcome, rows }: { readonly outcome: DropOutcome;
  */
 export const draggedId = (dragged: Dragged) => (dragged.kind === 'row' ? `row:${dragged.path}` : `epic:${dragged.name}`)
 
-export const targetId = (target: DropTarget) =>
-  target.kind === 'space' ? 'space' : target.kind === 'epic' ? `into:${target.name}` : `onto:${target.path}`
+export const targetId = (target: DropTarget) => {
+  if (target.kind === 'space' || target.kind === 'new') return target.kind
+  return target.kind === 'epic' ? `into:${target.name}` : `onto:${target.path}`
+}
 
 const splitId = (id: unknown): readonly [string, string] | null => {
   if (typeof id !== 'string') return null
@@ -200,6 +240,7 @@ export function draggedOf(id: unknown): Dragged | null {
 
 export function targetOf(id: unknown): DropTarget | null {
   if (id === 'space') return { kind: 'space' }
+  if (id === 'new') return { kind: 'new' }
   const parts = splitId(id)
   if (parts?.[0] === 'into') return { kind: 'epic', name: parts[1] }
   return parts?.[0] === 'onto' ? { kind: 'loose', path: parts[1] } : null

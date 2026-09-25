@@ -1,7 +1,7 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDraggable, useDroppable } from '@dnd-kit/react'
-import { Boxes, Pencil } from 'lucide-react'
+import { Boxes, Pencil, Plus } from 'lucide-react'
 import * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
@@ -35,8 +35,19 @@ export type DragContext = RowContext & {
   readonly onRename: (card: EpicCardShape) => void
 }
 
+/** The order the cards stand in, said by every card that can say it, since the page has no heading to say it once. */
+const orderMeaning = 'The cards with a live agent come first, then the newest activity.'
+
 const epicMeaning = (name: string) =>
-  `An epic: the worktrees whose sessions name “${name}”. Drag this heading onto another epic to merge the two.`
+  `An epic: the worktrees whose sessions name “${name}”, the busiest first. ${orderMeaning} Drag this heading onto another epic to merge the two.`
+
+/** What a worktree in no epic is, and where it can be dropped, said by the mark before its name. */
+const looseMeaning =
+  `A worktree in no epic, on this page while it has a session. ${orderMeaning} Drag it onto an epic to join it, onto another worktree in no epic to make an epic of the two, or onto the + that appears after the cards to start an epic of its own.`
+
+/** The same for a worktree in an epic, which can also be dropped out of it. */
+const epicRowMeaning = (epic: string) =>
+  `A worktree in “${epic}”, on this page while it has a session. Drag it onto another epic to join that one, onto a worktree in no epic to make an epic of the two, onto the + that appears after the cards to start an epic of its own, or onto the space between the cards to leave “${epic}”.`
 
 const worktreeCountMeaning = 'How many worktrees are in this epic.'
 
@@ -81,7 +92,7 @@ function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext 
       aria-label={`Drag ${row.name}`}
       className={cn('px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
-      <WorktreeRow row={row} context={context} />
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning(row.epic ?? '')} />
     </div>
   )
 }
@@ -201,9 +212,33 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       )}
     >
       <div className="px-3 py-2.5">
-        <WorktreeRow row={row} context={context} />
+        <WorktreeRow row={row} context={context} meaning={looseMeaning} />
       </div>
     </Card>
+  )
+}
+
+/**
+ * Where a held worktree starts an epic of its own: a `+` after the cards,
+ * drawn only while a worktree is held, since it cannot act otherwise. Dropped
+ * here, the worktree is named into a new epic in the dialog, and a name an
+ * epic already has puts it in that one.
+ */
+export function NewEpicTarget({ name, context }: { name: string; context: DragContext }) {
+  const onto = targetId({ kind: 'new' })
+  const { ref } = useDroppable({ id: onto, ...cardDrop, disabled: context.writing })
+  const tip = useTip()
+  return (
+    <div
+      ref={ref}
+      title={tip(`New epic with ${name}`)}
+      className={cn(
+        'flex min-h-16 items-center justify-center rounded-xl border border-dashed text-muted-foreground',
+        context.landingOn === onto && landing,
+      )}
+    >
+      <Plus aria-hidden className="size-5" />
+    </div>
   )
 }
 
