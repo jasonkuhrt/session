@@ -20,7 +20,7 @@ export function LinearIssueChip({ issue, reportedAt }: { issue: LinearIssue; rep
           <span className="block font-medium">{issue.id} {issue.title}</span>
           <span className="block">linear reports its state as {issue.state}.</span>
           <span className="block">linear was asked at {absoluteTime(reportedAt)}.</span>
-          <span className="block">Brings forward the Linear tab this board opened for it, or opens one.</span>
+          <span className="block">Brings forward the Linear tab this page opened for it, or opens one.</span>
         </span>
       }
       render={

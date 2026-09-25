@@ -302,15 +302,26 @@ and the first `no` drops the row, rewrites the state file and pushes a
 `worktrees` event to every open index. `POST /api/worktrees/refresh` remains as
 the route the CLI registers through.
 
-The index at `/` lists the tracked worktrees: name, branch, the agents at work
-in it, the item counts per stage, and activity, with a terminal icon beside each
-name and the settings icon at the far end of its header. The batch in Execute is
+The index at `/` lists the tracked worktrees: name, branch, the pull request gh
+reports for that branch, the agents at work in it, the item counts per stage,
+and activity, with a terminal icon beside each name and the settings icon at the
+far end of its header. A name stands without its path, which is its tip: the
+name already tells the worktrees apart, since one whose folder shares the main
+checkout's name carries its parent folder's name before it. A worktree with a
+commit checked out rather than a branch reads `Detached HEAD` where the branch
+would be, and a folder outside Git reads `No branch`. What every row has checked
+out comes from one `git worktree list` per repository, run in the Git directory
+the repository's worktrees share, rather than from Git asked once per row. The
+pull request is the chip a board's header carries, or gh's sentence in its
+place, and a branch with no pull request leaves its cell empty. A repository
+with no remote on GitHub has no pull request to show either. The batch in
+Execute is
 named beside that stage's count, which is the only place a batch is named, and a
 stage holding nothing renders an empty cell, so the five columns read as a
 pipeline by what is in them. Each board sits under `/w/<key>/`, where the key is
 the worktree name, `Heartbeat` or `email-backend/Heartbeat`. Two tracked
-worktrees whose names collide are a conflict: the later one is listed with the
-reason and is not served.
+worktrees whose names collide are a conflict: the later one is listed with a
+reason that names both folders, and is not served.
 
 ## Use the board
 
@@ -321,7 +332,9 @@ pages, and a terminal icon; the settings icon is at the far end. The picker is
 where the worktree and its branch are named: the control shows the worktree's
 name over the branch checked out in it, and opens a list of every worktree the
 daemon serves, each as the same two lines, its name over its branch, cut short
-rather than wrapped. Typing in the list narrows it by name or branch, and
+rather than wrapped. Each line is marked with what it is: a folder for the
+worktree, and a branch for the branch, or a commit when the worktree has a
+detached HEAD. Typing in the list narrows it by name or branch, and
 picking one opens that worktree's board. Until the index answers, and if it
 never does, the name and branch are plain text. The page icons carry no count
 and no age; each names its page as its tip. A non-Git folder uses its own
@@ -394,25 +407,43 @@ tab keeps the board as its opener, because Chrome loses the name of a tab that
 has none as soon as it loads another site; that tab can therefore reach back to
 the board's.
 
-The daemon asks with `gh pr view` in the worktree and reads its branch with
-`git branch --show-current`, then asks linear about every identifier they
-name, four at a time, and keeps only the last answer, issues included. A board
-is served it while it is under a minute old and no remote-tracking ref has
-moved since it was asked; otherwise the board's request asks again. While a
-board of that worktree is open, the daemon also asks again once the answer is
-a minute old, and at once when a push or a fetch moves a remote-tracking ref;
-with none open it spawns nothing. A page's stream carries only the events that
+The daemon asks gh with `gh pr view` in the worktree, reading the branch with
+`git branch --show-current` at the same moment, and asks linear about every
+identifier that branch and gh's answer name, four at a time. It keeps only the
+last answer of each, and gh's answer is one answer for the index and the
+worktree's boards alike, each source dated by its own ask. gh's answer stands
+while it is under a minute old and nothing has moved since it was asked, where
+a move is another branch checked out in the worktree, or a push or fetch moving
+the remote-tracking ref of the branch gh answered for; a fetch that moves only
+the repository's other refs moves nothing. A board's read is served gh's answer
+while it stands and asks again once it does not; the index's read,
+`GET /api/pull-requests`, serves the last answer of every served row and leaves
+the asking to the daemon. The issues are served while they were read from gh's
+current answer, so linear is asked again whenever gh is, for a board and never
+for the index. While a board of that worktree or the index is open, the daemon
+also asks gh again once its answer is a minute old or at once after a move, and
+with a board open it asks linear after each new answer of gh's; with neither
+open it spawns nothing. An index that starts listening for `pull-requests`
+starts an ask for every served row whose answer does not stand. The index's
+asks take turns, four at a time, and one whose turn comes after every page that
+wanted it has closed, or after a board has already asked, is dropped; a board's
+own ask never waits behind them. A page's stream carries only the events that
 page names, and an item page names only `changed`, so an open item page keeps
-nothing asking. Every ask pushes a `links` event to that worktree's open
-boards. The pull request is the one gh reports for the branch when it is
-asked, and nothing about it is inferred: no state is concluded from a
+nothing asking. Every ask of gh, and every ask of linear read from gh's newest
+answer, pushes a `links` event to that worktree's open boards, and every ask of
+gh a `pull-requests` event to the open index. Each ask of gh is at least one
+GitHub API request counted against the signed-in account's hourly limit, more
+when gh pages a long list of checks, so an open index spends at least one a
+minute for each Git worktree it serves. The pull request is the one gh reports
+for the branch when it is asked, and nothing about it is inferred: no state is
+concluded from a
 timestamp, and no check outcome is one gh did not report. An issue is drawn
 only once linear has confirmed it: the identifiers are read from the branch
 and the pull request, and each is confirmed by linear before it is drawn.
 Each ask costs one Linear API request per identifier, counted against the
 key's hourly limit, and a request Linear refuses for that reads "linear did
-not answer, so issues are not shown." The index keeps no pull request or issue
-column.
+not answer, so issues are not shown." The index shows no issues, which is why
+it never asks linear.
 
 The terminal icon, in the header and beside each name on the index, asks the
 daemon for a terminal in that worktree with `POST /api/terminal`. The daemon

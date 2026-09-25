@@ -1,13 +1,25 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
+import * as Result from 'effect/Result';
+import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { capture } from './command.ts';
 import { makeRepository } from './repository.ts';
 
-export type WorktreeMetadata = {
+/** What a worktree has checked out, as Git lists it. */
+export type Checkout = {
+  /** The branch; null on a detached HEAD, and outside Git. */
+  readonly branch: string | null;
+  /** True when Git has a commit checked out rather than a branch. */
+  readonly detached: boolean;
+};
+
+/** Outside Git nothing is checked out. */
+const outsideGit: Checkout = { branch: null, detached: false };
+
+export type WorktreeMetadata = Checkout & {
   readonly name: string;
   readonly path: string;
-  readonly branch: string | null;
 };
 
 export type WorktreeSession = {
@@ -26,9 +38,8 @@ export class WorktreeError extends Data.TaggedError('WorktreeError')<{
   readonly cause?: unknown;
 }> {}
 
-type GitWorktree = {
+type GitWorktree = Checkout & {
   readonly path: string;
-  readonly branch: string | null;
 };
 
 const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
@@ -38,10 +49,13 @@ const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
     ),
   );
 
-/** Every worktree Git knows about, as seen from one of them. */
-export const listGitWorktrees = (worktreePath: string) =>
+/**
+ * Every worktree Git knows about, as seen from one of them, or from the Git
+ * directory they share.
+ */
+export const listGitWorktrees = (workingDirectory: string) =>
   Effect.gen(function*() {
-    const result = yield* runGit(worktreePath, ['worktree', 'list', '--porcelain', '-z']);
+    const result = yield* runGit(workingDirectory, ['worktree', 'list', '--porcelain', '-z']);
     if (result.exitCode !== 0) {
       return yield* new WorktreeError({
         message: result.stderr || 'Could not list Git worktrees.',
@@ -60,6 +74,7 @@ export const listGitWorktrees = (worktreePath: string) =>
             return {
               path: resolve(worktree.slice('worktree '.length)),
               branch: branch?.slice('branch refs/heads/'.length) ?? null,
+              detached: fields.includes('detached'),
             };
           }),
       catch: (cause) =>
@@ -67,19 +82,54 @@ export const listGitWorktrees = (worktreePath: string) =>
     });
   });
 
-export const refreshWorktreeMetadata = (metadata: WorktreeMetadata) =>
-  Effect.gen(function*() {
-    const topLevel = yield* runGit(metadata.path, ['rev-parse', '--show-toplevel']);
-    if (topLevel.exitCode !== 0) return { ...metadata, branch: null };
-    const worktrees = yield* listGitWorktrees(metadata.path);
-    const current = worktrees.find((worktree) => worktree.path === metadata.path);
-    if (current === undefined) {
-      return yield* new WorktreeError({
-        message: 'The served path is no longer a registered Git worktree.',
-      });
-    }
-    return { ...metadata, branch: current.branch };
-  });
+/** A repository's worktrees as Git lists them, or why it could not. */
+export type RepositoryListing = Result.Result<ReadonlyArray<GitWorktree>, WorktreeError>;
+
+/**
+ * The worktrees of every repository these sessions belong to, keyed by the Git
+ * directory each repository's worktrees share, from one `git worktree list`
+ * per repository, run in that directory. Sibling worktrees share one list, so
+ * asking in each of them asked the same question once per sibling, and the
+ * shared directory still answers when a worktree's own directory cannot.
+ */
+export const listRepositories = (input: {
+  readonly sessions: ReadonlyArray<WorktreeSession>;
+  readonly concurrency: number;
+}): Effect.Effect<ReadonlyMap<string, RepositoryListing>, never, ChildProcessSpawner> => {
+  const shared = new Set(input.sessions.flatMap((session) => (session.git === null ? [] : [session.git.common])));
+  return Effect.forEach(
+    shared,
+    (common) => listGitWorktrees(common).pipe(Effect.result, Effect.map((listing) => [common, listing] as const)),
+    { concurrency: input.concurrency },
+  ).pipe(Effect.map((listings) => new Map(listings)));
+};
+
+/**
+ * What a session's worktree has checked out, as its repository's listing
+ * says: nothing outside Git, and an error when Git could not list the
+ * repository or no longer lists the worktree.
+ */
+export const checkoutIn = (input: {
+  readonly listings: ReadonlyMap<string, RepositoryListing>;
+  readonly session: WorktreeSession;
+}): Result.Result<Checkout, WorktreeError> => {
+  const { git, worktree } = input.session;
+  if (git === null) return Result.succeed(outsideGit);
+  const listing = input.listings.get(git.common) ??
+    Result.fail(new WorktreeError({ message: 'Git was not asked about this worktree’s repository.' }));
+  return listing.pipe(Result.flatMap((worktrees) => {
+    const current = worktrees.find((candidate) => candidate.path === worktree.path);
+    return current === undefined
+      ? Result.fail(new WorktreeError({ message: 'The served path is no longer a registered Git worktree.' }))
+      : Result.succeed({ branch: current.branch, detached: current.detached });
+  }));
+};
+
+/** What one session's worktree has checked out now, from one listing of its repository. */
+export const checkoutOf = (session: WorktreeSession) =>
+  listRepositories({ sessions: [session], concurrency: 1 }).pipe(
+    Effect.flatMap((listings) => Effect.fromResult(checkoutIn({ listings, session }))),
+  );
 
 /**
  * The commit a worktree's HEAD names, abbreviated the way Git abbreviates it,
@@ -116,7 +166,7 @@ export const resolveWorktreeSession = (input: string) =>
     if (located === null) {
       return {
         directory: isSessionDirectory ? candidate : join(start, '.session'),
-        worktree: { name: basename(start), path: start, branch: null },
+        worktree: { name: basename(start), path: start, ...outsideGit },
         git: null,
       } satisfies WorktreeSession;
     }
@@ -147,6 +197,7 @@ export const resolveWorktreeSession = (input: string) =>
         name,
         path: worktreePath,
         branch: current.branch,
+        detached: current.detached,
       },
       git: located.git,
     } satisfies WorktreeSession;

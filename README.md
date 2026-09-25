@@ -43,8 +43,9 @@ command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root lists every worktree
-the daemon knows, with its branch, the agents live in it, item counts per stage,
-and activity; each board sits under `/w/<worktree name>/`. Activity is when the
+the daemon knows by name, with its branch, the pull request gh reports for it,
+the agents live in it, item counts per stage, and activity; each board sits
+under `/w/<worktree name>/`. Activity is when the
 worktree last did anything and who did it: `Claude Code` for a session's status
 change, `Codex` for a thread, `Items` for an item file, with the exact moment
 behind it. The index has no refresh button and needs none: any command that
@@ -74,8 +75,8 @@ dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.
 
 The board's header starts with "All sessions" and the worktree picker, which
-shows the worktree's name over the branch checked out in it and switches to any
-other worktree's board. The gear at the top right of every page holds the
+shows the worktree's name over the branch checked out in it, each line marked
+with an icon for what it is, and switches to any other worktree's board. The gear at the top right of every page holds the
 board's own settings, kept in this browser. Tips, off by default, makes every
 word and control say what it means when it is hovered or focused.
 

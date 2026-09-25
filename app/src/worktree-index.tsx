@@ -1,10 +1,11 @@
 import * as React from 'react'
 
-import type { Stage, WorktreeSummary } from '../contract'
+import type { PullRequestReport, Stage, WorktreeSummary } from '../contract'
 import { stageNames } from '../contract'
 import { ActivityCell } from './components/activity-cell'
 import { AgentsCell } from './components/agents-cell'
 import { Copyable } from './components/copyable'
+import { PullRequestChip } from './components/pull-request-chip'
 import { SettingsMenu } from './components/settings-menu'
 import { TerminalAction, useTerminalAvailable } from './components/terminal-action'
 import { Explained, useTip } from './components/tip'
@@ -14,10 +15,10 @@ import { Badge } from './components/ui/badge'
 import { Skeleton } from './components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { TooltipProvider } from './components/ui/tooltip'
-import { eventsUrl, IndexApi } from './lib/api'
 import { bandRows } from './lib/bands'
 import { useNow } from './lib/clock'
-import { parentPath } from './lib/format'
+import { checkoutLabel } from './lib/format'
+import { useTrackedWorktrees } from './lib/tracked-worktrees'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
 
@@ -29,60 +30,26 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /** What each column holds, said where its name is. */
 const columnMeaning = {
-  worktree: 'A Git worktree the daemon is tracking, and the directory it sits in; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
+  worktree: 'A Git worktree the daemon is tracking; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
   branch: 'The Git branch checked out in that worktree.',
+  pullRequest: 'The pull request gh reports for that branch, when it has one: its number, where it stands, and its checks. While this page is open, gh is asked about every row again once its answer is a minute old, and at once when a push or a fetch moves a remote-tracking ref.',
   agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
   activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
 }
+
+const detachedMeaning = 'Git has a commit checked out in this worktree rather than a branch, so it has no branch and no pull request.'
+
+const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branch.'
 
 /** A stage column says what the stage is for and what an empty cell means. */
 const stageMeaning = (stage: Stage) =>
   `${stageMeta[stage].hint} An empty cell means there is nothing in it.`
 
 export function WorktreeIndex() {
-  const [rows, setRows] = React.useState<readonly WorktreeSummary[] | null>(null)
-  const [notice, setNotice] = React.useState<string | null>(null)
+  const { rows, notice, pullRequests, pullRequestsNotice } = useTrackedWorktrees()
   const now = useNow()
   const terminal = useTerminalAvailable()
-
-  const load = React.useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await IndexApi.read(signal)
-      if (signal?.aborted) return
-      setRows(next)
-      setNotice(null)
-    } catch (error) {
-      if (!signal?.aborted) setNotice(error instanceof Error ? error.message : 'Could not load the sessions')
-    }
-  }, [])
-
-  React.useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [load])
-
-  // The daemon pushes `worktrees` when the set of tracked worktrees changes and
-  // `agents` when a Claude session registry or Codex writer lock does; neither
-  // carries a payload, so the index reads the rows again. A stream that dropped
-  // and came back refetches too, since changes land while it is down and the
-  // index otherwise never polls.
-  React.useEffect(() => {
-    const source = new EventSource(eventsUrl(['agents', 'worktrees']))
-    const dropped = { value: false }
-    const refetch = () => void load()
-    source.addEventListener('agents', refetch)
-    source.addEventListener('worktrees', refetch)
-    source.addEventListener('error', () => { dropped.value = true })
-    source.addEventListener('open', () => {
-      if (!dropped.value) return
-      dropped.value = false
-      refetch()
-    })
-    return () => source.close()
-  }, [load])
-
-  const sourceNotices = agentNotices(rows)
+  const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
 
   return (
     <TooltipProvider>
@@ -111,6 +78,7 @@ export function WorktreeIndex() {
                 <TableRow>
                   <TableHead><Explained meaning={columnMeaning.worktree}>Worktree</Explained></TableHead>
                   <TableHead><Explained meaning={columnMeaning.branch}>Branch</Explained></TableHead>
+                  <TableHead><Explained meaning={columnMeaning.pullRequest}>Pull request</Explained></TableHead>
                   <TableHead><Explained meaning={columnMeaning.agents}>Agents</Explained></TableHead>
                   {stageNames.map(stage => (
                     <TableHead key={stage} className="text-right">
@@ -127,7 +95,7 @@ export function WorktreeIndex() {
                   <React.Fragment key={entry.band.label}>
                     <TableRow className="hover:bg-transparent">
                       <TableCell
-                        colSpan={9}
+                        colSpan={10}
                         className={cn(
                           'bg-muted/40 py-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground',
                           entry.band.muted && 'opacity-60',
@@ -138,7 +106,14 @@ export function WorktreeIndex() {
                       </TableCell>
                     </TableRow>
                     {entry.rows.map(row => (
-                      <Row key={row.path} row={row} now={now} muted={entry.band.muted} terminal={terminal} />
+                      <Row
+                        key={row.path}
+                        row={row}
+                        pullRequest={pullRequests[row.path]}
+                        now={now}
+                        muted={entry.band.muted}
+                        terminal={terminal}
+                      />
                     ))}
                   </React.Fragment>
                 ))}
@@ -152,11 +127,13 @@ export function WorktreeIndex() {
 }
 
 /**
- * The name, over the directory it sits in; the whole path stays on hover. A
- * terminal there is one click away whenever the daemon can run cmux.
+ * The name alone, which already tells the worktrees apart: a worktree whose
+ * folder shares the main checkout's name carries its parent folder's name
+ * before it, and a name a second worktree claims is listed as a conflict.
+ * Where it sits is its tip. A terminal there is one click away whenever the
+ * daemon can run cmux.
  */
 function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }) {
-  const parent = parentPath(row.path)
   const tip = useTip()
   return (
     <TableCell title={tip(row.path)}>
@@ -172,19 +149,18 @@ function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }
         <TrailerCount problems={row.trailerProblems} />
         {terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
       </span>
-      {parent === '' ? null : (
-        <span className="block">
-          {/* The line is elided; what it copies is the whole path. */}
-          <Copyable value={row.path}>
-            <span className="text-xs text-muted-foreground">{parent}</span>
-          </Copyable>
-        </span>
-      )}
     </TableCell>
   )
 }
 
-function Row({ row, now, muted, terminal }: { row: WorktreeSummary; now: number; muted: boolean; terminal: boolean }) {
+function Row({ row, pullRequest, now, muted, terminal }: {
+  row: WorktreeSummary
+  /** gh's last report for the row's branch; undefined until gh has been asked. */
+  pullRequest: PullRequestReport | undefined
+  now: number
+  muted: boolean
+  terminal: boolean
+}) {
   const tip = useTip()
   // Dimmed, not disabled: a session with nothing in it recedes, and its name is
   // still the link that opens its board.
@@ -195,9 +171,9 @@ function Row({ row, now, muted, terminal }: { row: WorktreeSummary; now: number;
     return (
       <TableRow className={dim}>
         <NameCell row={row} terminal={terminal} />
-        <TableCell colSpan={8} className="whitespace-normal wrap-anywhere">
+        <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
-            <Badge variant="destructive" title={tip('Two tracked worktrees want the same address, so this one has no board.')}>
+            <Badge variant="destructive" title={tip('The daemon cannot serve this worktree’s board, for the reason beside this.')}>
               Not served
             </Badge>
             <span className="text-muted-foreground">{row.conflict}</span>
@@ -212,9 +188,10 @@ function Row({ row, now, muted, terminal }: { row: WorktreeSummary; now: number;
       <NameCell row={row} terminal={terminal} />
       <TableCell className="text-muted-foreground">
         {row.branch === null
-          ? <span title={tip('This folder is not a Git worktree, so it has no branch.')}>No branch</span>
+          ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
           : <Copyable value={row.branch}>{row.branch}</Copyable>}
       </TableCell>
+      <PullRequestCell report={pullRequest} />
       <TableCell><AgentsCell agents={row.agents} now={now} /></TableCell>
       {stageNames.map(stage => (
         <CountCell key={stage} stage={stage} count={row.counts[stage]} executing={row.executing} />
@@ -223,6 +200,23 @@ function Row({ row, now, muted, terminal }: { row: WorktreeSummary; now: number;
         <ActivityCell activity={row.activity} now={now} />
       </TableCell>
     </TableRow>
+  )
+}
+
+/**
+ * The branch's pull request as a board's header draws it, or, in its place,
+ * gh's sentence for why it could not say. A branch with no pull request, and a
+ * row gh has not been asked about yet, show nothing.
+ */
+function PullRequestCell({ report }: { report: PullRequestReport | undefined }) {
+  return (
+    <TableCell>
+      {report?.pr
+        ? <PullRequestChip pr={report.pr} reportedAt={report.reportedAt} />
+        : report?.notice
+          ? <span className="block max-w-44 whitespace-normal text-xs text-muted-foreground">{report.notice}</span>
+          : null}
+    </TableCell>
   )
 }
 

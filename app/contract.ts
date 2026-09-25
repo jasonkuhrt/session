@@ -44,7 +44,10 @@ export type Session = {
   worktree?: {
     name: string;
     path: string;
+    /** The branch checked out; null on a detached HEAD, and outside Git. */
     branch: string | null;
+    /** True when Git has a commit checked out rather than a branch. */
+    detached: boolean;
   };
 };
 
@@ -64,6 +67,7 @@ export const SessionSchema = Schema.Struct({
     name: Schema.String,
     path: Schema.String,
     branch: Schema.NullOr(Schema.String),
+    detached: Schema.Boolean,
   })),
   stages: Schema.Array(Schema.Struct({
     stage: Schema.Literals(stageNames),
@@ -207,10 +211,11 @@ export const ArchiveListingSchema = Schema.Struct({
  * - `changed`: a file under the worktree's `.session` was written
  * - `agents`: the Claude Code registry or a Codex writer lock changed
  * - `trailers`: the unpushed commits' trailer problems changed
- * - `links`: the worktree's links were asked for again
+ * - `links`: gh or linear was asked about the worktree's links again
  * - `worktrees`: the set of tracked worktrees changed
+ * - `pull-requests`: gh was asked about a tracked worktree's pull request again
  */
-export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees';
+export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees' | 'pull-requests';
 
 /** The one daemon per user listens here; `session open` upserts it. */
 export const daemonPort = 53045;
@@ -447,24 +452,50 @@ export type LinearIssue = {
 };
 
 /**
- * Where a worktree's work lives outside its files: the pull request for its
- * branch and the issues it names, read from the tools that know when they are
- * asked, and never persisted.
+ * What gh reported about a worktree's branch, and when it was asked. One
+ * answer serves the index, which shows it on the worktree's row, and a board,
+ * which shows it beside the issues.
  */
-export type Links = {
-  /** Null when the branch has no pull request, and when the worktree is on no branch. */
+export type PullRequestReport = {
+  /** Null when the branch has no pull request, when the worktree is on no branch, and when gh did not answer. */
   pr: PullRequest | null;
+  /** The sentence saying why gh did not answer; null when it did. */
+  notice: string | null;
+  /** ISO 8601 of when gh was asked. */
+  reportedAt: string;
+};
+
+/** What linear reported about the issues a worktree names, and when it was asked. */
+export type IssuesReport = {
   /**
    * The issues the branch and its pull request's title and body name, in the
    * order first named, each one confirmed by `linear issue view`; empty when
-   * they name none and when linear could not say, which a notice then names.
+   * they name none and when linear could not say, which the notice then names.
    */
   issues: readonly LinearIssue[];
-  /** One sentence per source that could not answer; empty when every source did. */
-  notices: readonly string[];
-  /** ISO 8601 of when the sources were last asked. */
+  /** The sentence saying why linear did not answer; null when it did. */
+  notice: string | null;
+  /** ISO 8601 of when linear was asked. */
   reportedAt: string;
 };
+
+/**
+ * Where a worktree's work lives outside its files: the pull request for its
+ * branch and the issues it names, read from the tools that know when they are
+ * asked, and never persisted. Each is dated by its own ask, because gh is
+ * asked for the index as well, and linear only for a board.
+ */
+export type Links = {
+  pullRequest: PullRequestReport;
+  issues: IssuesReport;
+};
+
+/**
+ * The index's pull requests: gh's last report for each tracked worktree, by
+ * the worktree's path. A worktree gh has not been asked about yet is absent,
+ * and so is one the index lists as not served.
+ */
+export type PullRequestReports = { readonly [path: string]: PullRequestReport };
 
 export const PullRequestSchema = Schema.Struct({
   number: Schema.Int,
@@ -487,12 +518,24 @@ export const LinearIssueSchema = Schema.Struct({
   state: Schema.String,
 });
 
-export const LinksSchema = Schema.Struct({
+export const PullRequestReportSchema = Schema.Struct({
   pr: Schema.NullOr(PullRequestSchema),
-  issues: Schema.Array(LinearIssueSchema),
-  notices: Schema.Array(Schema.String),
+  notice: Schema.NullOr(Schema.String),
   reportedAt: Schema.String,
 });
+
+export const IssuesReportSchema = Schema.Struct({
+  issues: Schema.Array(LinearIssueSchema),
+  notice: Schema.NullOr(Schema.String),
+  reportedAt: Schema.String,
+});
+
+export const LinksSchema = Schema.Struct({
+  pullRequest: PullRequestReportSchema,
+  issues: IssuesReportSchema,
+});
+
+export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequestReportSchema);
 
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
@@ -500,7 +543,10 @@ export type WorktreeSummary = {
   key: string;
   name: string;
   path: string;
+  /** The branch checked out; null on a detached HEAD, and outside Git. */
   branch: string | null;
+  /** True when Git has a commit checked out rather than a branch. */
+  detached: boolean;
   /** The batch in Execute, and null when Execute is empty. */
   executing: string | null;
   counts: Record<Stage, number>;
@@ -520,6 +566,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
   branch: Schema.NullOr(Schema.String),
+  detached: Schema.Boolean,
   executing: Schema.NullOr(Schema.String),
   counts: Schema.Struct({
     TRIAGE: Schema.Int,

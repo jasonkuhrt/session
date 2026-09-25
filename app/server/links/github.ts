@@ -33,11 +33,17 @@ const quiet = { GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1' };
 const fields = ['number', 'url', 'title', 'body', 'state', 'isDraft', 'reviewDecision', 'statusCheckRollup'].join(',');
 
 /**
- * The two refusals that are answers: the branch has no pull request, or the
- * worktree is on no branch at all. gh 2.96.0 words them this way, and either
- * one means there is nothing to show rather than something wrong.
+ * The refusals that are answers: the branch has no pull request, the worktree
+ * is on no branch at all, or the repository has no remote on GitHub, so no
+ * pull request can exist. gh 2.96.0 words them this way, and each one means
+ * there is nothing to show rather than something wrong.
  */
-const nothingToShow = ['no pull requests found for branch', 'could not determine current branch'];
+const nothingToShow = [
+  'no pull requests found for branch',
+  'could not determine current branch',
+  'no git remotes found',
+  'none of the git remotes configured for this repository point to a known GitHub host',
+];
 
 /**
  * One entry of the rollup. A check run has a `status`, and a `conclusion` once

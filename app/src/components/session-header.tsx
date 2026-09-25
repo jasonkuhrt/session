@@ -66,16 +66,17 @@ export function SessionHeader({ worktree, links, linksError, terminal }: {
  * no pull request, no issue and no notice.
  */
 function LinksGroup({ links, linksError }: { links: Links | null; linksError: string | null }) {
-  const notices = [...(links?.notices ?? []), ...(linksError === null ? [] : [linksError])]
-  const pr = links?.pr ?? null
-  const issues = links?.issues ?? []
+  const notices = [links?.pullRequest.notice ?? null, links?.issues.notice ?? null, linksError]
+    .filter((notice) => notice !== null)
+  const pr = links?.pullRequest.pr ?? null
+  const issues = links?.issues.issues ?? []
   if (pr === null && issues.length === 0 && notices.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.reportedAt} />}
+      {links === null || pr === null ? null : <PullRequestChip pr={pr} reportedAt={links.pullRequest.reportedAt} />}
       {links === null
         ? null
-        : issues.map((issue) => <LinearIssueChip key={issue.id} issue={issue} reportedAt={links.reportedAt} />)}
+        : issues.map((issue) => <LinearIssueChip key={issue.id} issue={issue} reportedAt={links.issues.reportedAt} />)}
       {notices.length === 0 ? null : <span className="text-xs text-muted-foreground">{notices.join(' · ')}</span>}
     </div>
   )

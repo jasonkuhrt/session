@@ -62,13 +62,8 @@ export function absoluteTime(iso: string): string {
 }
 
 /**
- * The directory a worktree sits in, elided from the front to its last two
- * segments. Enough to tell two worktrees of the same name apart without
- * spending a line on an absolute path; the full path stays on hover.
+ * What a worktree has checked out, in Git's words: the branch, a detached
+ * HEAD when Git has a commit checked out instead, and no branch outside Git.
  */
-export function parentPath(path: string): string {
-  const segments = path.split('/').slice(0, -1).filter((segment) => segment !== '')
-  if (segments.length === 0) return ''
-  const tail = segments.slice(-2)
-  return `${segments.length > tail.length ? '…/' : '/'}${tail.join('/')}`
-}
+export const checkoutLabel = ({ branch, detached }: { readonly branch: string | null; readonly detached: boolean }) =>
+  branch ?? (detached ? 'Detached HEAD' : 'No branch')

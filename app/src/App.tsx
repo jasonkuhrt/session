@@ -1,6 +1,6 @@
 import * as React from 'react'
 
-import type { AgentsSummary, FocusResult, Item, Links, Session, TrailerProblem } from '../contract'
+import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '../contract'
 import { isBatchedStage, stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
@@ -13,7 +13,11 @@ import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
 import { useNow } from './lib/clock'
+import { useNewestRead } from './lib/newest-read'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
+
+const linksProblem = (error: unknown) =>
+  error instanceof Error ? error.message : 'The pull request and issues could not be read'
 
 function App() {
   const [session, setSession] = React.useState<Session | null>(null)
@@ -23,8 +27,6 @@ function App() {
   const [agents, setAgents] = React.useState<AgentsSummary | null>(null)
   const [agentsError, setAgentsError] = React.useState<string | null>(null)
   const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
-  const [links, setLinks] = React.useState<Links | null>(null)
-  const [linksError, setLinksError] = React.useState<string | null>(null)
   const [naming, setNaming] = React.useState<NameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [selection, setSelection] = React.useState<Set<string>>(new Set())
@@ -83,20 +85,13 @@ function App() {
     }
   }, [])
 
-  // The links are the daemon's last answer from gh and linear, read on their
+  // The links are the daemon's last answers from gh and linear, read on their
   // own for the same reason as the agents: a source that cannot be reached
   // must not take the board down, and a failed read keeps the chips it last had.
-  const loadLinks = React.useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await SessionApi.links(signal)
-      if (signal?.aborted) return
-      setLinks(next)
-      setLinksError(null)
-    } catch (error) {
-      if (signal?.aborted) return
-      setLinksError(error instanceof Error ? error.message : 'The pull request and issues could not be read')
-    }
-  }, [])
+  // gh and linear answer apart, so two reads can resolve out of order; only the
+  // newest lands.
+  const links = useNewestRead({ read: SessionApi.links, describe: linksProblem })
+  const loadLinks = links.load
 
   const focusAgent = React.useCallback(async (pid: number): Promise<FocusResult> => {
     try {
@@ -179,7 +174,7 @@ function App() {
     <div className="min-h-dvh bg-background text-foreground">
       {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
-      <SessionHeader worktree={session?.worktree} links={links} linksError={linksError} terminal={terminal} />
+      <SessionHeader worktree={session?.worktree} links={links.answer} linksError={links.problem} terminal={terminal} />
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
       <TrailerProblems problems={trailers} />
       {problem === null ? null : (

@@ -179,8 +179,9 @@ database.
 
 A board's header shows the branch's pull request and the Linear issues that
 the branch and the pull request name, as chips carrying only what gh and linear
-answered. Beside them sit an icon for each of the session's three pages and a
-terminal action that brings forward the worktree's cmux workspace or opens one.
+answered, and the index carries each worktree's pull request chip on its row.
+Beside the header's chips sit an icon for each of the session's three pages and
+a terminal action that brings forward the worktree's cmux workspace or opens one.
 The chips and the terminal action open their target once, bringing back the tab
 or the workspace already open rather than opening another.
 

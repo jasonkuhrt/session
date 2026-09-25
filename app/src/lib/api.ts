@@ -12,6 +12,7 @@ import {
   FocusResultSchema,
   LedgerListingSchema,
   LinksSchema,
+  PullRequestReportsSchema,
   SessionSchema,
   TerminalResultSchema,
   TrailerProblemSchema,
@@ -35,6 +36,7 @@ const decodeWorktrees = Schema.decodeUnknownEffect(Schema.Array(WorktreeSummaryS
 const decodeAgents = Schema.decodeUnknownEffect(AgentsSummarySchema)
 const decodeTrailers = Schema.decodeUnknownEffect(Schema.Array(TrailerProblemSchema))
 const decodeLinks = Schema.decodeUnknownEffect(LinksSchema)
+const decodePullRequests = Schema.decodeUnknownEffect(PullRequestReportsSchema)
 const decodeCapabilities = Schema.decodeUnknownEffect(DaemonCapabilitiesSchema)
 const decodeFocus = Schema.decodeUnknownEffect(FocusResultSchema)
 const decodeTerminal = Schema.decodeUnknownEffect(TerminalResultSchema)
@@ -182,6 +184,10 @@ export const problemOf = (place: Place | null) => (place?.kind === 'unread' ? pl
  */
 export const IndexApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get('/api/worktrees'), decodeWorktrees), signal),
+
+  /** gh's last report for each row's branch, by the worktree's path, as the daemon holds it. */
+  pullRequests: (signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get('/api/pull-requests'), decodePullRequests), signal),
 
   /** The same ask a board makes, for a session in any worktree the index lists. */
   focus: (pid: number) =>
