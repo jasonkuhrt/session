@@ -1,5 +1,5 @@
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage, stageNames } from '../contract.ts';
+import { isBatchedStage, stageDirectory } from '../contract.ts';
 import {
   fail,
   groupNoun,
@@ -12,11 +12,12 @@ import {
 } from './model.ts';
 
 /**
- * Directory-layout rules. The session root holds a closed set of entries. A
- * stage directory holds numbered entries: item files and group directories of
- * item files side by side in TRIAGE, DESIGN and BATCH, and group directories
- * only in QUEUE and EXECUTE, where each group is a batch. The numeric prefix is
- * the order, so the files alone answer "what comes next".
+ * Directory-layout rules for the stages; `root.ts` has the session root's. A
+ * stage directory, `1-Triage` to `5-Execute`, holds numbered entries: item
+ * files and group directories of item files side by side in Triage, Design and
+ * Batch, and group directories only in Queue and Execute, where each group is a
+ * batch. The numeric prefix is the order, so the files alone answer "what comes
+ * next".
  */
 
 /** Gap between generated prefixes, leaving room to insert without renumbering. */
@@ -43,62 +44,6 @@ export type StageTreeEntry = {
 };
 
 const formatPrefix = (value: number): string => String(value).padStart(3, '0');
-
-/** Archived items live here, outside the agent's context like `ignore/`. */
-export const archiveDirectory = 'archive';
-
-/** Whatever `ignore/` holds, at any depth, no reader of the session looks at. */
-export const ignoreDirectory = 'ignore';
-
-/** Supporting material for agents: any file, any layout, no lifecycle. */
-export const contextDirectory = 'context';
-
-/** The session's shared log, one immutable entry per file. */
-export const ledgerDirectory = 'ledger';
-
-/** The user's standing rules for the session. */
-export const rulesFile = 'RULES.md';
-
-/**
- * The session root is closed: it holds the stages, these directories and
- * `RULES.md`, each as its own kind, and entries whose name starts with a dot,
- * which this rule leaves alone, as the stage directories and the ledger do.
- * They are not hidden everywhere: refresh lists them and the files route
- * serves them.
- */
-const rootEntries: ReadonlyMap<string, 'directory' | 'file'> = new Map([
-  ...stageNames.map((stage) => [stage, 'directory'] as const),
-  [archiveDirectory, 'directory'],
-  [ignoreDirectory, 'directory'],
-  [contextDirectory, 'directory'],
-  [ledgerDirectory, 'directory'],
-  [rulesFile, 'file'],
-]);
-
-const shownEntry = (entry: { readonly name: string; readonly type: string }): string =>
-  entry.type === 'directory' ? `${entry.name}/` : entry.name;
-
-/**
- * Why an entry of the session root does not belong there, with the fix, or
- * null when it does. `other` is anything that is neither a file nor a
- * directory, such as a link that leads nowhere.
- */
-export const rootEntryProblem = (
-  entry: { readonly name: string; readonly type: 'directory' | 'file' | 'other' },
-): string | null => {
-  if (entry.name.startsWith('.')) return null;
-  const expected = rootEntries.get(entry.name);
-  if (expected === undefined) {
-    const meant = [...rootEntries].find(([name]) => name.toLowerCase() === entry.name.toLowerCase());
-    return meant === undefined
-      ? `${shownEntry(entry)} does not belong in the session root; move it under ${contextDirectory}/ or delete it.`
-      : `${shownEntry(entry)} does not belong in the session root; rename it to ${shownEntry({ name: meant[0], type: meant[1] })}.`;
-  }
-  if (entry.type === expected) return null;
-  return expected === 'directory'
-    ? `${entry.name} must be a directory; rename it, then move it under ${contextDirectory}/ or delete it.`
-    : `${entry.name} must be a file; move this ${entry.type === 'directory' ? 'directory' : 'entry'} under ${contextDirectory}/ or delete it.`;
-};
 
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {
   const match: RegExpExecArray = entryName.exec(name) ??
@@ -143,23 +88,24 @@ export const parseStageDirectory = (
   const files: StageFileEntry[] = [];
   const groups = new Set<string>();
   const noun = groupNoun(stage);
+  const parent = stageDirectory(stage);
   // A directory holding nothing a reader sees, nothing or only dot entries, is no group: the next write
   // removes it and no reader counts it meanwhile, so one an interrupted write leaves behind breaks nothing.
   const held = entries.filter((entry) => entry.type === 'file' || entry.children.some((child) => !child.name.startsWith('.')));
 
-  for (const { entry, remainder } of orderEntries(stage, held)) {
+  for (const { entry, remainder } of orderEntries(parent, held)) {
     if (entry.type === 'file') {
-      if (isBatchedStage(stage)) fail(`${stage}/${entry.name}: ${stage} items live inside a batch directory.`);
-      const id = itemIdOf(stage, entry.name, remainder);
-      const path = `${stage}/${entry.name}`;
+      if (isBatchedStage(stage)) fail(`${parent}/${entry.name}: ${stage} items live inside a batch directory.`);
+      const id = itemIdOf(parent, entry.name, remainder);
+      const path = `${parent}/${entry.name}`;
       items.push(parseItemFile({ stage, path, id, group: null, content: entry.content }));
       files.push({ path, content: entry.content });
       continue;
     }
 
-    const directory = `${stage}/${entry.name}`;
+    const directory = `${parent}/${entry.name}`;
     const group = validateGroupName(stage, remainder, directory);
-    if (groups.has(group)) fail(`${stage}: two directories name the ${noun} ${quote(group)}; merge them into one or rename one.`);
+    if (groups.has(group)) fail(`${parent}: two directories name the ${noun} ${quote(group)}; merge them into one or rename one.`);
     groups.add(group);
     for (const inner of orderEntries(directory, entry.children)) {
       const child = inner.entry;
@@ -173,7 +119,7 @@ export const parseStageDirectory = (
 
   const seen = new Set<string>();
   for (const item of items) {
-    if (seen.has(item.id)) fail(`${stage}: duplicate item ID ${item.id}.`);
+    if (seen.has(item.id)) fail(`${parent}: duplicate item ID ${item.id}.`);
     seen.add(item.id);
   }
   return { items, files };
@@ -290,10 +236,11 @@ export const renderStageDirectory = (input: {
   const prefixes = numberEntries(
     entries.map((entry) => (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null),
   );
+  const parent = stageDirectory(stage);
   return entries.flatMap((entry, index) => {
     const prefix = prefixes[index]!;
-    if (entry.kind === 'item') return [itemFile(stage, prefix, entry.item)];
-    const directory = `${stage}/${formatPrefix(prefix)}-${entry.name}`;
+    if (entry.kind === 'item') return [itemFile(parent, prefix, entry.item)];
+    const directory = `${parent}/${formatPrefix(prefix)}-${entry.name}`;
     const inner = numberEntries(entry.items.map((item) => known.items.get(`${entry.name}/${item.id}`) ?? null));
     return entry.items.map((item, position) => itemFile(directory, inner[position]!, item));
   });

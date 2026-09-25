@@ -167,6 +167,7 @@
             "include": [
               "app/server/layout.ts",
               "app/server/model.ts",
+              "app/server/root.ts",
               "app/src/lib/format.ts",
               "app/src/lib/workflow.ts",
               "app/stage-rules.ts"

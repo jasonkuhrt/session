@@ -247,7 +247,7 @@ function Detail({
 
       <div className="mt-8 space-y-4">
         <StageControl item={item} stage={stage} pending={pending} onMove={onMove} />
-        {stage === 'EXECUTE' && onComplete ? (
+        {stage === 'Execute' && onComplete ? (
           <Button
             className="w-fit"
             onClick={onComplete}

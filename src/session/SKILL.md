@@ -11,13 +11,16 @@ batch composition, and when execution begins.
 
 | Stage | Contains | Leaves when |
 | --- | --- | --- |
-| `TRIAGE` | Candidates not yet accepted. | The user accepts, rejects, or redirects. |
-| `DESIGN` | Accepted work with open questions. | Outcome and acceptance are settled. |
-| `BATCH` | Settled work, a pool ready to batch, grouped or not. | The user composes it into a queued batch. |
-| `QUEUE` | Named batches in order, composed, not started. | The user starts the first batch. |
-| `EXECUTE` | The one running batch. Frozen. | Each item completes, or the user changes the batch. |
+| `Triage` | Candidates not yet accepted. | The user accepts, rejects, or redirects. |
+| `Design` | Accepted work with open questions. | Outcome and acceptance are settled. |
+| `Batch` | Settled work, a pool ready to batch, grouped or not. | The user composes it into a queued batch. |
+| `Queue` | Named batches in order, composed, not started. | The user starts the first batch. |
+| `Execute` | The one running batch. Frozen. | Each item completes, or the user changes the batch. |
 
 Those are the stage names, in that order, in the files, the CLI, and the UI.
+Each stage's directory is named for its place in the flow and its name,
+`1-Triage` to `5-Execute`, and the CLI takes a name in any case, `design` or
+`Design`.
 Finished designs leave Design immediately. Readiness does not authorize
 execution: ready items wait in Batch, composed batches wait in Queue, and
 starting the first one is the user's explicit act. Work that arrives while a
@@ -37,8 +40,10 @@ alone, and every record is ordinary Markdown.
 `.session` is a real directory at the worktree root, never a symlink. It holds a
 `.gitignore` of exactly `*`, which ignores the directory and that file.
 
-Every stage is a directory of numbered item files. One item is one file, and an
-empty stage is an empty directory. Triage, Design, and Batch hold item files and
+Every stage is a directory of numbered item files, and the directories are
+numbered too: `1-Triage/`, `2-Design/`, `3-Batch/`, `4-Queue/` and `5-Execute/`,
+so a file tree lists them in flow order. One item is one file, and an empty
+stage is an empty directory. Triage, Design, and Batch hold item files and
 group directories side by side; a group directory is numbered like an item file,
 named for its group, and holds that group's item files. Queue and Execute hold
 one directory per batch with that batch's item files inside, so every item there
@@ -46,21 +51,25 @@ belongs to a batch.
 [references/records.md](references/records.md) has the format.
 
 The root is closed. Beside the five stages and the `.gitignore`, it holds only
-`RULES.md`, `context/`, `ledger/`, `archive/`, and `ignore/`. `check` reports
-anything else there by name, with its fix, and names starting with `.` are
-outside the rule. `context/` is for agents: any file, in any layout, with no
+`RULES.md`, `context/`, `ledger/`, `meta/`, `archive/`, and `ignore/`. `check`
+reports anything else there by name, with its fix, and names starting with `.`
+are outside the rule. `context/` is for agents: any file, in any layout, with no
 lifecycle, and `check` does not look inside it. `ledger/` is the session's
-shared log, described below. `archive/` and `ignore/` hold inactive history,
-outside agent context.
+shared log, described below. `meta/` holds facts about this worktree's session,
+one file each; no fact is defined yet, so `check` reports anything in it.
+`archive/` and `ignore/` hold inactive history, outside agent context.
 
 Nothing has to be set up. A command that touches the records creates `.session`,
-the five stage directories, and the `.gitignore` when they are missing; `check`
-only reads what is on disk. `session init` does that scaffolding and nothing
-else, printing what it created, for handing the directory to an editor.
+the five stage directories, `meta/`, and the `.gitignore` when they are missing;
+`check` only reads what is on disk. `session init` does that scaffolding and
+nothing else, printing what it created, for handing the directory to an editor.
 
 The CLI never migrates an old session. A `.session` that is a symlink is refused
-by every command, and a leftover `STAGE.md` is reported by `check`, both naming
-the fix. Convert an old session by hand.
+by every command, and so is a stage kept under its name from before the stages
+were numbered, such as `TRIAGE/`, which is renamed to `1-Triage/` rather than
+scaffolded beside; a leftover `TRIAGE.md` is reported by `check`. Each names the
+fix. Convert an old session by hand, or its stage directories with the session
+repository's one-off `scripts/rename-stage-directories.ts`.
 
 ## Rules
 

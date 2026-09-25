@@ -82,8 +82,8 @@ export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardPro
   const accepts = (id: unknown, target: DropTarget) => {
     const source = findItem(id)
     if (source === null) return false
-    if (target.stage === 'EXECUTE') return false
-    if (target.stage === 'QUEUE') return source.stage === 'QUEUE' && target.group !== null && source.item.group === target.group
+    if (target.stage === 'Execute') return false
+    if (target.stage === 'Queue') return source.stage === 'Queue' && target.group !== null && source.item.group === target.group
     if (source.stage === target.stage) return true
     return moveAvailability(source.item, source.stage, target.stage).enabled
   }
@@ -130,7 +130,7 @@ export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardPro
   }
 
 
-  const executeOccupied = stages.some(stage => stage.stage === 'EXECUTE' && stage.items.length > 0)
+  const executeOccupied = stages.some(stage => stage.stage === 'Execute' && stage.items.length > 0)
 
   return (
     <TooltipProvider>

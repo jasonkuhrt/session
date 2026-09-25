@@ -31,7 +31,7 @@ export function WorkflowCard({ item, index, stage, pending, selectedIds, accepts
   stage: Stage
 }) {
   // Execute is frozen: its cards leave only by completing, never by dragging.
-  const frozen = stage === 'EXECUTE'
+  const frozen = stage === 'Execute'
   const { ref, isDragSource } = useSortable({
     id: item.id,
     index,
@@ -70,7 +70,7 @@ export function WorkflowCard({ item, index, stage, pending, selectedIds, accepts
                   checked={selectedIds.has(item.id)}
                   onCheckedChange={selected => onSelect(item.id, selected)}
                   aria-label={`Select ${item.title}`}
-                  title={tip(stage === 'BATCH' ? 'Select this item to group it or queue it in a batch.' : 'Select this item to group it.')}
+                  title={tip(stage === 'Batch' ? 'Select this item to group it or queue it in a batch.' : 'Select this item to group it.')}
                 />
               )
               : null}

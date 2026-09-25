@@ -1,6 +1,6 @@
 import * as Data from 'effect/Data';
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage } from '../contract.ts';
+import { isBatchedStage, stageDirectory } from '../contract.ts';
 import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
@@ -35,7 +35,7 @@ const summarize = (body: string, title: string): string => {
   return line.replace(/^[-*>\d.\s]+/u, '').slice(0, 180);
 };
 
-/** What a stage calls its groups: in QUEUE and EXECUTE a group is a batch. */
+/** What a stage calls its groups: in Queue and Execute a group is a batch. */
 export const groupNoun = (stage: Stage): 'batch' | 'group' => (isBatchedStage(stage) ? 'batch' : 'group');
 
 /**
@@ -59,10 +59,10 @@ export const validateItem = (stage: Stage, item: ItemDraft): void => {
   if (!itemIdExactly.test(item.id)) {
     fail(`${stage}: invalid item ID ${quote(item.id)}.`);
   }
-  if (item.title.trim() === '') fail(`${stage}/${item.id}: title is empty.`);
-  if (item.body.trim() === '') fail(`${stage}/${item.id}: body is empty.`);
+  if (item.title.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: title is empty.`);
+  if (item.body.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: body is empty.`);
   if (item.group !== null) validateGroupName(stage, item.group);
-  else if (isBatchedStage(stage)) fail(`${stage}/${item.id}: every ${stage} item belongs to a batch.`);
+  else if (isBatchedStage(stage)) fail(`${stageDirectory(stage)}/${item.id}: every ${stage} item belongs to a batch.`);
 };
 
 /**
@@ -74,7 +74,7 @@ export const validateItem = (stage: Stage, item: ItemDraft): void => {
 export const validateItemSections = (stage: Stage, item: ItemDraft): void => {
   for (const section of requiredSections[stage]) {
     if (!sectionHasContent(item.body, section)) {
-      fail(`${stage}/${item.id}: ### ${section} requires content.`);
+      fail(`${stageDirectory(stage)}/${item.id}: ### ${section} requires content.`);
     }
   }
 };
