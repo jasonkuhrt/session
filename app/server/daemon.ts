@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve, sep } from 'node:path';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
@@ -191,6 +191,48 @@ const stopProcess = (pid: number) =>
     catch: (cause) => new DaemonError({ message: `Process ${pid} was already gone.`, cause }),
   }).pipe(Effect.ignore);
 
+/**
+ * The variables of an agent's session or a terminal's that the daemon drops:
+ * the ones that change what a command it runs does, or that hold a session's
+ * credentials. The user's own settings among them stay.
+ * - Claude Code's session, down to the socket and token that message it, and
+ *   `AI_AGENT`, its word to other tools that an agent is running them; it keeps
+ *   `CLAUDE_CONFIG_DIR`, where Claude Code keeps its sessions.
+ * - Codex's session; it keeps `CODEX_HOME`, where Codex keeps its threads.
+ * - The Anthropic API's credentials, which nothing the daemon runs uses.
+ * - cmux's terminal: the workspace and surface its CLI takes as the target of
+ *   every command, and the socket path the CLI finds without being told; it
+ *   keeps `CMUX_SOCKET_PASSWORD`, which the CLI signs in with.
+ * - `NODE_OPTIONS`, which a cmux terminal points at a file in a temporary
+ *   directory, one a daemon running for days can outlive.
+ */
+const agentVariable = /^(?:CLAUDE|AI_AGENT$|CODEX|ANTHROPIC|CMUX_|NODE_OPTIONS$)/u;
+const userSetting = new Set(['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CMUX_SOCKET_PASSWORD']);
+
+/**
+ * The environment the daemon starts with: this command's, less the variables
+ * above, since the daemon outlives the agent and the terminal it was started
+ * from and passes its environment to every gh, linear, claude and cmux it
+ * runs. PATH loses the directories inside a project's `node_modules`, which a
+ * package script puts first, so a repository's own copy of a tool never stands
+ * in for the user's.
+ */
+const daemonEnvironment = (environment: Readonly<Record<string, string | undefined>>) => {
+  const kept: Record<string, string> = {};
+  for (const [name, value] of Object.entries(environment)) {
+    if (value === undefined) continue;
+    if (agentVariable.test(name) && !userSetting.has(name)) continue;
+    kept[name] = value;
+  }
+  if (kept['PATH'] !== undefined) {
+    kept['PATH'] = kept['PATH']
+      .split(delimiter)
+      .filter((entry) => !entry.split(sep).includes('node_modules'))
+      .join(delimiter);
+  }
+  return kept;
+};
+
 const spawnDaemon = (settings: DaemonSettings) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
@@ -207,6 +249,7 @@ const spawnDaemon = (settings: DaemonSettings) =>
           // The same runtime that is running this CLI, whatever PATH says.
           const child = spawn([process.execPath, daemonEntry], {
             cwd: repositoryRoot,
+            env: daemonEnvironment(process.env),
             stdin: 'ignore',
             stdout: log,
             stderr: log,
@@ -234,11 +277,12 @@ const waitForSilence = (settings: DaemonSettings) =>
     });
   });
 
+/** The daemon that came up from these sources, once it answers. */
 const waitForDaemon = (settings: DaemonSettings, stamp: string) =>
   Effect.gen(function*() {
     for (let attempt = 0; attempt < 50; attempt += 1) {
       const probe = yield* probeDaemon(settings.port);
-      if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return;
+      if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return probe.info;
       yield* Effect.sleep('100 millis');
     }
     return yield* new DaemonError({
@@ -246,10 +290,6 @@ const waitForDaemon = (settings: DaemonSettings, stamp: string) =>
     });
   });
 
-/**
- * Reuse a healthy daemon built from these sources; replace a stale one; refuse
- * a port somebody else holds.
- */
 /**
  * What holds the daemon's port right now, beside the settings that name it.
  * `open` decides from this whether to spawn one; every other command uses it to
@@ -261,25 +301,60 @@ export const daemonOnPort = Effect.gen(function*() {
   return { settings, probe: yield* probeDaemon(settings.port) };
 });
 
+/**
+ * Stop the daemon on the port and start one from these sources, answering the
+ * one that came up. A daemon is known by what it answers on the port and by
+ * nothing else: one that does not answer is gone or still starting, and the pid
+ * the state file names may by now be another process's. A port somebody else
+ * holds is refused.
+ */
+const replaceDaemon = (input: {
+  readonly settings: DaemonSettings;
+  readonly probe: Probe;
+  readonly stamp: string;
+}) =>
+  Effect.gen(function*() {
+    if (input.probe.kind === 'foreign') {
+      return yield* new DaemonError({
+        message: `Port ${input.settings.port} is held by another process. Free it and try again.`,
+      });
+    }
+    if (input.probe.kind === 'ours') yield* stopProcess(input.probe.info.pid);
+    yield* waitForSilence(input.settings);
+    yield* spawnDaemon(input.settings);
+    return yield* waitForDaemon(input.settings, input.stamp);
+  });
+
+/**
+ * Reuse a healthy daemon built from these sources; replace a stale one; start
+ * one when none answers; refuse a port somebody else holds.
+ */
 export const ensureDaemon = Effect.gen(function*() {
   const { settings, probe } = yield* daemonOnPort;
   const stamp = yield* sourceStamp;
   if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return settings;
-  if (probe.kind === 'foreign') {
-    return yield* new DaemonError({
-      message: `Port ${settings.port} is held by another process. Free it and try again.`,
-    });
-  }
-  if (probe.kind === 'ours') yield* stopProcess(probe.info.pid);
-  else {
-    // Nothing is listening, but a crashed daemon may still be named here.
-    const state = yield* readState(settings);
-    if (state !== null) yield* stopProcess(state.pid);
-  }
-  yield* waitForSilence(settings);
-  yield* spawnDaemon(settings);
-  yield* waitForDaemon(settings, stamp);
+  yield* replaceDaemon({ settings, probe, stamp });
   return settings;
+});
+
+/**
+ * What `session daemon status` reads: what holds the port, and the sources a
+ * daemon started from this checkout would carry the stamp of.
+ */
+export const daemonStatus = Effect.gen(function*() {
+  const { settings, probe } = yield* daemonOnPort;
+  return { settings, probe, sources: { root: repositoryRoot, stamp: yield* sourceStamp } };
+});
+
+/**
+ * `session daemon restart`: a daemon started afresh from this checkout's
+ * sources, whether or not one was running and however current it was.
+ * `stopped` is the one it replaced, null when none answered.
+ */
+export const restartDaemon = Effect.gen(function*() {
+  const { settings, probe } = yield* daemonOnPort;
+  const started = yield* replaceDaemon({ settings, probe, stamp: yield* sourceStamp });
+  return { settings, root: repositoryRoot, stopped: probe.kind === 'ours' ? probe.info : null, started };
 });
 
 /** Track this worktree with the daemon and let it rediscover its siblings. */
