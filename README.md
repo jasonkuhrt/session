@@ -53,6 +53,12 @@ scaffolds a session registers it with a running daemon, and a worktree whose
 `.session` goes away drops off the index by itself. The daemon also finds the
 other worktrees of the same repository that already have a `.session`.
 
+`session daemon status` says whether the daemon is running and whether it was
+started from the sources on disk, and `session daemon restart` starts it afresh
+from them. Neither opens a board, so a restart is how a changed daemon replaces
+the running one. The daemon leaves out of its environment what an agent's
+session or a terminal set for the processes under them, since it outlives both.
+
 If [portless](https://github.com/vercel-labs/portless) is on the machine, `open`
 registers the daemon as its `session` alias, and while a portless proxy is
 running the board is reached by name at `https://session.localhost/` rather than
@@ -195,7 +201,8 @@ server and the CLI share one file engine, which owns the directory layout,
 numbering, and validation.
 
 `bun run dev` is `session open`, so it drives the same daemon as the installed
-command. `SESSION_STATE_DIR` and `SESSION_PORT` override where the daemon keeps
+command, and `session daemon restart` from a checkout replaces that daemon with
+one started from the checkout's sources. `SESSION_STATE_DIR` and `SESSION_PORT` override where the daemon keeps
 its state and which port it listens on. They exist for verification and
 development, so a scratch run leaves the real daemon alone. `bun app/server/daemon.ts`
 runs the daemon in the foreground with its log on the terminal, which is the
