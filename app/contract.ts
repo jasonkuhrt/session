@@ -603,6 +603,35 @@ export const LinksSchema = Schema.Struct({
 
 export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequestReportSchema);
 
+/**
+ * The repository a worktree belongs to, as Git names it for every worktree of
+ * it: by its main worktree, the one Git lists first, which holds the
+ * repository. Every row of one repository carries the same one, read in the
+ * same listing as the row's own branch, so the index heads each repository's
+ * section with its main worktree whether or not that has a session.
+ */
+export type Repository = {
+  /** The main worktree's name, its folder's, which names the repository. */
+  name: string;
+  /** The main worktree's path, which tells the repository from every other. */
+  path: string;
+  /**
+   * What the main worktree has checked out, as that listing says; null when
+   * Git could not list the repository, which each of its rows says in place
+   * of its own branch.
+   */
+  checkout: { branch: string | null; detached: boolean } | null;
+};
+
+export const RepositorySchema = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  checkout: Schema.NullOr(Schema.Struct({
+    branch: Schema.NullOr(Schema.String),
+    detached: Schema.Boolean,
+  })),
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -640,8 +669,10 @@ export type WorktreeSummary = {
    * The row is served all the same, in no epic.
    */
   epicProblem: string | null;
-  /** Whether this is its repository's main worktree, which Git lists first and the index pins above the epics. */
+  /** Whether this is its repository's main worktree, which Git lists first and the index draws at the head of the repository's section. */
   main: boolean;
+  /** The repository the worktree belongs to, named by its main worktree; null for a folder outside Git, which the index gives a section of its own. */
+  repository: Repository | null;
 };
 
 /**
@@ -688,6 +719,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   epic: Schema.NullOr(Schema.String),
   epicProblem: Schema.NullOr(Schema.String),
   main: Schema.Boolean,
+  repository: Schema.NullOr(RepositorySchema),
 });
 
 /** The result of asking the daemon to focus a session's terminal. */

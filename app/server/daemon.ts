@@ -57,14 +57,14 @@ import { makeRepository, RepositoryError, type SessionRepository } from './repos
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
-  type Checkout,
   checkoutIn,
   encodeWorktreeKey,
   ensureSession,
   listRepositories,
+  type RepositoryListing,
+  repositoryIn,
   resolveWorktreeSession,
   setWorktreeEpic,
-  type WorktreeError,
   type WorktreeSession,
 } from './worktree.ts';
 import { openInZed, zedOnPath } from './zed.ts';
@@ -1302,16 +1302,18 @@ export const runDaemon = async () => {
   };
 
   /**
-   * One row of the index. What the worktree has checked out comes from its
-   * repository's listing, which the route asked once for all of that
-   * repository's rows. Its epic is read on its own, from its file, so a row
-   * whose items or Git cannot be read stays in its epic, and a file the rules
-   * reject puts the row in no epic with the sentence `check` gives, and serves
-   * it all the same: the file is about the index, not about the work. Whether
-   * it is main was settled by Git when it was taken on, since a path that is
-   * its repository's main worktree stays one for as long as it exists.
+   * One row of the index. What the worktree has checked out, and the
+   * repository it belongs to with what that repository's main worktree has
+   * checked out, come from its repository's listing, which the route asked
+   * once for all of that repository's rows. Its epic is read on its own, from
+   * its file, so a row whose items or Git cannot be read stays in its epic,
+   * and a file the rules reject puts the row in no epic with the sentence
+   * `check` gives, and serves it all the same: the file is about the index,
+   * not about the work. Whether it is main was settled by Git when it was
+   * taken on, since a path that is its repository's main worktree stays one
+   * for as long as it exists.
    */
-  const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
+  const summarize = async (entry: Tracked, listings: ReadonlyMap<string, RepositoryListing>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
@@ -1328,9 +1330,10 @@ export const runDaemon = async () => {
       epic: Result.isSuccess(epic) ? epic.success : null,
       epicProblem: Result.isFailure(epic) ? epic.failure.message : null,
       main: entry.session.worktree.main,
+      repository: repositoryIn({ listings, session: entry.session }),
     };
     try {
-      if (Result.isFailure(checkout)) throw checkout.failure;
+      const checkout = Result.getOrThrow(checkoutIn({ listings, session: entry.session }));
       const loaded = await runNode(
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
@@ -1341,7 +1344,7 @@ export const runDaemon = async () => {
       const batch = execute?.items[0]?.group ?? null;
       return {
         ...base,
-        ...checkout.success,
+        ...checkout,
         executing: batch === null || batch === '' ? null : batch,
         counts,
         lastChange: loaded.lastChange,
@@ -1367,7 +1370,7 @@ export const runDaemon = async () => {
     const listings = await runNode(
       listRepositories({ sessions: rows.map((entry) => entry.session), concurrency: worktreeConcurrency }),
     );
-    return await mapWorktrees(rows, (entry) => summarize(entry, checkoutIn({ listings, session: entry.session })));
+    return await mapWorktrees(rows, (entry) => summarize(entry, listings));
   };
 
   const handlerFor = async (entry: Tracked) => {
