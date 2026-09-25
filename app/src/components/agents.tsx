@@ -1,33 +1,35 @@
 import * as React from 'react'
 
-import type { AgentsSummary, ClaudeSession, CodexThread, FocusResult } from '../../contract'
+import type { AgentsSummary, ClaudeSession, CodexThread, ContextFill, FocusResult } from '../../contract'
+import { isDerivedName, nameMeaning, sessionName, threadNameMeaning } from '../lib/agent-names'
 import {
   actionsFor,
   actionsForThread,
+  heldMeaning,
+  heldWord,
   isLive,
   isParkedThread,
   loadedMeaning,
   meaningOf,
   needsYou,
-  sessionName,
   sortSessions,
   sortThreads,
   tierMeaning,
-  wordOf,
   wordOfThread,
 } from '../lib/agents'
-import { absoluteTime, relativeTime, since } from '../lib/format'
+import { absoluteTime, relativeTime, tokenCount } from '../lib/format'
 import { cn } from '../lib/utils'
 import { Actions } from './agent-actions'
-import { Dot } from './agent-marks'
+import { Dot, Name } from './agent-marks'
 import { Explained, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { TooltipProvider } from './ui/tooltip'
 
 /**
  * The agents at work in one worktree, as a row apiece under its board. Every
- * row is one session: the buttons that act on that session and no other, its
- * harness, how it is doing, and what it is called.
+ * row is one session and reads in one line: what it is called, its harness,
+ * how it is doing and for how long, what is in its context when that can be
+ * read, and the buttons that act on that session and no other.
  *
  * The rows come in two tiers. A live row has a process behind it and can need
  * you now; a resumable row is a handle and the state something last knew it
@@ -38,33 +40,35 @@ import { TooltipProvider } from './ui/tooltip'
  */
 
 /**
- * The columns every row lines up on, so an action belongs to one session: the
- * actions first, as wide as the most any row has, then the harness, the word,
- * the name, and the age at the far end. Each row is a subgrid of the list, so
- * a column is as wide in every row, and a line under a row starts at its
- * harness, under the session it is about.
+ * The columns every row lines up on: the name first, then the harness, the
+ * word with its time, the context and the actions, each as wide as its widest
+ * cell, and what is left of the width after them, so the actions sit beside
+ * the session they act on. Each row is a subgrid of the list, so a column is
+ * as wide in every row, and a line under a row starts under its name.
  */
-const stripGrid = 'grid grid-cols-[auto_8rem_8rem_minmax(0,1fr)_auto] gap-x-3'
+const stripGrid = 'grid grid-cols-[repeat(5,auto)_minmax(0,1fr)] gap-x-3'
 const rowGrid = 'col-span-full grid grid-cols-subgrid items-center gap-y-1 border-t py-2 first:border-t-0'
+const cell = 'flex min-w-0 items-center gap-2'
 const actionsCell = 'flex items-center gap-1'
-const underRow = 'col-[2/-1] text-xs wrap-anywhere'
+const underRow = 'col-span-full text-xs wrap-anywhere'
 const ageText = 'text-xs text-muted-foreground'
+/** A name is capped so one long preview cannot push the rest of every row away. */
+const nameWidth = 'max-w-[32ch]'
 
-/**
- * How long a live session has held the status it is in, when the registry says
- * when that status changed. It belongs to the status word rather than beside
- * it: `idle` and `idle for 3 h` in one row would be the same fact twice.
- */
-const heldFor = (session: ClaudeSession, now: number) => {
-  const changed = session.statusChangedAt
-  return isLive(session) && changed !== null ? { at: changed, duration: since(changed, now) } : null
+/** A sentence per block, for a tip that says more than one thing. */
+function Blocks({ blocks }: { blocks: readonly string[] }) {
+  return (
+    <span className="block space-y-1">
+      {blocks.map((block) => <span key={block} className="block wrap-anywhere">{block}</span>)}
+    </span>
+  )
 }
 
 /**
- * When a session started. It is the age of a row whose status carries no
- * duration of its own: a resumable session, which has no status to be in, and
- * a live one the registry has no moment for. For a resumable row it is the one
- * fact that says how stale its state is, so it is never dropped.
+ * When a session started. It is the time beside a word that carries none of
+ * its own: a resumable session, which has no status to be in, and a live one
+ * the registry has no moment for. For a resumable row it is the one fact that
+ * says how stale its state is, so it is never dropped.
  */
 function StartedAge({ session, now }: { session: ClaudeSession; now: number }) {
   const tip = useTip()
@@ -75,7 +79,32 @@ function StartedAge({ session, now }: { session: ClaudeSession; now: number }) {
   )
 }
 
-/** One Claude Code session: what it is, how it is doing, and what acts on it. */
+/**
+ * How many tokens are in a live session's context, as its last reply left
+ * them: a count at a glance, with the exact count and the line it was read
+ * from behind it. There is no share of a window, because neither the listing
+ * nor the line says how large the window is.
+ */
+function ContextCount({ context }: { context: ContextFill }) {
+  const written = context.lineAt === null ? '' : `, written ${absoluteTime(context.lineAt)}`
+  return (
+    <Explained
+      meaning={
+        <Blocks
+          blocks={[
+            `${context.tokens.toLocaleString()} tokens: the input, cache-creation and cache-read tokens of its last reply, the count Claude Code's status line works from.`,
+            `Read from the usage on the last assistant line of its transcript${written}:`,
+            context.transcript,
+          ]}
+        />
+      }
+    >
+      <span className="text-xs text-muted-foreground">{tokenCount(context.tokens)} in context</span>
+    </Explained>
+  )
+}
+
+/** One Claude Code session: what it is called, how it is doing, and what acts on it. */
 function ClaudeRow({ session, now, onFocus }: {
   session: ClaudeSession
   now: number
@@ -86,38 +115,36 @@ function ClaudeRow({ session, now, onFocus }: {
   const live = isLive(session)
   const attention = needsYou(session)
   const name = sessionName(session)
-  const word = wordOf(session)
-  const held = heldFor(session, now)
+  const held = heldMeaning(session)
 
   return (
     <li className={cn(rowGrid, live ? undefined : 'opacity-60')}>
-      <span className={actionsCell}>
-        <Actions actions={actionsFor(session)} name={name} onFocus={onFocus} onFailure={setFailure} />
-      </span>
-      <span>
-        <Badge variant="outline" title={tip('A session of the Claude Code CLI.')}>Claude Code</Badge>
-      </span>
-      <Explained
-        meaning={held === null
-          ? meaningOf(session)
-          : `${meaningOf(session)} It has been ${word} for ${held.duration} (since ${
-            absoluteTime(held.at)
-          }).`}
-      >
-        <Dot tone={attention ? 'attention' : live ? 'on' : 'off'} />
-        <span className={cn('text-xs', attention ? 'font-medium text-attention' : 'text-muted-foreground')}>
-          {held === null ? word : `${word} · ${held.duration}`}
-        </span>
-      </Explained>
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-sm font-medium" title={tip(name)}>{name}</span>
+      <span className={cell}>
+        <Explained className="min-w-0" meaning={<Blocks blocks={[name, nameMeaning(session)]} />}>
+          <Name name={name} derived={isDerivedName(session)} className={cn(nameWidth, 'truncate text-sm font-medium')} />
+        </Explained>
         {session.kind === 'interactive' ? null : (
           <Badge variant="outline" title={tip('A background session: it runs without a terminal of its own.')}>
             {session.kind}
           </Badge>
         )}
       </span>
-      {held === null ? <StartedAge session={session} now={now} /> : null}
+      <span>
+        <Badge variant="outline" title={tip('A session of the Claude Code CLI.')}>Claude Code</Badge>
+      </span>
+      <span className={cell}>
+        <Explained meaning={<Blocks blocks={held === null ? [meaningOf(session)] : [meaningOf(session), held]} />}>
+          <Dot tone={attention ? 'attention' : live ? 'on' : 'off'} />
+          <span className={cn('text-xs', attention ? 'font-medium text-attention' : 'text-muted-foreground')}>
+            {heldWord({ session, now })}
+          </span>
+        </Explained>
+        {held === null ? <StartedAge session={session} now={now} /> : null}
+      </span>
+      <span>{session.context === null ? null : <ContextCount context={session.context} />}</span>
+      <span className={actionsCell}>
+        <Actions actions={actionsFor(session)} name={name} onFocus={onFocus} onFailure={setFailure} />
+      </span>
       {session.waitingFor === null || !attention
         ? null
         : <p className={cn(underRow, 'text-attention')}>{session.waitingFor}</p>}
@@ -136,25 +163,29 @@ function CodexRow({ thread, now, onFocus }: {
   const tip = useTip()
   return (
     <li className={cn(rowGrid, isParkedThread(thread) ? 'opacity-60' : undefined)}>
-      <span className={actionsCell}>
-        <Actions actions={actionsForThread(thread)} name={thread.name} onFocus={onFocus} onFailure={setFailure} />
+      <span className={cell}>
+        <Explained className="min-w-0" meaning={<Blocks blocks={[thread.name, threadNameMeaning]} />}>
+          <Name name={thread.name} derived={false} className={cn(nameWidth, 'truncate text-sm')} />
+        </Explained>
       </span>
       <span>
         <Badge variant="outline" title={tip(`A Codex thread, started from ${thread.origin}.`)}>
           Codex {thread.origin}
         </Badge>
       </span>
-      <Explained meaning={loadedMeaning(thread.loaded)}>
-        <Dot tone={thread.loaded === null ? 'unknown' : thread.loaded ? 'on' : 'off'} />
-        <span className="text-xs text-muted-foreground">{wordOfThread(thread)}</span>
-      </Explained>
-      <span className="flex min-w-0 items-center gap-2">
-        {/* An unnamed thread is named by its preview, which is a whole first
-            message; capped so one of them cannot own the row. */}
-        <span className="max-w-[60ch] truncate text-sm" title={tip(thread.name)}>{thread.name}</span>
+      <span className={cell}>
+        <Explained meaning={loadedMeaning(thread.loaded)}>
+          <Dot tone={thread.loaded === null ? 'unknown' : thread.loaded ? 'on' : 'off'} />
+          <span className="text-xs text-muted-foreground">{wordOfThread(thread)}</span>
+        </Explained>
+        <span className={ageText} title={tip(`It was last updated at ${absoluteTime(thread.updatedAt)}.`)}>
+          updated {relativeTime(thread.updatedAt, now)}
+        </span>
       </span>
-      <span className={ageText} title={tip(`It was last updated at ${absoluteTime(thread.updatedAt)}.`)}>
-        updated {relativeTime(thread.updatedAt, now)}
+      {/* Codex records no context for a thread, so its context column is empty. */}
+      <span />
+      <span className={actionsCell}>
+        <Actions actions={actionsForThread(thread)} name={thread.name} onFocus={onFocus} onFailure={setFailure} />
       </span>
       {failure === null ? null : <p className={cn(underRow, 'text-destructive')}>{failure}</p>}
     </li>
@@ -176,7 +207,7 @@ function TierHeading({ tier }: { tier: 'live' | 'resumable' }) {
 
 /**
  * The strip under a board's header: one row per session, live rows first, so
- * what a row's buttons act on is the session named beside them. A source that
+ * what a row's buttons act on is the session named at its start. A source that
  * could not be reached says so on its own line, because an empty strip means
  * "nothing is working here" and must never stand in for "nobody answered".
  */

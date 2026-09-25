@@ -287,7 +287,19 @@ export type ClaudeSession = {
   sessionId: string | null;
   /** The listing's `id` of a background session; the handle for `claude attach`. */
   backgroundId: string | null;
+  /**
+   * The listing's `name`: the one given with `/rename` or `--name`, else the
+   * `<folder>-<two hex>` Claude Code makes for a session nobody named.
+   */
   name: string | null;
+  /**
+   * Where the name came from, as the registry records it: `derived` for the
+   * name Claude Code made from the folder, `user` for one given with `/rename`
+   * or `--name`, and whatever else it writes carried raw; null when a live
+   * session's registry file cannot be read or holds none, and for a session
+   * with no process, which has no registry file.
+   */
+  nameSource: string | null;
   /** `busy`, `shell`, `idle`, `waiting`; null when the listing gives none. */
   status: string | null;
   /**
@@ -313,15 +325,39 @@ export type ClaudeSession = {
   /** ISO 8601. */
   startedAt: string;
   /**
-   * ISO 8601 of when the status last changed, from the registry. It is an
-   * event time, not a heartbeat: an old one means the session has held the
-   * same status for a while, never that it is stale or gone.
+   * ISO 8601 of when the status last changed: the registry's
+   * `statusUpdatedAt`, and null when the registry file cannot be read or holds
+   * none. It is an event time, not a heartbeat: an old one means the session
+   * has held the same status for a while, never that it is stale or gone.
    */
   statusChangedAt: string | null;
+  /**
+   * What is in a live session's context, read from the tail of its
+   * transcript; null for a session with no process, and for one whose
+   * transcript cannot be found or read or whose tail holds no reply.
+   */
+  context: ContextFill | null;
   /** The cmux refs holding this pid, or null when it runs in no cmux tab (a normal state). */
   terminal: { surface: string; workspace: string; window: string } | null;
   /** `claude --resume <sessionId>` or `claude attach <id>`; null when neither handle exists. */
   resume: string | null;
+};
+
+/**
+ * The tokens in a session's context as its last reply left them, from the
+ * `usage` on the last assistant line of its transcript. No window size is
+ * recorded there or in the listing, so it is a count and never a share.
+ */
+export type ContextFill = {
+  /**
+   * `input_tokens` + `cache_creation_input_tokens` + `cache_read_input_tokens`
+   * of that usage, the count Claude Code's own status line works from.
+   */
+  tokens: number;
+  /** The transcript the line was read from, `<config>/projects/<key>/<sessionId>.jsonl`. */
+  transcript: string;
+  /** ISO 8601 of the line's `timestamp`; null when it carries none. */
+  lineAt: string | null;
 };
 
 /** One Codex thread under a worktree, from `thread/list`; newest first. */
@@ -353,17 +389,25 @@ export type AgentsSummary = {
   fetchedAt: string;
 };
 
+const ContextFillSchema = Schema.Struct({
+  tokens: Schema.Finite,
+  transcript: Schema.String,
+  lineAt: Schema.NullOr(Schema.String),
+});
+
 export const ClaudeSessionSchema = Schema.Struct({
   kind: Schema.String,
   pid: Schema.NullOr(Schema.Int),
   sessionId: Schema.NullOr(Schema.String),
   backgroundId: Schema.NullOr(Schema.String),
   name: Schema.NullOr(Schema.String),
+  nameSource: Schema.NullOr(Schema.String),
   status: Schema.NullOr(Schema.String),
   state: Schema.NullOr(Schema.String),
   waitingFor: Schema.NullOr(Schema.String),
   startedAt: Schema.String,
   statusChangedAt: Schema.NullOr(Schema.String),
+  context: Schema.NullOr(ContextFillSchema),
   terminal: Schema.NullOr(Schema.Struct({
     surface: Schema.String,
     workspace: Schema.String,

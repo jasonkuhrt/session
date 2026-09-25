@@ -55,6 +55,17 @@ export function relativeTime(iso: string, now: number): string {
     : monthDayYear.format(stamp)
 }
 
+/**
+ * A count of tokens at a glance: `950`, `128k`, `1.2M`. A context is read in
+ * hundreds of thousands, so the digits every reply changes are left to the tip,
+ * which carries the exact count.
+ */
+export function tokenCount(tokens: number): string {
+  if (tokens < 1000) return String(Math.round(tokens))
+  const thousands = Math.round(tokens / 1000)
+  return thousands < 1000 ? `${thousands}k` : `${(tokens / 1_000_000).toFixed(1)}M`
+}
+
 /** The exact local date and time, for the hover behind an age. */
 export function absoluteTime(iso: string): string {
   const at = Date.parse(iso)
