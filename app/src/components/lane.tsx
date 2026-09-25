@@ -6,7 +6,7 @@ import { isBatchedStage } from '../../contract'
 import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
-import { groupMeta, stageHint } from '../lib/workflow'
+import { groupMeta, stageMeta } from '../lib/workflow'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -79,13 +79,14 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
 }
 
 function LaneHeading({ stage, count }: { stage: Stage; count: number }) {
+  const meta = stageMeta[stage]
   const tip = useTip()
   return (
     <div className="flex items-center gap-2">
       {/* What the stage is for is one hover away rather than a line under
           every lane; the heading is what carries it. */}
       <h2 className="font-medium">
-        <Explained meaning={stageHint[stage]}>{stage}</Explained>
+        <Explained meaning={meta.hint}>{meta.label}</Explained>
       </h2>
       <Badge
         variant={count === 0 ? 'outline' : 'secondary'}
@@ -120,7 +121,7 @@ function LaneControls({ stage, selected, count, executeOccupied, pending, onGrou
         <div className="flex gap-2">
           {canGroup ? (
             <Tip
-              meaning={`Name the selected items as a group in ${stage}.`}
+              meaning={`Name the selected items as a group in ${stageMeta[stage].label}.`}
               render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
             >
               Group ({selected.length})
@@ -195,7 +196,7 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
         ) : null}
         {canUngroup ? (
           <Tip
-            meaning={`Take these items out of the group, each to the end of ${stage}.`}
+            meaning={`Take these items out of the group, each to the end of ${stageMeta[stage].label}.`}
             render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onUngroup(ids)} />}
           >
             Ungroup

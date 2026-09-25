@@ -1,7 +1,7 @@
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import { stageNames } from '../contract.ts';
-import { archiveDirectory } from './root.ts';
+import { archiveDirectory } from './layout.ts';
 import { itemIdSource } from './model.ts';
 
 /**

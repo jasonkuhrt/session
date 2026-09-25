@@ -3,6 +3,7 @@ import * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { useLastPresent } from '../lib/overlay'
+import { stageMeta } from '../lib/workflow'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -31,7 +32,7 @@ function copyOf(request: NameRequest) {
   const count = request.ids.length
   const selected = `${count} selected ${count === 1 ? 'item' : 'items'}`
   if (request.kind === 'group') {
-    const lane = request.stage
+    const lane = stageMeta[request.stage].label
     return {
       title: 'Gather a group',
       description: `${selected} in ${lane} will be gathered under one name. A name ${lane} already has adds them to that group.`,

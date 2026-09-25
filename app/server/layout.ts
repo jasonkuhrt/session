@@ -1,5 +1,5 @@
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage, stageDirectory } from '../contract.ts';
+import { isBatchedStage, stageDirectory, stageNames } from '../contract.ts';
 import {
   fail,
   groupNoun,
@@ -12,12 +12,12 @@ import {
 } from './model.ts';
 
 /**
- * Directory-layout rules for the stages; `root.ts` has the session root's. A
- * stage directory, `1-Triage` to `5-Execute`, holds numbered entries: item
- * files and group directories of item files side by side in Triage, Design and
- * Batch, and group directories only in Queue and Execute, where each group is a
- * batch. The numeric prefix is the order, so the files alone answer "what comes
- * next".
+ * Directory-layout rules. The session root holds a closed set of entries, and
+ * `root.ts` says what does not belong there. A stage directory, `1-Triage` to
+ * `5-Execute`, holds numbered entries: item files and group directories of
+ * item files side by side in Triage, Design and Batch, and group directories
+ * only in Queue and Execute, where each group is a batch. The numeric prefix
+ * is the order, so the files alone answer "what comes next".
  */
 
 /** Gap between generated prefixes, leaving room to insert without renumbering. */
@@ -44,6 +44,41 @@ export type StageTreeEntry = {
 };
 
 const formatPrefix = (value: number): string => String(value).padStart(3, '0');
+
+/** Archived items live here, outside the agent's context like `ignore/`. */
+export const archiveDirectory = 'archive';
+
+/** Whatever `ignore/` holds, at any depth, no reader of the session looks at. */
+export const ignoreDirectory = 'ignore';
+
+/** Supporting material for agents: any file, any layout, no lifecycle. */
+export const contextDirectory = 'context';
+
+/** Facts about this worktree's session, one file each. */
+export const metaDirectory = 'meta';
+
+/** The session's shared log, one immutable entry per file. */
+export const ledgerDirectory = 'ledger';
+
+/** The user's standing rules for the session. */
+export const rulesFile = 'RULES.md';
+
+/**
+ * The session root is closed: it holds the stages, these directories and
+ * `RULES.md`, each as its own kind, and entries whose name starts with a dot,
+ * which this rule leaves alone, as the stage directories and the ledger do.
+ * They are not hidden everywhere: refresh lists them and the files route
+ * serves them.
+ */
+export const rootEntries: ReadonlyMap<string, 'directory' | 'file'> = new Map([
+  ...stageNames.map((stage) => [stageDirectory(stage), 'directory'] as const),
+  [archiveDirectory, 'directory'],
+  [ignoreDirectory, 'directory'],
+  [contextDirectory, 'directory'],
+  [ledgerDirectory, 'directory'],
+  [metaDirectory, 'directory'],
+  [rulesFile, 'file'],
+]);
 
 const parseEntryName = (parent: string, name: string): { prefix: number; remainder: string } => {
   const match: RegExpExecArray = entryName.exec(name) ??

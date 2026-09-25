@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkParse from 'remark-parse';
 import { unified } from 'unified';
 import type { LedgerEntry } from '../contract.ts';
-import { ledgerDirectory } from './root.ts';
+import { ledgerDirectory } from './layout.ts';
 
 /**
  * The ledger's entry format. An entry is one file under `ledger/`: YAML

@@ -20,7 +20,12 @@ import type {
 import { isBatchedStage, stageDirectory, stageNames } from '../contract.ts';
 import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, parseArchiveName } from './archive.ts';
 import {
+  archiveDirectory,
+  contextDirectory,
   entryName,
+  ignoreDirectory,
+  ledgerDirectory,
+  metaDirectory,
   parseStageDirectory,
   renderStageDirectory,
   type StageFileEntry,
@@ -47,18 +52,7 @@ import {
   validateItemSections,
   validateUniqueIds,
 } from './model.ts';
-import {
-  archiveDirectory,
-  contextDirectory,
-  ignoreDirectory,
-  ledgerDirectory,
-  leftoverStageFile,
-  metaDirectory,
-  metaEntryProblem,
-  misnamedStage,
-  misnamedStageProblem,
-  rootEntryProblem,
-} from './root.ts';
+import { leftoverStageFile, metaEntryProblem, misnamedStage, misnamedStageProblem, rootEntryProblem } from './root.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 

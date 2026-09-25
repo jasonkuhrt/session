@@ -42,7 +42,7 @@ import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
-import { contextDirectory, ledgerDirectory, metaDirectory } from './root.ts';
+import { contextDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
   issuesFor,

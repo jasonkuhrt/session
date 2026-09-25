@@ -1,49 +1,15 @@
 import type { Stage } from '../contract.ts';
 import { stageDirectory, stageNames } from '../contract.ts';
-import { entryName } from './layout.ts';
+import { contextDirectory, entryName, metaDirectory, rootEntries } from './layout.ts';
 
 /**
- * The session root's rules: the entries it may hold, what `meta/` may hold,
- * and the fix for a stage kept under a name that is not its directory's.
+ * The session root's rules: whether an entry belongs there, what `meta/` may
+ * hold, and the fix for a stage kept under a name that is not its directory's.
+ * `layout.ts` names the entries the root holds.
  */
-
-/** Archived items live here, outside the agent's context like `ignore/`. */
-export const archiveDirectory = 'archive';
-
-/** Whatever `ignore/` holds, at any depth, no reader of the session looks at. */
-export const ignoreDirectory = 'ignore';
-
-/** Supporting material for agents: any file, any layout, no lifecycle. */
-export const contextDirectory = 'context';
-
-/** The session's shared log, one immutable entry per file. */
-export const ledgerDirectory = 'ledger';
-
-/** The user's standing rules for the session. */
-export const rulesFile = 'RULES.md';
-
-/** Facts about this worktree's session, one file each. */
-export const metaDirectory = 'meta';
 
 /** The facts `meta/` may hold, by file name. None is defined yet, so whatever it holds is reported. */
 const metaFacts: ReadonlySet<string> = new Set<string>();
-
-/**
- * The session root is closed: it holds the stages, these directories and
- * `RULES.md`, each as its own kind, and entries whose name starts with a dot,
- * which this rule leaves alone, as the stage directories and the ledger do.
- * They are not hidden everywhere: refresh lists them and the files route
- * serves them.
- */
-const rootEntries: ReadonlyMap<string, 'directory' | 'file'> = new Map([
-  ...stageNames.map((stage) => [stageDirectory(stage), 'directory'] as const),
-  [archiveDirectory, 'directory'],
-  [ignoreDirectory, 'directory'],
-  [contextDirectory, 'directory'],
-  [ledgerDirectory, 'directory'],
-  [metaDirectory, 'directory'],
-  [rulesFile, 'file'],
-]);
 
 /** The one-file-per-stage layout's file for a stage, `TRIAGE.md`, from before stages were directories. */
 export const leftoverStageFile = (stage: Stage): string => `${stage.toUpperCase()}.md`;

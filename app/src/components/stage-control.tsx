@@ -1,6 +1,6 @@
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
-import { isStage, moveAvailability, stageHint } from '../lib/workflow'
+import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
 import { Tip } from './tip'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { TooltipProvider } from './ui/tooltip'
@@ -48,12 +48,12 @@ export function StageControl({
           const unavailable = pending || !availability.enabled
           const explanation = pending
             ? 'Another update is in progress'
-            : availability.reason ?? stageHint[candidate]
+            : availability.reason ?? stageMeta[candidate].hint
 
           return (
             <Tip
               key={candidate}
-              meaning={current ? stageHint[candidate] : explanation}
+              meaning={current ? stageMeta[candidate].hint : explanation}
               render={
                 <ToggleGroupItem
                   className="w-full aria-disabled:opacity-25"
@@ -65,7 +65,7 @@ export function StageControl({
                 />
               }
             >
-              {candidate}
+              {stageMeta[candidate].label}
             </Tip>
           )
         })}
