@@ -12,8 +12,10 @@ import type { Session, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import {
   daemonOnPort,
+  daemonStatus,
   ensureDaemon,
   openInBrowser,
+  restartDaemon,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
@@ -48,9 +50,14 @@ const commands = {
   archive: { operands: '<ID>', least: 1, most: 1 },
   log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
   open: { operands: '', least: 0, most: 0 },
+  daemon: { operands: '<status|restart>', least: 1, most: 1 },
 } as const;
 
 type Command = keyof typeof commands;
+
+const daemonActions = ['status', 'restart'] as const;
+
+type DaemonAction = (typeof daemonActions)[number];
 
 const usage = `Usage: session [-C <worktree or .session>] <command>
 
@@ -67,7 +74,9 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   done <ID>                             complete an EXECUTE item
   archive <ID>                          file an item away, from any stage
   log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
-  open                                  ensure the daemon and open this worktree's board`;
+  open                                  ensure the daemon and open this worktree's board
+  daemon status                         say whether the daemon runs and was started from these sources
+  daemon restart                        stop the daemon and start it again from these sources`;
 
 class SessionCliError extends Data.TaggedError('SessionCliError')<{
   readonly message: string;
@@ -141,6 +150,12 @@ const asStage = (value: string): Stage => {
     throw new Error(`Unknown stage ${value}. Stages: ${stageNames.join(', ')}.`);
   }
   return stage;
+};
+
+const asDaemonAction = (value: string): DaemonAction => {
+  const action = daemonActions.find((candidate) => candidate === value);
+  if (action === undefined) throw new Error(`Usage: session daemon ${commands.daemon.operands}`);
+  return action;
 };
 
 const cliTry = <A>(operation: () => A) =>
@@ -279,6 +294,47 @@ const openBoard = (resolved: WorktreeSession) =>
     if (address.notice !== null) yield* Console.error(address.notice);
     yield* openInBrowser(url);
   });
+
+/**
+ * `daemon status`: what answers on the daemon's port and, when it is the
+ * daemon, whether it was started from the sources this CLI runs from, which is
+ * what `open` checks before it reuses one.
+ */
+const showDaemon = Effect.gen(function*() {
+  const { settings, probe, sources } = yield* daemonStatus;
+  switch (probe.kind) {
+    case 'silent': {
+      yield* Console.log(
+        `Not running: nothing listens on port ${settings.port}. \`session open\` or \`session daemon restart\` starts it.`,
+      );
+      break;
+    }
+    case 'foreign': {
+      yield* Console.log(`Port ${settings.port} is held by a process that does not answer as the daemon.`);
+      break;
+    }
+    case 'ours': {
+      const { info } = probe;
+      yield* Console.log(`Running: pid ${info.pid} on port ${info.port}, started ${info.startedAt}`);
+      yield* Console.log(
+        info.sourceStamp === sources.stamp
+          ? `Current: started from the sources in ${sources.root} as they are, stamped ${sources.stamp}`
+          : `Stale: started from sources stamped ${info.sourceStamp}; those in ${sources.root} are stamped ${sources.stamp}. \`session daemon restart\` replaces it.`,
+      );
+      break;
+    }
+  }
+  yield* Console.log(`Log: ${settings.logPath}`);
+});
+
+/** `daemon restart`: the daemon it stopped, when one answered, and the one it started. */
+const relaunchDaemon = Effect.gen(function*() {
+  const { root, stopped, started } = yield* restartDaemon;
+  if (stopped !== null) yield* Console.log(`Stopped pid ${stopped.pid}`);
+  yield* Console.log(
+    `Started pid ${started.pid} on port ${started.port} from the sources in ${root}, stamped ${started.sourceStamp}`,
+  );
+});
 
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
   Effect.gen(function*() {
@@ -448,6 +504,12 @@ const registerSession = (resolved: WorktreeSession) =>
 
 const runCommand = (options: Options) =>
   Effect.gen(function*() {
+    // The daemon is the user's rather than a worktree's, so it resolves no session.
+    if (options.command === 'daemon') {
+      const action = yield* cliTry(() => asDaemonAction(options.operands[0]!));
+      yield* action === 'status' ? showDaemon : relaunchDaemon;
+      return;
+    }
     const resolved = yield* resolveWorktreeSession(options.directory);
     // Everything but the validator converges the session before it runs.
     const ensured = options.command === 'check' ? [] : yield* ensureSession(resolved);

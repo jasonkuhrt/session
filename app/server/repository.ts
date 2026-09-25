@@ -138,6 +138,14 @@ const toStageFile = (state: StageState): StageFile => ({
   items: state.items,
 });
 
+/** The items a group verb names, each where it is, refused when the list is empty or repeats one. */
+const namedItems = (loaded: Loaded, ids: ReadonlyArray<string>, noun: string) =>
+  attempt(() => {
+    if (ids.length === 0) fail(`${noun} needs at least one item.`);
+    if (new Set(ids).size !== ids.length) fail(`${noun} cannot repeat an item ID.`);
+    return ids.map((id) => findRequiredItem(loaded.stages, id));
+  });
+
 const toSession = (loaded: Loaded): Session => ({
   directory: loaded.root,
   revision: loaded.revision,
@@ -853,14 +861,6 @@ export const makeRepository = (directory: string) =>
           ]);
         }),
       );
-
-    /** The items a group verb names, each where it is, refused when the list is empty or repeats one. */
-    const namedItems = (loaded: Loaded, ids: ReadonlyArray<string>, noun: string) =>
-      attempt(() => {
-        if (ids.length === 0) fail(`${noun} needs at least one item.`);
-        if (new Set(ids).size !== ids.length) fail(`${noun} cannot repeat an item ID.`);
-        return ids.map((id) => findRequiredItem(loaded.stages, id));
-      });
 
     /**
      * Gather items of one flat stage into the group of that name. A group the

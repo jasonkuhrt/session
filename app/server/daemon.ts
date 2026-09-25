@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
@@ -113,11 +113,11 @@ export const daemonSettings = Effect.gen(function*() {
   } satisfies DaemonSettings;
 });
 
+/**
+ * What a daemon leaves for the next one: the worktrees it tracks. Who a daemon
+ * is, it says itself on the port, so nothing here names one.
+ */
 const DaemonStateSchema = Schema.Struct({
-  pid: Schema.Int,
-  port: Schema.Int,
-  startedAt: Schema.String,
-  sourceStamp: Schema.String,
   worktrees: Schema.Array(Schema.String),
 });
 const DaemonStateJson = Schema.fromJsonString(DaemonStateSchema);
@@ -191,6 +191,129 @@ const stopProcess = (pid: number) =>
     catch: (cause) => new DaemonError({ message: `Process ${pid} was already gone.`, cause }),
   }).pipe(Effect.ignore);
 
+type Environment = Readonly<Record<string, string | undefined>>;
+
+/**
+ * What Claude Code, Codex, cmux and Git set for the processes they run, which
+ * the daemon drops: the ones that change what a command it runs does, or that
+ * hold a session's credentials. The user's own settings stay.
+ * - Claude Code's session, down to the socket and token that message it, and
+ *   `AI_AGENT`, its word to other tools that an agent is running them. Claude
+ *   Code reads its settings again as it starts, from `CLAUDE_CONFIG_DIR`,
+ *   which is kept.
+ * - What Codex sets for the commands it runs: its session and thread, its
+ *   version, its sandbox, permission profile and network proxy, and how it was
+ *   installed. Its settings, such as `CODEX_HOME`, stay.
+ * - The Anthropic API's credentials, which nothing the daemon runs uses.
+ * - cmux's terminal: the workspace and surface its CLI takes as the target of
+ *   every command, and the socket path the CLI finds without being told. It
+ *   keeps `CMUX_SOCKET_PASSWORD` and `CMUX_SOCKET_CAPABILITY`, with which a
+ *   process outside cmux's own, as the detached daemon is, reaches its socket.
+ * - The repository Git names for the hooks it runs, the variables
+ *   `git rev-parse --local-env-vars` lists, which would aim every Git command
+ *   the daemon runs at that one repository.
+ */
+const dropped = {
+  names: new Set([
+    'AI_AGENT',
+    'CODEX_SESSION_ID',
+    'CODEX_THREAD_ID',
+    'CODEX_VERSION',
+    'CODEX_PERMISSION_PROFILE',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_CONFIG',
+    'GIT_CONFIG_PARAMETERS',
+    'GIT_CONFIG_COUNT',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_IMPLICIT_WORK_TREE',
+    'GIT_GRAFT_FILE',
+    'GIT_INDEX_FILE',
+    'GIT_NO_REPLACE_OBJECTS',
+    'GIT_REPLACE_REF_BASE',
+    'GIT_PREFIX',
+    'GIT_SHALLOW_FILE',
+    'GIT_COMMON_DIR',
+  ]),
+  prefixes: ['CLAUDE', 'ANTHROPIC', 'CMUX_', 'CODEX_APPLY_PATCH_', 'CODEX_SANDBOX', 'CODEX_NETWORK_', 'CODEX_MANAGED_'],
+  except: new Set(['CLAUDE_CONFIG_DIR', 'CMUX_SOCKET_PASSWORD', 'CMUX_SOCKET_CAPABILITY']),
+};
+
+const isDropped = (name: string) =>
+  !dropped.except.has(name) &&
+  (dropped.names.has(name) || dropped.prefixes.some((prefix) => name.startsWith(prefix)));
+
+/**
+ * `NODE_OPTIONS` as the user set it. When cmux launches Claude Code it points
+ * `NODE_OPTIONS` at a module in a temporary directory, keeping the user's own
+ * value in `CMUX_ORIGINAL_NODE_OPTIONS` and whether there was one in
+ * `CMUX_ORIGINAL_NODE_OPTIONS_PRESENT`; this undoes that as the module does.
+ */
+const userNodeOptions = (environment: Environment): string | null => {
+  switch (environment['CMUX_ORIGINAL_NODE_OPTIONS_PRESENT']) {
+    case '1': {
+      const original = environment['CMUX_ORIGINAL_NODE_OPTIONS'] ?? '';
+      return original === '' ? null : original;
+    }
+    case '0': {
+      return null;
+    }
+    default: {
+      return environment['NODE_OPTIONS'] ?? null;
+    }
+  }
+};
+
+/** The `node_modules/.bin` of a directory and of each directory above it. */
+const binsAbove = (directory: string) => {
+  const bins = new Set<string>();
+  for (let current = directory; !bins.has(join(current, 'node_modules/.bin')); current = dirname(current)) {
+    bins.add(join(current, 'node_modules/.bin'));
+  }
+  return bins;
+};
+
+/**
+ * PATH without the `node_modules/.bin` of the command's directory and the
+ * directories above it, which a package runner puts first, so a repository's
+ * own copy of a tool never stands in for the user's. A relative entry is made
+ * absolute against the command's directory, since the daemon runs in another.
+ */
+const userPath = (input: { readonly path: string; readonly cwd: string }) => {
+  const bins = binsAbove(input.cwd);
+  return input.path
+    .split(delimiter)
+    .map((entry) => resolve(input.cwd, entry))
+    .filter((entry) => !bins.has(entry))
+    .join(delimiter);
+};
+
+/**
+ * The environment the daemon starts with: this command's, less the variables
+ * above, since the daemon outlives whatever started it and passes its
+ * environment to every gh, linear, claude, codex and cmux it runs. It serves
+ * the port and keeps the state this command resolved, whatever its own
+ * directory would make of a relative `SESSION_STATE_DIR`.
+ */
+const daemonEnvironment = (input: {
+  readonly environment: Environment;
+  readonly cwd: string;
+  readonly settings: DaemonSettings;
+}) => {
+  const kept: Record<string, string> = {};
+  for (const [name, value] of Object.entries(input.environment)) {
+    if (value === undefined || name === 'NODE_OPTIONS' || isDropped(name)) continue;
+    kept[name] = value;
+  }
+  const nodeOptions = userNodeOptions(input.environment);
+  if (nodeOptions !== null) kept['NODE_OPTIONS'] = nodeOptions;
+  if (kept['PATH'] !== undefined) kept['PATH'] = userPath({ path: kept['PATH'], cwd: input.cwd });
+  kept['SESSION_PORT'] = String(input.settings.port);
+  kept['SESSION_STATE_DIR'] = input.settings.directory;
+  return kept;
+};
+
 const spawnDaemon = (settings: DaemonSettings) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
@@ -207,6 +330,7 @@ const spawnDaemon = (settings: DaemonSettings) =>
           // The same runtime that is running this CLI, whatever PATH says.
           const child = spawn([process.execPath, daemonEntry], {
             cwd: repositoryRoot,
+            env: daemonEnvironment({ environment: process.env, cwd: process.cwd(), settings }),
             stdin: 'ignore',
             stdout: log,
             stderr: log,
@@ -234,11 +358,12 @@ const waitForSilence = (settings: DaemonSettings) =>
     });
   });
 
+/** The daemon that came up from these sources, once it answers. */
 const waitForDaemon = (settings: DaemonSettings, stamp: string) =>
   Effect.gen(function*() {
     for (let attempt = 0; attempt < 50; attempt += 1) {
       const probe = yield* probeDaemon(settings.port);
-      if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return;
+      if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return probe.info;
       yield* Effect.sleep('100 millis');
     }
     return yield* new DaemonError({
@@ -246,10 +371,6 @@ const waitForDaemon = (settings: DaemonSettings, stamp: string) =>
     });
   });
 
-/**
- * Reuse a healthy daemon built from these sources; replace a stale one; refuse
- * a port somebody else holds.
- */
 /**
  * What holds the daemon's port right now, beside the settings that name it.
  * `open` decides from this whether to spawn one; every other command uses it to
@@ -261,25 +382,60 @@ export const daemonOnPort = Effect.gen(function*() {
   return { settings, probe: yield* probeDaemon(settings.port) };
 });
 
+/**
+ * Stop the daemon on the port and start one from these sources, answering the
+ * one that came up. A daemon is known by what it answers on the port and by
+ * nothing else: one that does not answer is gone or still starting, and a pid
+ * remembered from before may by now be another process's. A port somebody else
+ * holds is refused.
+ */
+const replaceDaemon = (input: {
+  readonly settings: DaemonSettings;
+  readonly probe: Probe;
+  readonly stamp: string;
+}) =>
+  Effect.gen(function*() {
+    if (input.probe.kind === 'foreign') {
+      return yield* new DaemonError({
+        message: `Port ${input.settings.port} is held by another process. Free it and try again.`,
+      });
+    }
+    if (input.probe.kind === 'ours') yield* stopProcess(input.probe.info.pid);
+    yield* waitForSilence(input.settings);
+    yield* spawnDaemon(input.settings);
+    return yield* waitForDaemon(input.settings, input.stamp);
+  });
+
+/**
+ * Reuse a healthy daemon built from these sources; replace a stale one; start
+ * one when none answers; refuse a port somebody else holds.
+ */
 export const ensureDaemon = Effect.gen(function*() {
   const { settings, probe } = yield* daemonOnPort;
   const stamp = yield* sourceStamp;
   if (probe.kind === 'ours' && probe.info.sourceStamp === stamp) return settings;
-  if (probe.kind === 'foreign') {
-    return yield* new DaemonError({
-      message: `Port ${settings.port} is held by another process. Free it and try again.`,
-    });
-  }
-  if (probe.kind === 'ours') yield* stopProcess(probe.info.pid);
-  else {
-    // Nothing is listening, but a crashed daemon may still be named here.
-    const state = yield* readState(settings);
-    if (state !== null) yield* stopProcess(state.pid);
-  }
-  yield* waitForSilence(settings);
-  yield* spawnDaemon(settings);
-  yield* waitForDaemon(settings, stamp);
+  yield* replaceDaemon({ settings, probe, stamp });
   return settings;
+});
+
+/**
+ * What `session daemon status` reads: what holds the port, and the sources a
+ * daemon started from this checkout would carry the stamp of.
+ */
+export const daemonStatus = Effect.gen(function*() {
+  const { settings, probe } = yield* daemonOnPort;
+  return { settings, probe, sources: { root: repositoryRoot, stamp: yield* sourceStamp } };
+});
+
+/**
+ * `session daemon restart`: a daemon started afresh from this checkout's
+ * sources, whether or not one was running and however current it was.
+ * `stopped` is the one it replaced, null when none answered.
+ */
+export const restartDaemon = Effect.gen(function*() {
+  const { settings, probe } = yield* daemonOnPort;
+  const started = yield* replaceDaemon({ settings, probe, stamp: yield* sourceStamp });
+  return { settings, root: repositoryRoot, stopped: probe.kind === 'ours' ? probe.info : null, started };
 });
 
 /** Track this worktree with the daemon and let it rediscover its siblings. */
@@ -614,6 +770,25 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   return best;
 };
 
+/**
+ * A file of the built app, and `index.html` for a path without an extension,
+ * which is a route the app draws itself. Nothing outside the build is served.
+ */
+const staticFile = async (url: URL, method: string) => {
+  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
+  const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  const path = resolve(distDirectory, requested);
+  if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
+    return json({ error: 'Not found.' }, 404);
+  }
+  let candidate = file(path);
+  if (!(await candidate.exists()) && !requested.includes('.')) {
+    candidate = file(join(distDirectory, 'index.html'));
+  }
+  if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
+  return method === 'HEAD' ? new Response(null) : new Response(candidate);
+};
+
 // eslint-disable-next-line max-lines-per-function -- The registry, its routes and its lifecycle are one object; the closures share the map.
 export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
@@ -686,16 +861,7 @@ export const runDaemon = async () => {
     for (const directory of directories) forkNode(watchDirectory(directory, changes));
   };
 
-  const persist = () =>
-    runNode(
-      writeState(settings, {
-        pid: process.pid,
-        port: settings.port,
-        startedAt,
-        sourceStamp: stamp,
-        worktrees: [...tracked.keys()],
-      }),
-    );
+  const persist = () => runNode(writeState(settings, { worktrees: [...tracked.keys()] }));
 
   /**
    * One trailer pass for a tracked worktree. It announces on the worktree's own
@@ -1145,21 +1311,6 @@ export const runDaemon = async () => {
     const target = new URL(url);
     target.pathname = rest.slice(entry.key.length);
     return (await handlerFor(entry))(new Request(target, request));
-  };
-
-  const staticFile = async (url: URL, method: string) => {
-    if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
-    const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-    const path = resolve(distDirectory, requested);
-    if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
-      return json({ error: 'Not found.' }, 404);
-    }
-    let candidate = file(path);
-    if (!(await candidate.exists()) && !requested.includes('.')) {
-      candidate = file(join(distDirectory, 'index.html'));
-    }
-    if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
-    return method === 'HEAD' ? new Response(null) : new Response(candidate);
   };
 
   /**

@@ -38,8 +38,13 @@ const locksUnreadable = "Codex's writer locks could not be read, so which thread
 /** Spawn, handshake and one query per worktree; measured at 75 ms for two. */
 const budget = '3 seconds';
 
-/** `~/.codex/thread-writer-locks`. The daemon watches it, so it is named here. */
+/**
+ * `thread-writer-locks` in Codex's home, `CODEX_HOME` or `~/.codex`, where
+ * Codex writes them. The daemon watches it, so it is named here.
+ */
 export const lockDirectory = Effect.gen(function*() {
+  const override = yield* Config.String('CODEX_HOME').pipe(Effect.orElseSucceed(() => null));
+  if (override !== null) return join(override, 'thread-writer-locks');
   return join(yield* Config.String('HOME'), '.codex/thread-writer-locks');
 }).pipe(Effect.orElseSucceed(() => null));
 
