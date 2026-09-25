@@ -14,11 +14,12 @@ writes one of its own, and the board only shows them.
 
 Commands scaffold the session as they go, so nothing depends on an imperative
 setup step, and the CLI never migrates an old one. One daemon serves every
-tracked worktree's board. It is known by what answers on its port, never by a
-pid in a file, and only `session open` and `session daemon restart` replace it.
-It starts with the environment of whatever started it, less an agent's and a
-terminal's session variables and a project's `node_modules` on PATH, because it
-outlives both and passes its environment to everything it runs.
+tracked worktree's board. It is known by what answers on its port and by
+nothing else, and only `session open` and `session daemon restart` replace it.
+It starts with the environment of whatever started it, less what Claude Code,
+Codex, cmux and Git set for the processes they run and the `node_modules/.bin`
+a package runner put on PATH, because it outlives them and passes its
+environment to everything it runs; the user's own settings stay.
 
 A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
 each tracked worktree's session, its reflog and the repository's remote-tracking

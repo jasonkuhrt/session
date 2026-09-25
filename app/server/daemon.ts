@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { delimiter, dirname, join, resolve, sep } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
@@ -113,11 +113,11 @@ export const daemonSettings = Effect.gen(function*() {
   } satisfies DaemonSettings;
 });
 
+/**
+ * What a daemon leaves for the next one: the worktrees it tracks. Who a daemon
+ * is, it says itself on the port, so nothing here names one.
+ */
 const DaemonStateSchema = Schema.Struct({
-  pid: Schema.Int,
-  port: Schema.Int,
-  startedAt: Schema.String,
-  sourceStamp: Schema.String,
   worktrees: Schema.Array(Schema.String),
 });
 const DaemonStateJson = Schema.fromJsonString(DaemonStateSchema);
@@ -191,45 +191,126 @@ const stopProcess = (pid: number) =>
     catch: (cause) => new DaemonError({ message: `Process ${pid} was already gone.`, cause }),
   }).pipe(Effect.ignore);
 
+type Environment = Readonly<Record<string, string | undefined>>;
+
 /**
- * The variables of an agent's session or a terminal's that the daemon drops:
- * the ones that change what a command it runs does, or that hold a session's
- * credentials. The user's own settings among them stay.
+ * What Claude Code, Codex, cmux and Git set for the processes they run, which
+ * the daemon drops: the ones that change what a command it runs does, or that
+ * hold a session's credentials. The user's own settings stay.
  * - Claude Code's session, down to the socket and token that message it, and
- *   `AI_AGENT`, its word to other tools that an agent is running them; it keeps
- *   `CLAUDE_CONFIG_DIR`, where Claude Code keeps its sessions.
- * - Codex's session; it keeps `CODEX_HOME`, where Codex keeps its threads.
+ *   `AI_AGENT`, its word to other tools that an agent is running them. Claude
+ *   Code reads its settings again as it starts, from `CLAUDE_CONFIG_DIR`,
+ *   which is kept.
+ * - What Codex sets for the commands it runs: its session and thread, its
+ *   version, its sandbox, permission profile and network proxy, and how it was
+ *   installed. Its settings, such as `CODEX_HOME`, stay.
  * - The Anthropic API's credentials, which nothing the daemon runs uses.
  * - cmux's terminal: the workspace and surface its CLI takes as the target of
- *   every command, and the socket path the CLI finds without being told; it
- *   keeps `CMUX_SOCKET_PASSWORD`, which the CLI signs in with.
- * - `NODE_OPTIONS`, which a cmux terminal points at a file in a temporary
- *   directory, one a daemon running for days can outlive.
+ *   every command, and the socket path the CLI finds without being told. It
+ *   keeps `CMUX_SOCKET_PASSWORD` and `CMUX_SOCKET_CAPABILITY`, with which a
+ *   process outside cmux's own, as the detached daemon is, reaches its socket.
+ * - The repository Git names for the hooks it runs, the variables
+ *   `git rev-parse --local-env-vars` lists, which would aim every Git command
+ *   the daemon runs at that one repository.
  */
-const agentVariable = /^(?:CLAUDE|AI_AGENT$|CODEX|ANTHROPIC|CMUX_|NODE_OPTIONS$)/u;
-const userSetting = new Set(['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CMUX_SOCKET_PASSWORD']);
+const dropped = {
+  names: new Set([
+    'AI_AGENT',
+    'CODEX_SESSION_ID',
+    'CODEX_THREAD_ID',
+    'CODEX_VERSION',
+    'CODEX_PERMISSION_PROFILE',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_CONFIG',
+    'GIT_CONFIG_PARAMETERS',
+    'GIT_CONFIG_COUNT',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_IMPLICIT_WORK_TREE',
+    'GIT_GRAFT_FILE',
+    'GIT_INDEX_FILE',
+    'GIT_NO_REPLACE_OBJECTS',
+    'GIT_REPLACE_REF_BASE',
+    'GIT_PREFIX',
+    'GIT_SHALLOW_FILE',
+    'GIT_COMMON_DIR',
+  ]),
+  prefixes: ['CLAUDE', 'ANTHROPIC', 'CMUX_', 'CODEX_APPLY_PATCH_', 'CODEX_SANDBOX', 'CODEX_NETWORK_', 'CODEX_MANAGED_'],
+  except: new Set(['CLAUDE_CONFIG_DIR', 'CMUX_SOCKET_PASSWORD', 'CMUX_SOCKET_CAPABILITY']),
+};
+
+const isDropped = (name: string) =>
+  !dropped.except.has(name) &&
+  (dropped.names.has(name) || dropped.prefixes.some((prefix) => name.startsWith(prefix)));
+
+/**
+ * `NODE_OPTIONS` as the user set it. When cmux launches Claude Code it points
+ * `NODE_OPTIONS` at a module in a temporary directory, keeping the user's own
+ * value in `CMUX_ORIGINAL_NODE_OPTIONS` and whether there was one in
+ * `CMUX_ORIGINAL_NODE_OPTIONS_PRESENT`; this undoes that as the module does.
+ */
+const userNodeOptions = (environment: Environment): string | null => {
+  switch (environment['CMUX_ORIGINAL_NODE_OPTIONS_PRESENT']) {
+    case '1': {
+      const original = environment['CMUX_ORIGINAL_NODE_OPTIONS'] ?? '';
+      return original === '' ? null : original;
+    }
+    case '0': {
+      return null;
+    }
+    default: {
+      return environment['NODE_OPTIONS'] ?? null;
+    }
+  }
+};
+
+/** The `node_modules/.bin` of a directory and of each directory above it. */
+const binsAbove = (directory: string) => {
+  const bins = new Set<string>();
+  for (let current = directory; !bins.has(join(current, 'node_modules/.bin')); current = dirname(current)) {
+    bins.add(join(current, 'node_modules/.bin'));
+  }
+  return bins;
+};
+
+/**
+ * PATH without the `node_modules/.bin` of the command's directory and the
+ * directories above it, which a package runner puts first, so a repository's
+ * own copy of a tool never stands in for the user's. A relative entry is made
+ * absolute against the command's directory, since the daemon runs in another.
+ */
+const userPath = (input: { readonly path: string; readonly cwd: string }) => {
+  const bins = binsAbove(input.cwd);
+  return input.path
+    .split(delimiter)
+    .map((entry) => resolve(input.cwd, entry))
+    .filter((entry) => !bins.has(entry))
+    .join(delimiter);
+};
 
 /**
  * The environment the daemon starts with: this command's, less the variables
- * above, since the daemon outlives the agent and the terminal it was started
- * from and passes its environment to every gh, linear, claude and cmux it
- * runs. PATH loses the directories inside a project's `node_modules`, which a
- * package script puts first, so a repository's own copy of a tool never stands
- * in for the user's.
+ * above, since the daemon outlives whatever started it and passes its
+ * environment to every gh, linear, claude, codex and cmux it runs. It serves
+ * the port and keeps the state this command resolved, whatever its own
+ * directory would make of a relative `SESSION_STATE_DIR`.
  */
-const daemonEnvironment = (environment: Readonly<Record<string, string | undefined>>) => {
+const daemonEnvironment = (input: {
+  readonly environment: Environment;
+  readonly cwd: string;
+  readonly settings: DaemonSettings;
+}) => {
   const kept: Record<string, string> = {};
-  for (const [name, value] of Object.entries(environment)) {
-    if (value === undefined) continue;
-    if (agentVariable.test(name) && !userSetting.has(name)) continue;
+  for (const [name, value] of Object.entries(input.environment)) {
+    if (value === undefined || name === 'NODE_OPTIONS' || isDropped(name)) continue;
     kept[name] = value;
   }
-  if (kept['PATH'] !== undefined) {
-    kept['PATH'] = kept['PATH']
-      .split(delimiter)
-      .filter((entry) => !entry.split(sep).includes('node_modules'))
-      .join(delimiter);
-  }
+  const nodeOptions = userNodeOptions(input.environment);
+  if (nodeOptions !== null) kept['NODE_OPTIONS'] = nodeOptions;
+  if (kept['PATH'] !== undefined) kept['PATH'] = userPath({ path: kept['PATH'], cwd: input.cwd });
+  kept['SESSION_PORT'] = String(input.settings.port);
+  kept['SESSION_STATE_DIR'] = input.settings.directory;
   return kept;
 };
 
@@ -249,7 +330,7 @@ const spawnDaemon = (settings: DaemonSettings) =>
           // The same runtime that is running this CLI, whatever PATH says.
           const child = spawn([process.execPath, daemonEntry], {
             cwd: repositoryRoot,
-            env: daemonEnvironment(process.env),
+            env: daemonEnvironment({ environment: process.env, cwd: process.cwd(), settings }),
             stdin: 'ignore',
             stdout: log,
             stderr: log,
@@ -304,8 +385,8 @@ export const daemonOnPort = Effect.gen(function*() {
 /**
  * Stop the daemon on the port and start one from these sources, answering the
  * one that came up. A daemon is known by what it answers on the port and by
- * nothing else: one that does not answer is gone or still starting, and the pid
- * the state file names may by now be another process's. A port somebody else
+ * nothing else: one that does not answer is gone or still starting, and a pid
+ * remembered from before may by now be another process's. A port somebody else
  * holds is refused.
  */
 const replaceDaemon = (input: {
@@ -780,16 +861,7 @@ export const runDaemon = async () => {
     for (const directory of directories) forkNode(watchDirectory(directory, changes));
   };
 
-  const persist = () =>
-    runNode(
-      writeState(settings, {
-        pid: process.pid,
-        port: settings.port,
-        startedAt,
-        sourceStamp: stamp,
-        worktrees: [...tracked.keys()],
-      }),
-    );
+  const persist = () => runNode(writeState(settings, { worktrees: [...tracked.keys()] }));
 
   /**
    * One trailer pass for a tracked worktree. It announces on the worktree's own

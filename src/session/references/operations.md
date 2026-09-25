@@ -23,7 +23,7 @@ archive <ID>               archive an item from any stage into archive/, recordi
 log "<by>" "<title>"       write a ledger entry, body on stdin; prints "Logged <date> — <title>"
 open                       ensure the daemon and this worktree, then open its board
 daemon status              whether the daemon runs and was started from the sources on disk; its pid, port, start and log
-daemon restart             stop the daemon and start one from the sources on disk, current or not; prints both pids
+daemon restart             stop the daemon and start one from the sources on disk, current or not; prints the pids
 ```
 
 Running the installed script with Bun is equivalent, and is the form to use when
@@ -262,40 +262,46 @@ prints the board's URL, and opens it in the browser on macOS. Run it when the
 user asks for the board, not as a matter of course.
 
 One daemon serves every worktree, one process per user, on `127.0.0.1:53045`. Its
-state is `~/.local/state/session/daemon.json`: the pid, the port, the start time,
-a stamp of the sources it was started from, and the worktrees it tracks. It logs
-beside that file, in `daemon.log`. `open` reuses a daemon that answers with a
-stamp matching the sources on disk. It replaces one started from other sources,
-stopping the old process first, and starts one when nothing answers, so a
-rebuilt board reaches every worktree at the next `open`. A daemon is known by
-what answers on the port and by nothing else: the pid in the state file is never
-signalled, because a daemon that does not answer has exited or is still
-starting, and its pid may since have gone to another process. A foreign process
-holding the port is an error naming it; there is no fallback port.
+state is `~/.local/state/session/daemon.json`, the worktrees it tracks, which
+the next daemon tracks again. It logs beside that file, in `daemon.log`. `open`
+reuses a daemon that answers with a stamp matching the sources on disk. It
+replaces one started from other sources, stopping the old process first, and
+starts one when nothing answers, so a rebuilt board reaches every worktree at
+the next `open`. A daemon is known by what answers on the port and by nothing
+else: one that does not answer has exited or is still starting, so no pid is
+kept to be signalled later, when it may belong to another process. A foreign
+process holding the port is an error naming it; there is no fallback port.
 
 `session daemon status` says what answers on the port and changes nothing:
 `Running:` with the daemon's pid, port and start time, then `Current:` when it
 was started from the sources on disk or `Stale:` with both stamps when it was
-not, then the log's path; `Not running:` when nothing listens; or that the port
-is held by a process that does not answer as the daemon. `session daemon
-restart` stops the daemon and starts one from the sources on disk whether or not
-it was current, and prints the pid it stopped and the one it started, which
-makes it the way to replace a daemon without opening a board. No other command
-restarts it: a stale daemon keeps serving until `open` or `restart` replaces
-it, so a command about the records never drops the boards' streams or fails on
-a build that does not start. Both read `SESSION_PORT` and `SESSION_STATE_DIR`
-as `open` does and ignore `-C`, since the daemon is the user's and not a
-worktree's.
+not; `Not running:` when nothing listens; or that the port is held by a process
+that does not answer as the daemon. It ends with the log's path whichever it
+is. `session daemon restart` stops the daemon and starts one from the sources
+on disk whether or not it was current, and prints the pid it stopped, when one
+answered, and the one it started, which makes it the way to replace a daemon
+without opening a board. No other command restarts it: a stale daemon keeps
+serving until `open` or `restart` replaces it, so a command about the records
+never drops the boards' streams or fails on a build that does not start. Both
+read `SESSION_PORT` and `SESSION_STATE_DIR` as `open` does and ignore `-C`,
+since the daemon is the user's and not a worktree's.
 
 The daemon starts with the environment of the command that started it, less
-what an agent's session or a terminal set there for the processes under them,
-because it outlives both and passes its environment to every gh, linear, claude
-and cmux it runs: Claude Code's `CLAUDE*` and `AI_AGENT`, Codex's `CODEX*`,
-`ANTHROPIC*`, cmux's `CMUX_*`, and `NODE_OPTIONS`, which a cmux terminal points
-at a file in a temporary directory. It keeps `CLAUDE_CONFIG_DIR`, `CODEX_HOME`
-and `CMUX_SOCKET_PASSWORD`, which are the user's settings. PATH loses the
-directories inside a project's `node_modules`, so a repository's own copy of a
-tool never stands in for the user's.
+what Claude Code, Codex, cmux and Git set for the processes they run, because
+it outlives them and passes its environment to every gh, linear, claude, codex
+and cmux it runs. It drops Claude Code's `CLAUDE*` and `AI_AGENT`, keeping
+`CLAUDE_CONFIG_DIR`, from which Claude Code reads its settings again; what Codex
+sets for the commands it runs, its session, thread, version, sandbox,
+permission profile, network proxy and install method, keeping its settings such
+as `CODEX_HOME`; `ANTHROPIC*`; cmux's `CMUX_*`, keeping `CMUX_SOCKET_PASSWORD`
+and `CMUX_SOCKET_CAPABILITY`, with which a process outside cmux reaches its
+socket; and the repository variables Git sets for its hooks, the ones
+`git rev-parse --local-env-vars` lists. `NODE_OPTIONS` returns to the user's
+own value where cmux replaced it to launch Claude Code. PATH loses the
+`node_modules/.bin` of the command's directory and of the directories above it,
+which a package runner puts first, so a repository's own copy of a tool never
+stands in for the user's. The daemon is handed the port and state directory the
+command resolved, so a relative `SESSION_STATE_DIR` means one directory to both.
 
 `open` also gives the board a name to answer to. Whenever portless has a state
 directory on this machine it registers the daemon as the `session` alias, once,

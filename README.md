@@ -56,8 +56,8 @@ other worktrees of the same repository that already have a `.session`.
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
 from them. Neither opens a board, so a restart is how a changed daemon replaces
-the running one. The daemon leaves out of its environment what an agent's
-session or a terminal set for the processes under them, since it outlives both.
+the running one. The daemon leaves out of its environment what Claude Code,
+Codex, cmux and Git set for the processes they run, since it outlives them.
 
 If [portless](https://github.com/vercel-labs/portless) is on the machine, `open`
 registers the daemon as its `session` alias, and while a portless proxy is
