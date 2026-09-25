@@ -4,6 +4,7 @@ import type { DaemonCapabilities, PullRequestReport, PullRequestReports, Worktre
 import type { StageRange } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { checkoutLabel } from '../lib/format'
+import { mainMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
 import { AgentPills } from './agent-pills'
 import { Copyable } from './copyable'
@@ -35,10 +36,6 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
-/** What the house before a main worktree says, whether or not it has a session. */
-export const mainMeaning =
-  'The main worktree of its repository: Git keeps the repository here and lists it first, so it stands at the head of the repository’s cards and is never in an epic.'
-
 /** How a card looks for what it is and what a drag is doing to it: dim when quiet, outlined where a held card would land, faint while it is the one held. */
 export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boolean; held: boolean }) =>
   cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40')
@@ -50,12 +47,14 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * marked as the worktree picker marks it. A row the daemon cannot serve has no
  * glyph and says why in place of the second line, and a `meta/epic` it cannot
  * read as a name says why on it, in the words `session check` gives.
- * `meaning` is what the mark before the name says the worktree is here.
+ * `meaning` is what the mark before the name says the worktree is here, and
+ * `name` the name it is drawn under, where a head needs more than its own.
  */
-export function WorktreeRow({ row, context, meaning = listedMeaning }: {
+export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name }: {
   row: WorktreeSummary
   context: RowContext
   meaning?: string
+  name?: string
 }) {
   return (
     // The glyph's column is as wide as a glyph whether or not the row draws
@@ -76,7 +75,7 @@ export function WorktreeRow({ row, context, meaning = listedMeaning }: {
           <Explained meaning={meaning}>
             <WorktreeMark />
           </Explained>
-          <WorktreeName row={row} />
+          <WorktreeName row={row} name={name} />
         </span>
         <TrailerCount problems={row.trailerProblems} />
         {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
@@ -101,10 +100,11 @@ export function WorktreeRow({ row, context, meaning = listedMeaning }: {
 /**
  * The name alone, which already tells the worktrees apart: a worktree whose
  * folder shares the main checkout's name carries its parent folder's name
- * before it. Where it sits is its tip. It opens the worktree's board, unless
- * the daemon cannot serve one.
+ * before it, and so does a head whose section shares its name with another.
+ * Where it sits is its tip. It opens the worktree's board, unless the daemon
+ * cannot serve one.
  */
-function WorktreeName({ row }: { row: WorktreeSummary }) {
+function WorktreeName({ row, name }: { row: WorktreeSummary; name: string }) {
   const tip = useTip()
   return row.conflict === null
     ? (
@@ -113,10 +113,10 @@ function WorktreeName({ row }: { row: WorktreeSummary }) {
         href={`/w/${row.key}/`}
         title={tip(row.path)}
       >
-        {row.name}
+        {name}
       </a>
     )
-    : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{row.name}</span>
+    : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{name}</span>
 }
 
 /** What a worktree has checked out, in Git's words and under the picker's mark: its branch, to copy, or why it has none. */

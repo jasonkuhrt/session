@@ -8,6 +8,7 @@ import type { WorktreeSummary } from '../../contract'
 import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { draggedId, movable, targetId } from '../lib/epics'
+import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
@@ -33,24 +34,6 @@ export type DragContext = RowContext & {
   readonly landingOn: string | null
   readonly onRename: (card: EpicCardShape) => void
 }
-
-/** The order the cards stand in, said by every card that can say it, since the page has no heading to say it once. */
-const orderMeaning = 'The cards with a live agent come first, then the newest activity.'
-
-const epicMeaning = (name: string) =>
-  `An epic: the worktrees whose sessions name “${name}”, the busiest first. ${orderMeaning} Drag this heading onto another epic to merge the two.`
-
-/** What a worktree in no epic is, and where it can be dropped, said by the mark before its name. */
-const looseMeaning =
-  `A worktree in no epic, on this page while it has a session, under its repository. ${orderMeaning} Drag it onto an epic to join it, onto another worktree in no epic to make an epic of the two, or onto the + that appears after its repository’s cards to start an epic of its own.`
-
-/** The same for a worktree in an epic, which can also be dropped out of it, back under its repository. */
-const epicRowMeaning = (epic: string) =>
-  `A worktree in “${epic}”, on this page while it has a session. Drag it onto another epic to join that one, onto a worktree in no epic to make an epic of the two, onto the + that appears after its repository’s cards to start an epic of its own, or onto the space between the cards to leave “${epic}” for a card of its own under its repository.`
-
-const worktreeCountMeaning = 'How many worktrees are in this epic.'
-
-const quietCardMeaning = 'Nothing is live here and nothing has happened in five days, so this card is dim, and last.'
 
 /**
  * One ref for an element that is two things to the drag library at once, a
@@ -93,7 +76,7 @@ function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext 
       aria-label={`Drag ${row.name}`}
       className={cn('px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
-      <WorktreeRow row={row} context={context} meaning={epicRowMeaning(row.epic ?? '')} />
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic: row.epic ?? '' })} />
     </div>
   )
 }
@@ -215,7 +198,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       )}
     >
       <div className="px-3 py-2.5">
-        <WorktreeRow row={row} context={context} meaning={looseMeaning} />
+        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} />
       </div>
     </Card>
   )

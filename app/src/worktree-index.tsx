@@ -219,15 +219,18 @@ function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragCont
     <>
       <CardSpace context={held}>
         <div className="flex flex-col gap-10">
-          <AcrossProjects cards={dashboard.across} context={held} />
-          {dashboard.sections.map((section) => (
-            <ProjectSection
-              key={section.key}
-              section={section}
-              context={held}
-              newEpicOf={section.key === home ? heldRow?.name ?? null : null}
-            />
-          ))}
+          {dashboard.sections.map((section) =>
+            section.kind === 'across'
+              ? <AcrossProjects key={section.key} section={section} context={held} />
+              : (
+                <ProjectSection
+                  key={section.key}
+                  section={section}
+                  context={held}
+                  newEpicOf={section.key === home ? heldRow?.name ?? null : null}
+                />
+              )
+          )}
         </div>
       </CardSpace>
       {/* Dropped, the card is drawn where the drop put it, so nothing flies back first. */}

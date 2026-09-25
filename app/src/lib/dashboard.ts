@@ -5,12 +5,13 @@ import { hour } from './format'
 
 /**
  * How the index draws the worktrees it lists: a stack of sections, one per
- * repository, each headed by its main worktree and holding that repository's
- * cards, one per epic with its worktrees inside and one per worktree in none,
- * and above them the epics whose worktrees belong to more than one repository.
- * A repository is what Git names for every worktree of it, and an epic is only
- * the name its worktrees' files share, so everything here is derived from the
- * rows on every read: no section, no order and no fold is kept anywhere.
+ * project, each headed by what heads it and holding the project's cards, one
+ * per epic with its worktrees inside and one per worktree in none, and one
+ * more for the epics whose worktrees belong to more than one project, all of
+ * them ordered alike. A project is a repository, what Git names for every
+ * worktree of it, or a folder outside Git, and an epic is only the name its
+ * worktrees' files share, so everything here is derived from the rows on every
+ * read: no section, no order and no fold is kept anywhere.
  */
 
 /** Nothing live and nothing for this long makes a worktree quiet, drawn dim and last: the bound the index's activity bands used. */
@@ -71,44 +72,83 @@ export type EpicCardShape = {
 export type IndexCard = EpicCardShape | { readonly kind: 'loose'; readonly row: WorktreeSummary; readonly quiet: boolean }
 
 /**
- * What heads a repository's section: its main worktree's row while it has a
- * session, or else the repository as Git names it, which the daemon does not
- * track, so its linked worktrees still have a home.
+ * What heads a project's section: its main worktree's row while it has a
+ * session; the repository as Git names it, when its main worktree has none,
+ * so its linked worktrees still have a home; the repository by its Git
+ * directory, when Git lists that where a main worktree would be; or a folder
+ * outside Git, which is a project of its own.
  */
 export type SectionHead =
   | { readonly kind: 'tracked'; readonly row: WorktreeSummary }
   | { readonly kind: 'untracked'; readonly repository: Repository }
+  | { readonly kind: 'bare'; readonly repository: Repository }
+  | { readonly kind: 'folder'; readonly path: string }
 
 /**
- * One repository's section: its head, then its cards, busiest first. A folder
- * outside Git belongs to no repository and has a section of its own, with no
- * main worktree to head it.
+ * One project's section, a repository's or a folder's outside Git: its head,
+ * then its cards, busiest first. It is as busy as every worktree of the
+ * project, wherever that is drawn, so a repository whose worktrees are all in
+ * epics across projects is as live as they are.
  */
-export type RepositorySection = {
-  /** What tells it from every other section: its main worktree's path, or the folder's own outside Git. */
+export type ProjectSection = {
+  readonly kind: 'project'
+  /** What tells it from every other section: the path of what Git lists first for its repository, or the folder's own outside Git. */
   readonly key: string
+  /** The name its head carries: the repository's, or the folder's, with its parent folder's before it when another section has the same one. */
   readonly name: string
-  readonly head: SectionHead | null
+  readonly head: SectionHead
   readonly cards: readonly IndexCard[]
   readonly quiet: boolean
 }
 
-/** The index as it is drawn: the epics across repositories, then a section per repository, busiest first. */
-export type Dashboard = {
-  readonly across: readonly EpicCardShape[]
-  readonly sections: readonly RepositorySection[]
+/** The section of the epics across projects, by a key no path can be, and the name that settles its ties. */
+const acrossKey = 'across'
+export const acrossName = 'Across projects'
+
+/** The epics whose worktrees belong to more than one project, in a section of their own, as busy as their worktrees. */
+export type AcrossSection = {
+  readonly kind: 'across'
+  readonly key: typeof acrossKey
+  readonly cards: readonly EpicCardShape[]
+  readonly quiet: boolean
 }
+
+/** The index as it is drawn: its sections, busiest first, the epics across projects ranked with the projects. */
+export type Dashboard = { readonly sections: ReadonlyArray<ProjectSection | AcrossSection> }
 
 /** The section a worktree is drawn in when it is in no epic, and returns to when it leaves one: its repository's, or its own outside Git. */
 export const sectionKeyOf = (row: WorktreeSummary) => row.repository?.path ?? row.path
 
-/** A section as it fills: its head so far, its cards with what orders them, and the rows drawn in it, which say how busy it is. */
+/** What heads a project's section until its main worktree's row is found, if it has one. */
+const headOf = (row: WorktreeSummary): SectionHead => {
+  if (row.repository === null) return { kind: 'folder', path: row.path }
+  return row.repository.bare ? { kind: 'bare', repository: row.repository } : { kind: 'untracked', repository: row.repository }
+}
+
+/** A section as it fills: its head so far, its cards with what orders them, and every worktree of the project, which say how busy it is. */
 type Filling = {
   readonly key: string
   readonly name: string
-  head: SectionHead | null
+  head: SectionHead
   readonly cards: Array<Ranked & { readonly card: IndexCard }>
-  readonly rows: WorktreeSummary[]
+  readonly members: WorktreeSummary[]
+}
+
+/** The folder a path sits in, by its name; empty at the root. */
+const parentName = (path: string) => path.split('/').at(-2) ?? ''
+
+/**
+ * The names the heads carry: a project's own, or, where two sections would
+ * carry the same, each with its parent folder's name before it, as a linked
+ * worktree is named whose folder shares its main worktree's name.
+ */
+function namesOf(projects: readonly Filling[]): ReadonlyMap<string, string> {
+  const shared = new Map<string, number>()
+  for (const project of projects) shared.set(project.name, (shared.get(project.name) ?? 0) + 1)
+  return new Map(projects.map((project) => {
+    const parent = parentName(project.key)
+    return [project.key, (shared.get(project.name) ?? 0) > 1 && parent !== '' ? `${parent}/${project.name}` : project.name]
+  }))
 }
 
 /**
@@ -131,69 +171,70 @@ function epicsOf(rows: readonly WorktreeSummary[], now: number): Array<Ranked & 
 /**
  * The stack for these rows. Every worktree is drawn once: a main worktree at
  * the head of its repository's section, whatever its file says; a worktree in
- * no epic as a card of its own in its repository's section; and one in an
- * epic inside that epic's card, which stands in the section of the repository
- * all its worktrees belong to, or above the sections when they belong to more
- * than one. A repository is in the stack while any worktree of it is listed,
- * headed by its main worktree whether or not that has a session. The sections
- * are ordered as the cards in them are, busiest first.
+ * no epic as a card of its own in its project's section; and one in an epic
+ * inside that epic's card, which stands in the section of the project all its
+ * worktrees belong to, or in the section of the epics across projects when
+ * they belong to more than one. A project is in the stack while any worktree
+ * of it is listed, headed whether or not a session is there. Every section,
+ * the one across projects included, is ordered as the cards in it are,
+ * busiest first, and a quiet one is dim and last.
  */
 export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }): Dashboard {
   const filling = new Map<string, Filling>()
-  const sectionOf = (row: WorktreeSummary): Filling => {
+  const projectOf = (row: WorktreeSummary): Filling => {
     const key = sectionKeyOf(row)
     const known = filling.get(key)
     if (known !== undefined) return known
-    const head: SectionHead | null = row.repository === null ? null : { kind: 'untracked', repository: row.repository }
-    const section: Filling = { key, name: row.repository?.name ?? row.name, head, cards: [], rows: [] }
-    filling.set(key, section)
-    return section
+    const project: Filling = { key, name: row.repository?.name ?? row.name, head: headOf(row), cards: [], members: [] }
+    filling.set(key, project)
+    return project
   }
   for (const row of rows) {
-    const section = sectionOf(row)
+    const project = projectOf(row)
+    project.members.push(row)
     // Git lists one main worktree per repository, so a second can only be a
     // path that was main when it was taken on; it is drawn, as a card.
-    if (row.main && section.head?.kind !== 'tracked') {
-      section.head = { kind: 'tracked', row }
-      section.rows.push(row)
-    } else if (row.main || row.epic === null) {
+    if (row.main && project.head.kind !== 'tracked') project.head = { kind: 'tracked', row }
+    else if (row.main || row.epic === null) {
       const standing = standingOf([row], now)
-      section.cards.push({ card: { kind: 'loose', row, quiet: standing.quiet }, standing, name: row.name })
-      section.rows.push(row)
+      project.cards.push({ card: { kind: 'loose', row, quiet: standing.quiet }, standing, name: row.name })
     }
   }
   const across: Array<Ranked & { readonly card: EpicCardShape }> = []
   for (const epic of epicsOf(rows, now)) {
     const [first] = epic.card.rows
     const homes = new Set(epic.card.rows.map((row) => sectionKeyOf(row)))
-    if (first === undefined || homes.size > 1) {
-      across.push(epic)
-      continue
-    }
-    const section = sectionOf(first)
-    section.cards.push(epic)
-    section.rows.push(...epic.card.rows)
+    if (first === undefined || homes.size > 1) across.push(epic)
+    else projectOf(first).cards.push(epic)
   }
-  const sections = [...filling.values()].map((section) => ({ section, standing: standingOf(section.rows, now), name: section.name }))
+  const names = namesOf([...filling.values()])
+  const projects = [...filling.values()].map((project) => {
+    const name = names.get(project.key) ?? project.name
+    const standing = standingOf(project.members, now)
+    const cards = project.cards.toSorted(busierFirst).map((entry) => entry.card)
+    const section: ProjectSection = { kind: 'project', key: project.key, name, head: project.head, cards, quiet: standing.quiet }
+    return { section, standing, name }
+  })
+  const acrossStanding = standingOf(across.flatMap((epic) => epic.card.rows), now)
+  const acrossSection: AcrossSection = {
+    kind: 'across',
+    key: acrossKey,
+    cards: across.toSorted(busierFirst).map((entry) => entry.card),
+    quiet: acrossStanding.quiet,
+  }
+  const ranked = across.length === 0 ? projects : [...projects, { section: acrossSection, standing: acrossStanding, name: acrossName }]
   return {
-    across: across.toSorted(busierFirst).map((entry) => entry.card),
-    sections: sections
+    sections: ranked
       .toSorted((left, right) => busierFirst(left, right) || left.section.key.localeCompare(right.section.key))
-      .map(({ section, standing }) => ({
-        key: section.key,
-        name: section.name,
-        head: section.head,
-        cards: section.cards.toSorted(busierFirst).map((entry) => entry.card),
-        quiet: standing.quiet,
-      })),
+      .map((entry) => entry.section),
   }
 }
 
 /** Every epic's card on the page, wherever it stands. */
-export const epicCardsOf = (dashboard: Dashboard): readonly EpicCardShape[] => [
-  ...dashboard.across,
-  ...dashboard.sections.flatMap((section) => section.cards.flatMap((card) => (card.kind === 'epic' ? [card] : []))),
-]
+export const epicCardsOf = (dashboard: Dashboard): readonly EpicCardShape[] =>
+  dashboard.sections.flatMap((section) =>
+    section.kind === 'across' ? section.cards : section.cards.flatMap((card) => (card.kind === 'epic' ? [card] : []))
+  )
 
 /**
  * The fewest and the most items any stage drawn on the page holds. Every
