@@ -11,10 +11,11 @@ import { Button } from './ui/button'
 
 /**
  * One session's actions, as the board's strip renders them: the shared list as
- * icon buttons at the start of the row, each named for what it does and
- * carrying the sentence that says so as its tip. The index renders the same
- * list as a menu, with the names written out, so the two surfaces can never
- * offer different things or call them different names.
+ * icon buttons closing the row, right after what it says about the session,
+ * each named for what it does and carrying the sentence that says so as its
+ * tip. The index renders the same list as a menu, with the names written out,
+ * so the two surfaces can never offer different things or call them different
+ * names.
  */
 
 /** A value someone is going to paste somewhere else; the icon reports what happened to the copy. */

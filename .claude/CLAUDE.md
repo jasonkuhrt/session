@@ -54,15 +54,23 @@ sessions Claude Code's own listing reports, grouped to worktrees by working
 directory, and each worktree's newest interactive Codex threads, with chips that
 focus a terminal, open a thread in Codex, or offer a resume command or an id to
 copy. One list of actions serves both surfaces, the board's strip as icon
-buttons leading each row and the index's pills as menus, so neither can offer
-what the other does not. The overlay is ordered by one concept: live things have
-a process behind them and can need you now; resumable things are handles, they
-are never drawn as urgent, and the index leaves them to the board. Every fact
-traces to a listing run at render time, including the word for a session: the
-`status` of a live one, the `state` something last knew a resumable one in,
-never a word mapped into another. Nothing is inferred from a timestamp, no Codex
-turn status is shown, no count is presented as all of a user's agents, and a
-source that fails shows a named notice instead of an empty list.
+buttons closing each row, right after what it says about the session, and the
+index's pills as menus, so neither can offer what the other does not. The
+overlay is ordered by one concept: live things have a process behind them and
+can need you now; resumable things are handles, they are never drawn as urgent,
+and the index leaves them to the board. Every fact traces to a listing run at
+render time, or to the two files read beside it, a live session's registry file
+and the tail of its transcript, including the word for a session: the `status`
+of a live one, the `state` something last knew a resumable one in, never a word
+mapped into another. A session's name leads its row and is drawn very dim when
+its registry file records it as the name Claude Code derived from the folder;
+its status time is the registry's `statusUpdatedAt`, labeled for what it
+measures, `busy for 16 min`; and its context is the count on the last reply in
+the tail of its transcript, as of the last listing, never a share of a window no
+source states, and nothing at all when the transcript cannot be read. Nothing is
+inferred from a timestamp, a transcript's modification time is never read, no
+Codex turn status is shown, no count is presented as all of a user's agents, and
+a source that fails shows a named notice instead of an empty list.
 
 The board's header and the pull request chips on the index's rows hold to the
 overlay's rule: the pull request and Linear chips carry only what `gh` and

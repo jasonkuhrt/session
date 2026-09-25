@@ -5,19 +5,18 @@ import type { PullRequestReports, WorktreeSummary } from '../contract'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
-import { Explained } from './components/tip'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useCapabilities } from './components/worktree-actions'
 import type { DragContext } from './components/worktree-cards'
-import { CardSpace, EpicCard, HeldPreview, LooseCard } from './components/worktree-cards'
+import { CardSpace, EpicCard, HeldPreview, LooseCard, NewEpicTarget } from './components/worktree-cards'
 import { MainStrip } from './components/worktree-row'
 import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
 import { dragSensors } from './lib/drag'
 import type { Dashboard, Dragged, DropOutcome } from './lib/epics'
-import { dashboardOf, draggedOf, dropOutcome, outcomeWords, targetId, targetOf, withEpics } from './lib/epics'
+import { dashboardOf, draggedOf, dropOutcome, outcomeWords, stageRangeOf, targetId, targetOf, withEpics } from './lib/epics'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
 
 const skeletonCards = [1, 2, 3, 4, 5, 6]
@@ -25,24 +24,6 @@ const skeletonCards = [1, 2, 3, 4, 5, 6]
 /** One line for the whole page: a source that failed, failed for every row. */
 const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
   [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
-
-/** What the page is, and what can be done on it, said where its name is. */
-const headingMeaning = (
-  <span className="block space-y-1">
-    <span className="block">
-      Every worktree the daemon is tracking, and what its session holds. A worktree joins this page when a session is
-      created in it and leaves when that session is gone.
-    </span>
-    <span className="block">
-      The main worktrees are pinned on top. Below them is a card per epic and one per worktree in none, the ones with a
-      live agent first, then by their latest activity; one with nothing live and nothing in five days is dim and last.
-    </span>
-    <span className="block">
-      Drag a worktree onto an epic to join it, onto a worktree in no epic to make an epic of the two, or out of its epic
-      onto the space between the cards to leave it.
-    </span>
-  </span>
-)
 
 /**
  * One worktree's new epic, as a write sends it: the worktree by its path, the
@@ -74,6 +55,21 @@ const changesOf = (outcome: Exclude<DropOutcome, { kind: 'make' }>, rows: readon
     ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
     : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
 
+/**
+ * The dialog a new epic opens, for one worktree dropped on the `+` or two, one
+ * on the other: the worktrees with the epics drawn for them at the drop, which
+ * the write is made against; null when a row it names is no longer drawn.
+ */
+const newEpicRequest = (
+  outcome: Extract<DropOutcome, { kind: 'make' }>,
+  rows: readonly WorktreeSummary[],
+): EpicNameRequest | null => {
+  const named = rowsAt(rows, outcome.paths)
+  return named.length === outcome.paths.length
+    ? { kind: 'epic', ids: outcome.paths, names: named.map((row) => row.name), from: named.map((row) => row.epic) }
+    : null
+}
+
 export function WorktreeIndex() {
   const [writing, setWriting] = React.useState(false)
   /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
@@ -92,6 +88,7 @@ export function WorktreeIndex() {
   const capabilities = useCapabilities()
   const drawn = snapshot === null ? listed : snapshot.rows
   const rows = drawn === null ? null : withEpics({ rows: drawn, epics: writes })
+  const drawnRows = rows ?? []
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
 
@@ -120,7 +117,8 @@ export function WorktreeIndex() {
     pullRequests,
     now,
     capabilities,
-    rows: rows ?? [],
+    stageRange: stageRangeOf(drawnRows),
+    rows: drawnRows,
     writing,
     landingOn: null,
     onRename: (card) => setNaming({ kind: 'rename', ids: card.rows.map((row) => row.path), epic: card.name }),
@@ -130,10 +128,9 @@ export function WorktreeIndex() {
     <TooltipProvider>
       <div className="flex min-h-dvh flex-col bg-background text-foreground">
         <title>Worktrees</title>
+        {/* No heading: every card says what it is and how it moves from where
+            it is, and the tab carries the page's name. */}
         <header className="flex items-center gap-8 border-b px-6 py-5">
-          <h1 className="font-medium">
-            <Explained meaning={headingMeaning}>Worktrees</Explained>
-          </h1>
           <SettingsMenu className="ml-auto" />
         </header>
         {notice ? (
@@ -163,19 +160,8 @@ export function WorktreeIndex() {
                   ? null
                   : dropOutcome({ rows, dragged, target: targetOf(event.operation.target?.id) })
                 if (outcome === null) return
-                if (outcome.kind !== 'make') {
-                  void write(changesOf(outcome, rows))
-                  return
-                }
-                const named = rowsAt(rows, outcome.paths)
-                if (named.length === 2) {
-                  setNaming({
-                    kind: 'epic',
-                    ids: outcome.paths,
-                    names: [named[0]!.name, named[1]!.name],
-                    from: [named[0]!.epic, named[1]!.epic],
-                  })
-                }
+                if (outcome.kind === 'make') setNaming(newEpicRequest(outcome, rows))
+                else void write(changesOf(outcome, rows))
               }}
             >
               <Cards dashboard={dashboard} context={context} />
@@ -190,9 +176,10 @@ export function WorktreeIndex() {
             const request = naming
             setNaming(null)
             if (request === null || rows === null) return
-            // A new epic's two worktrees are written against the epics drawn
-            // when one was dropped on the other, so a join that lands while
-            // the dialog is open is refused rather than overwritten.
+            // A new epic's worktrees, one dropped on the `+` or two, one
+            // dropped on the other, are written against the epics drawn at
+            // the drop, so a join that lands while the dialog is open is
+            // refused rather than overwritten.
             if (request.kind === 'epic') {
               void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
               return
@@ -213,7 +200,8 @@ export function WorktreeIndex() {
 /**
  * The strip and the cards, inside the drag, where what is held and what it is
  * over are known: the card it would land in is outlined, and the pointer
- * carries the card with the words of what dropping it there would do.
+ * carries the card with the words of what dropping it there would do. While a
+ * worktree is held, a `+` after the cards takes it into an epic of its own.
  */
 function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragContext }) {
   const { source, target } = useDragOperation()
@@ -222,6 +210,7 @@ function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragCont
   const outcome = dragged === null ? null : dropOutcome({ rows: context.rows, dragged, target: over })
   const landingOn = outcome === null || over === null ? null : targetId(over)
   const held: DragContext = { ...context, landingOn }
+  const heldRow = dragged?.kind === 'row' ? context.rows.find((row) => row.path === dragged.path) ?? null : null
   return (
     <>
       <MainStrip mains={dashboard.mains} context={context} />
@@ -232,6 +221,7 @@ function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragCont
               ? <EpicCard key={`epic:${card.name}`} card={card} context={held} />
               : <LooseCard key={card.row.path} card={card} context={held} />
           )}
+          {heldRow === null ? null : <NewEpicTarget name={heldRow.name} context={held} />}
         </div>
       </CardSpace>
       {/* Dropped, the card is drawn where the drop put it, so nothing flies back first. */}

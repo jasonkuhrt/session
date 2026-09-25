@@ -42,15 +42,20 @@ worktree; `-C` goes before the command to point at another one. The
 [operations reference](src/session/references/operations.md) has every command.
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
-worktree to it, and opens its board. The index at the root, headed Worktrees,
+worktree to it, and opens its board. The index at the root has no heading, only
+its tab's name, Worktrees, and every card says what it is in its own tips. It
 shows every worktree the daemon knows as cards: the main worktrees pinned in a
 strip on top, then a card per epic with its worktrees inside and a card of its
 own for each worktree in none, the ones with a live agent first, then by their
 latest activity, and one with nothing live and nothing in five days dim and
-last. A worktree is two lines, its name and the agents live in it over its
-branch and the pull request gh reports for it, beside a glyph of how many items
-each stage holds. Drag a worktree onto an epic to join it, onto a worktree in
-no epic to make an epic of the two, or out of its epic onto empty space to
+last. A worktree is two lines, marked as the worktree picker marks them: a
+folder and its name with the agents live in it, over a branch and its branch, or
+a commit for a detached HEAD, and the pull request gh reports for it. At its top
+left a glyph shows how many items each stage holds, every glyph measured against
+the fewest and the most any stage on the page holds, so a height means the same
+on every card. Drag a worktree onto an epic to join it, onto a worktree in no
+epic to make an epic of the two, onto the `+` that appears after the cards while
+it is held to make an epic of it alone, or out of its epic onto empty space to
 leave it; `session join "<epic>"` and `session leave` do the same from a
 terminal. Each board sits under `/w/<worktree name>/`. Activity is when the
 worktree last did anything: a Claude Code session's status change, a Codex
@@ -126,21 +131,27 @@ process behind it: a Claude Code session with a pid, or a Codex thread an app
 holds open, and only a live thing can need you now. A resumable thing is a
 handle and the state something last knew it in; the only thing to do with one is
 pick it back up. The board's strip lists both, live rows first and resumable
-rows below them, each row leading with the ways to reach it as icon buttons,
+rows below them. Each row starts with the session's name, very dim when Claude
+Code made it from the folder, then its harness, one word for how it is doing
+with how long it has held it, `busy for 16 min`, how many tokens are in its
+context when its transcript says, and last the ways to reach it as icon buttons:
 focus its cmux tab, open the thread in Codex, or copy its resume command or its
-id, then one word for how it is doing, its name, and its age.
-The index names only what is live, a pill per session that opens that same list
-as a menu; a worktree whose agents are all resumable shows none, and its board
-is where they are. The listing is recomputed when the index renders and when the
-Claude session registry or the Codex writer locks change, and every open board
-is pushed the change.
+id. The index names only what is live, a pill per session that opens that same
+list as a menu; a worktree whose agents are all resumable shows none, and its
+board is where they are. The listing is recomputed when the index renders and
+when the Claude session registry or the Codex writer locks change, and every
+open board is pushed the change.
 
-Everything shown is read from those listings at the moment it is shown, and the
-board claims nothing further: no liveness guessed from timestamps, no Codex turn
-status, and no count that means all of your agents, because teammates,
-in-process subagents, bare and cloud sessions never register. A source that
-cannot be reached names itself instead of showing an empty list. The files stay
-the work; this is only a way to reach the agents working on them. The
+Everything shown is read when the agents are listed, from the listings and the
+files beside them: each live session's registry file, for when its status last
+changed and where its name came from, and the tail of its transcript, for what
+is in its context. Nothing watches a transcript, so the context count is as of
+the last listing, which a status change brings. The board claims nothing
+further: no liveness guessed from timestamps, no Codex turn status, and no count
+that means all of your agents, because teammates, in-process subagents, bare and
+cloud sessions never register. A source that cannot be reached names itself
+instead of showing an empty list. The files stay the work; this is only a way to
+reach the agents working on them. The
 [operations reference](src/session/references/operations.md#agents-on-the-board)
 has what each chip shows and what each action does.
 

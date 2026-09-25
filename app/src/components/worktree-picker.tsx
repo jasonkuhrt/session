@@ -1,4 +1,3 @@
-import { FolderGit2, GitBranch, GitCommitHorizontal } from 'lucide-react'
 import * as React from 'react'
 
 import type { Session, WorktreeSummary } from '../../contract'
@@ -7,6 +6,7 @@ import { checkoutLabel } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useTip } from './tip'
 import { Button } from './ui/button'
+import { CheckoutMark, WorktreeMark } from './worktree-marks'
 import {
   Combobox,
   ComboboxContent,
@@ -23,10 +23,9 @@ type Option = { key: string; name: string; path: string; branch: string | null; 
 /**
  * How the picker names a worktree, on the control and in the list alike: its
  * name over what it has checked out, a line each, and each line marked with
- * what it is, a folder for the worktree and a branch for the branch, or a
- * commit when Git has a commit checked out rather than a branch. A line too
- * long for the popup is cut short rather than wrapped, so every option is the
- * same two lines and the list reads down one edge.
+ * what it is, as every row of the index marks it. A line too long for the
+ * popup is cut short rather than wrapped, so every option is the same two
+ * lines and the list reads down one edge.
  */
 function WorktreeLabel({ name, branch, detached, className }: {
   name: string
@@ -34,15 +33,14 @@ function WorktreeLabel({ name, branch, detached, className }: {
   detached: boolean
   className?: string
 }) {
-  const CheckoutIcon = detached ? GitCommitHorizontal : GitBranch
   return (
     <span className={cn('grid min-w-0 gap-0.5 text-left', className)}>
       <span className="flex min-w-0 items-center gap-1.5">
-        <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <WorktreeMark />
         <span className="truncate font-medium">{name}</span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
-        <CheckoutIcon aria-hidden className="size-3.5 shrink-0" />
+        <CheckoutMark detached={detached} />
         <span className="truncate">{checkoutLabel({ branch, detached })}</span>
       </span>
     </span>

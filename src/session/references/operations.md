@@ -413,78 +413,96 @@ items reaches an open index at once; a change under `context/`,
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through.
 
-The index at `/`, headed Worktrees, draws the tracked worktrees as cards rather
-than as a table, with the settings icon at the far end of its header. A strip on
-top holds the main worktrees, one per repository whose main checkout has a
-session, each marked with a house and ordered by name, and they are never
-dragged: a main worktree is never in an epic. Below it is a card per epic,
-headed by the epic's name, how many worktrees are in it and an icon that renames
-it, with its worktrees inside, and a card of its own for each worktree in no
-epic. The cards are ordered by what is happening in them: a card with a live
-agent first, live as a pill counts it, then the newest activity first, and a
-card with nothing live and nothing in five days is drawn dim and last, as a quiet
-main worktree is drawn dim in the strip; the worktrees in an epic's card follow
-the same order, and a name settles a tie. Nothing stores an order or a fold,
-since every read draws them again. The cards stand in columns as wide as a card
-needs, and where the browser lays grid items out as masonry, with `display:
+The index at `/` draws the tracked worktrees as cards rather than as a table,
+under a header that holds only the settings icon, at its far end. It has no
+heading: the browser's tab names it Worktrees, and every card says what it is
+and how it moves from where it is, in the tips of the mark before a worktree's
+name, of an epic's heading and of a dim card, so nothing needs a page-wide
+sentence. A strip on top holds the main worktrees, one per repository whose main
+checkout has a session, each marked with a house and ordered by name, and they
+are never dragged: a main worktree is never in an epic. Below it is a card per
+epic, headed by the epic's name, how many worktrees are in it and an icon that
+renames it, with its worktrees inside, and a card of its own for each worktree
+in no epic. The cards are ordered by what is happening in them: a card with a
+live agent first, live as a pill counts it, then the newest activity first, and
+a card with nothing live and nothing in five days is drawn dim and last, as a
+quiet main worktree is drawn dim in the strip; the worktrees in an epic's card
+follow the same order, and a name settles a tie. Nothing stores an order or a
+fold, since every read draws them again. The cards stand in columns as wide as a
+card needs, and where the browser lays grid items out as masonry, with `display:
 grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
 above it; elsewhere each starts at the top of its row. No script lays them out.
 
-A worktree is two lines wherever it is drawn: its name, a terminal icon and a
-Zed icon, and a pill per live agent, then its branch and the pull request gh
-reports for it. A
-name stands without its path, which is its tip: the name already tells the
-worktrees apart, since one whose folder shares the main checkout's name carries
-its parent folder's name before it. A worktree with a commit checked out rather
-than a branch reads `Detached HEAD` where the branch would be, and a folder
-outside Git reads `No branch`. What every row has checked out comes from one
-`git worktree list` per repository, run in the Git directory the repository's
-worktrees share, rather than from Git asked once per row. The pull request is
-the chip a board's header carries, or gh's sentence in its place, and a branch
-with no pull request, like a repository with no remote on GitHub, shows none.
-Beside the two lines a glyph says what the session holds, in place of words:
-one small bar per stage in the flow's order, Triage to Execute, as tall as its
-share of the fullest stage and a dim stub when the stage is empty, then the
-total. The Execute bar takes the accent while a batch runs there, and the tip
-names each stage with its count and the batch under way, which is where a batch
-is named. Each board sits under `/w/<key>/`, where the key is the worktree name,
-`Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees whose names
-collide are a conflict: the later one is listed with a reason that names both
-folders, and is not served until the first one leaves. A row the daemon does
-not serve, for such a conflict or for a session or a Git it cannot read, reads
-Not served with the reason in place of its second line and has no link to its
-board; it stays in its epic's card while its file names one. A `meta/epic` the
-rules reject puts its worktree in no epic and says why on the second line, in
-the sentence `check` gives, and the row is served as ever: the file is about the
-index, not the work.
+A worktree is two lines wherever it is drawn, beside the glyph of what its
+session holds at its top left: a folder and its name, a terminal icon and a Zed
+icon, and a pill per live agent, then a branch mark and its branch and the pull
+request gh reports for it. The marks are the worktree picker's, a folder, a
+branch, and a commit in place of the branch for a detached HEAD, so a name and a
+branch are told apart wherever a worktree is drawn. The folder's tip says what
+the worktree is here: on the page while it has a session, in an epic or in none,
+and where it can be dropped. A name stands without its path, which is its tip:
+the name already tells the worktrees apart, since one whose folder shares the
+main checkout's name carries its parent folder's name before it. A worktree with
+a commit checked out rather than a branch reads `Detached HEAD` where the branch
+would be, and a folder outside Git reads `No branch`. What every row has checked
+out comes from one `git worktree list` per repository, run in the Git directory
+the repository's worktrees share, rather than from Git asked once per row. The
+pull request is the chip a board's header carries, or gh's sentence in its
+place, and a branch with no pull request, like a repository with no remote on
+GitHub, shows none. The glyph says what the session holds in place of words: one
+small bar per stage in the flow's order, Triage to Execute, and no total beside
+it. Every glyph on the page is measured against one range, the fewest and the
+most items any stage drawn on the page holds, so a bar's height is the same
+count on every card: the fewest sits at the baseline and the most is full
+height, which with an empty stage anywhere is a count's share of the page's
+largest. An empty stage is a dim stub at the baseline, and when every stage on
+the page holds the same number every bar is drawn there. The range is read from
+the rows each time the page draws them and kept nowhere, and a row the daemon
+does not serve draws no glyph and counts for none of it. The Execute bar takes
+the accent while a batch runs there, and the tip names each stage with its
+count, the batch under way, which is where a batch is named, and the total. Each
+board sits under `/w/<key>/`, where the key is the worktree name, `Heartbeat` or
+`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
+conflict: the later one is listed with a reason that names both folders, and is
+not served until the first one leaves. A row the daemon does not serve, for such
+a conflict or for a session or a Git it cannot read, reads Not served with the
+reason in place of its second line and has no link to its board; it stays in its
+epic's card while its file names one. A `meta/epic` the rules reject puts its
+worktree in no epic and says why on the second line, in the sentence `check`
+gives, and the row is served as ever: the file is about the index, not the work.
 
 The cards change their epics by drag. A worktree is held by its row, and a whole
 epic by its heading; the pointer carries a copy of what is held while the card
 itself stays in place, faint, and the copy says above it what dropping it there
 would do, `Join "Back burner"`, `Merge into "Back burner"`, `New epic with
 alpha-two` or `Leave "Back burner"`, and nothing when the drop would change
-nothing; the card it would land in is outlined. Where the pointer is decides
-the drop. A worktree dropped onto an epic's card joins it, and so do all of a
-whole epic's worktrees. A worktree dropped onto another worktree's card in no
-epic makes an epic of the two, named in the dialog groups and batches are
-named in, which starts empty and makes nothing without a name. A worktree
-dragged out of its epic onto the space between and below the cards leaves it
-and becomes a card of its own. Escape puts it back. The rename icon opens the
-same dialog with the epic's name in it and moves every worktree in the epic to
-the new name, so a name another epic already has merges the two. A drop is
-written with the epic route, one request per worktree, which is drawn where it
-lands at once and read again once it is written; a refusal, such as a file
-changed since the index read it, shows above the cards in the daemon's words.
-While a card is held, the index draws what it drew when the card was picked up,
-its rows, pull requests and clock alike, so no card moves under the pointer: a
-change it is told of meanwhile is read once the card is let go, and a read
-already under way at pickup lands unseen until then. While a drop is being
-written it holds its reads the same way, and then reads once. Every worktree
-the index lists can be dragged but a main one, a worktree it does not serve
-included, since the epic route takes a path. Each drop is written against the
-epic drawn for every worktree when it was dropped, a new epic's two worktrees
-through the dialog as well, so one whose file was changed in the meantime is
-refused as changed on disk, and the index reads again.
+nothing; the card it would land in is outlined. Where the pointer is decides the
+drop. A worktree dropped onto an epic's card joins it, and so do all of a whole
+epic's worktrees. A worktree dropped onto another worktree's card in no epic
+makes an epic of the two, named in the dialog groups and batches are named in,
+which starts empty and makes nothing without a name. While a worktree is held,
+from a card of its own or out of an epic, a `+` is drawn after the cards, and
+only then, since it can do nothing otherwise; its tip is `New epic of <name>`,
+and so are the words over the held copy. A worktree dropped on it opens the same
+dialog and makes an epic of that one worktree, or puts it in the epic that
+already has the name given, and no name makes nothing. A worktree dragged out of
+its epic onto the space between and below the cards leaves it and becomes a card
+of its own. Escape puts it back. The rename icon opens the same dialog with the
+epic's name in it and moves every worktree in the epic to the new name, so a
+name another epic already has merges the two. A drop is written with the epic
+route, one request per worktree, which is drawn where it lands at once and read
+again once it is written; a refusal, such as a file changed since the index read
+it, shows above the cards in the daemon's words. While a card is held, the index
+draws what it drew when the card was picked up, its rows, pull requests and
+clock alike, so no card moves under the pointer: a change it is told of
+meanwhile is read once the card is let go, and a read already under way at
+pickup lands unseen until then. While a drop is being written it holds its reads
+the same way, and then reads once. Every worktree the index lists can be dragged
+but a main one, a worktree it does not serve included, since the epic route
+takes a path. Each drop is written against the epic drawn for every worktree
+when it was dropped, a new epic's worktrees through the dialog as well, so one
+whose file was changed in the meantime is refused as changed on disk, and the
+index reads again.
 
 ## Use the board
 
@@ -839,11 +857,25 @@ follow at reduced contrast, and each tier is named as soon as the second one has
 anything in it. Every row keeps its age, because for a resumable row the age is
 the one fact that says how stale its state is.
 
-A row starts with its actions, as icon buttons in a column as wide as the most
-actions any row has, then its harness, and lines up with every other row. A
-Claude chip carries its actions, one word for the session, its name, and its
-age. The word is the `status` of a live session, and for a resumable one the
-`state` Claude Code last knew it in:
+A row reads in one line and lines up with every other row: the session's name
+first, then its harness, its word with its time, what is in its context when
+that can be read, and its actions, as icon buttons in a column as wide as the
+most actions any row has, right after what the row says about the session.
+
+The name is the listing's `name`. Claude Code makes one from the folder for a
+session nobody named, the folder in lower case and two hex digits,
+`heartbeat-fc`, and the session's registry file, `sessions/<pid>.json` in Claude
+Code's directory, records it as `nameSource: derived`. Such a name repeats the
+folder and says nothing about the work, so it is drawn very dim; it is still
+drawn, because it is what tells two sessions in one folder apart. A name given
+with `/rename` or `--name` is recorded as `user` and drawn as it is, and any
+other word the registry writes there is shown in the name's tip as it arrived.
+The registry's word is the whole test: a name that only looks made up is not
+second-guessed, and a session with no process has no registry file to say, so
+its name is drawn as it is.
+
+The word is the `status` of a live session, and for a resumable one the `state`
+Claude Code last knew it in:
 
 | word | what the listing means by it |
 | --- | --- |
@@ -866,9 +898,41 @@ session's `blocked` is a memory, not a request, so it is never accented; it
 sorts last, and its word's tooltip says that its process is gone, what Claude
 Code last knew, and that `claude attach` picks it up.
 
-A live session's age is its time in status, `idle for 3 h`, because how long it
-has held is what decides whether to go to it; a resumable session's age is when
-it started. Both carry the exact moment.
+A live session's word carries its time in status, labeled for what it is, `busy
+for 16 min`, because how long it has held is what decides whether to go to it.
+It is the time since the registry file's `statusUpdatedAt`, which Claude Code
+writes when the status changes, and the tip names that stamp and its file. No
+other stamp stands in for it: the file's `updatedAt` moves on a rename as well.
+A live session whose registry file cannot be read, and a resumable session,
+show when they started instead, `started 3 d ago`. Every time carries the exact
+moment.
+
+What is in a live session's context is read from the tail of its transcript,
+`projects/<key>/<session id>.jsonl` in Claude Code's directory, where the key is
+the working directory with every character but a letter or a digit turned into
+`-`, as Claude Code names it; past 200 characters Claude Code cuts the key and
+adds a hash, so a long one is found by its cut name. The last 64 KB are read,
+line-aligned, which holds the last reply for nearly every transcript whatever
+its size, and the count is the last assistant line's `usage`: its input,
+cache-creation and cache-read tokens, the count Claude Code's own status line
+works from, taken from the last message pass when the usage lists passes. It
+reads `128k in context`, and its tip carries the exact count, when the listing
+it came from ran, when the line was written and the transcript's path. It is a
+count and never a share, because neither the listing nor the line says how large
+the window is. The lines Claude Code leaves out of its own count are passed over
+here too, before anything else about them is read: one with no usage, one naming
+the `<synthetic>` model, as an API error does, an unmetered one, and one that
+opens with Claude Code's own canned text, an interruption, a refused or rejected
+tool use, or "No response requested."; a count Claude Code writes as null counts
+as none. A reply whose count cannot be read ends the search, so an older reply
+never stands in for a newer one. A session whose transcript cannot be found or
+read, or whose tail holds no reply, shows nothing there and no notice. The count
+is read when the agents are listed and at no other time, since only the registry
+and Codex's writer locks are watched and never a transcript: it is as of the
+last listing, which a status change brings, so a turn that stays busy keeps the
+count it was listed with beside a time in status that keeps growing. The
+transcript's modification time is never read: hooks, progress and link entries
+move it when nothing has been said.
 
 On the strip each action is an icon, named for what it does as the button's
 accessible name, with the sentence of what it does as its tip: a terminal for
@@ -881,14 +945,15 @@ refuses, the line cmux returned shows under the row. When there is no terminal
 to focus, the chip offers "Copy resume command" instead, if the session has
 one: `claude --resume <session id>` for an interactive session,
 `claude attach <id>` for a background one. "Copy session id" is there whenever
-the listing carries one. Names are never acted on, so nothing on the board says
-where a name came from.
+the listing carries one. Names are never acted on: a name is not a handle.
 
-A Codex chip carries the thread's origin, its name or, failing that, its first
-line, and how long ago it was last active. "Open in Codex" hands
-`codex://threads/<id>` to the Codex app, which is where the thread opens, so no
-tab is opened for it; it is always available, because that id comes from the
-same listing being rendered, and "Copy thread id" is there beside it. The word is
+A Codex row starts the same way, with the thread's name or, failing that, the
+first line of its preview, as Codex lists them, then its origin, its word, and
+how long ago it was last active; Codex records no context for a thread, so that
+column is empty. "Open in Codex" hands `codex://threads/<id>` to the Codex app,
+which is where the thread opens, so no tab is opened for it; it is always
+available, because that id comes from the same listing being rendered, and
+"Copy thread id" is there beside it. The word is
 `open` when a live process holds the thread's writer lock, `not open` when the
 locks were read and this thread was not among them, and `unknown` when they
 could not be read at all. Only `not open` is resumable: it is the one answer
@@ -897,7 +962,9 @@ that already has an active writer, and an `unknown` thread is never demoted as
 if nothing held it.
 
 On the index each worktree carries a pill per live session rather than a count:
-its dot, its word, and its name, ordered as the board orders its rows. A
+its dot, its word with its time as the board's row writes it, `busy for 16 min`,
+and its name, very dim when Claude Code made it, ordered as the board orders its
+rows. A
 pill opens the menu of that session's actions, which is the board's own list
 rendered as a menu with each action's name written beside its icon, under a line
 naming the session, its harness, what its word means, and its age. Copying keeps

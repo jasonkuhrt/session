@@ -26,18 +26,19 @@ export type BoardNameRequest =
   | { readonly kind: 'batch'; readonly ids: readonly string[]; readonly group: string | null }
 
 /**
- * What the index names: an epic for two worktrees, one dropped onto the other
- * in no epic, or a new name for an epic, which every worktree in it takes, so a
- * name another epic has merges the two. `ids` are the worktrees' paths; a new
- * epic's `from` is the epic drawn for each when it was dropped, which its
- * write is made against.
+ * What the index names: a new epic, for two worktrees, one dropped onto the
+ * other in no epic, or for one dropped on the `+` after the cards; or a new
+ * name for an epic, which every worktree in it takes, so a name another epic
+ * has merges the two. `ids` are the worktrees' paths and `names` their names,
+ * in the same order; a new epic's `from` is the epic drawn for each when it
+ * was dropped, which its write is made against.
  */
 export type EpicNameRequest =
   | {
     readonly kind: 'epic'
-    readonly ids: readonly [string, string]
-    readonly names: readonly [string, string]
-    readonly from: readonly [string | null, string | null]
+    readonly ids: readonly string[]
+    readonly names: readonly string[]
+    readonly from: readonly (string | null)[]
   }
   | { readonly kind: 'rename'; readonly ids: readonly string[]; readonly epic: string }
 
@@ -48,12 +49,16 @@ const startingName = (request: NameRequest | null) =>
   request?.kind === 'batch' ? request.group ?? '' : request?.kind === 'rename' ? request.epic : ''
 
 function epicCopyOf(request: EpicNameRequest) {
-  const common = { label: 'Epic name', placeholder: 'What do these worktrees serve together?' }
+  const placeholder = request.ids.length === 1 ? 'What does this worktree serve?' : 'What do these worktrees serve together?'
+  const common = { label: 'Epic name', placeholder }
   if (request.kind === 'epic') {
+    const [first, second] = request.names
     return {
       ...common,
       title: 'Make an epic',
-      description: `${request.names[0]} and ${request.names[1]} will be in one epic under this name. A name another epic already has puts them in it.`,
+      description: second === undefined
+        ? `${first} will be in a new epic under this name. A name another epic already has puts it in that one.`
+        : `${first} and ${second} will be in one epic under this name. A name another epic already has puts them in it.`,
       submit: 'Make epic',
       submitting: 'Making…',
     }

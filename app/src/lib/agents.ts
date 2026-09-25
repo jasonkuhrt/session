@@ -1,4 +1,5 @@
 import type { ClaudeSession, CodexThread } from '../../contract'
+import { absoluteTime, since } from './format'
 
 /**
  * What the two agent surfaces agree a listing means. The board's strip and the
@@ -34,9 +35,8 @@ export const isLive = (session: ClaudeSession) => session.pid !== null
  */
 export const isParkedThread = (thread: CodexThread) => thread.loaded === false
 
-/** What to call a session: its name, else whatever handle identifies it. */
-export const sessionName = (session: ClaudeSession) =>
-  session.name ?? session.backgroundId ?? (session.pid === null ? 'Session' : `pid ${session.pid}`)
+/** A live session's registry file, as its tips name it: `sessions/<pid>.json` in Claude Code's directory. */
+export const registryFile = (pid: number) => `sessions/${pid}.json`
 
 /**
  * The one word for a session. A live session says what it is doing now; a
@@ -44,6 +44,32 @@ export const sessionName = (session: ClaudeSession) =>
  */
 export const wordOf = (session: ClaudeSession) =>
   (isLive(session) ? session.status : session.state) ?? missingStatus
+
+/**
+ * When a live session's status last changed, which is what its word is
+ * labeled with; a resumable session has no status to hold.
+ */
+const statusSince = (session: ClaudeSession) => (isLive(session) ? session.statusChangedAt : null)
+
+/**
+ * The word with how long it has held, `busy for 16 min`, or the bare word when
+ * that is not known. A duration always says what it measures: a bare `16 min`
+ * beside a word reads as silence.
+ */
+export const heldWord = ({ session, now }: { readonly session: ClaudeSession; readonly now: number }): string => {
+  const at = statusSince(session)
+  return at === null ? wordOf(session) : `${wordOf(session)} for ${since(at, now)}`
+}
+
+/** Where that duration comes from, for the tip behind it; null when the word carries none. */
+export const heldMeaning = (session: ClaudeSession): string | null => {
+  const at = statusSince(session)
+  if (at === null || session.pid === null) return null
+  const moment = absoluteTime(at)
+  return `Its status has been ${wordOf(session)} since ${moment}: the statusUpdatedAt Claude Code wrote to its registry file, ${
+    registryFile(session.pid)
+  }, when the status last changed.`
+}
 
 /**
  * Whether this session is waiting on a person right now. Only a live session

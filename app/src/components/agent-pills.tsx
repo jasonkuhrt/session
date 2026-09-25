@@ -1,26 +1,27 @@
 import * as React from 'react'
 
 import type { AgentsSummary, ClaudeSession, CodexThread } from '../../contract'
+import { isDerivedName, nameMeaning, sessionName, threadNameMeaning } from '../lib/agent-names'
 import type { Action } from '../lib/agents'
 import {
   actionKey,
   actionsFor,
   actionsForThread,
+  heldMeaning,
+  heldWord,
   isLive,
   loadedMeaning,
   meaningOf,
   needsYou,
-  sessionName,
   sortSessions,
   sortThreads,
-  wordOf,
   wordOfThread,
 } from '../lib/agents'
 import { IndexApi } from '../lib/api'
 import { openOnceOnClick } from '../lib/open-once'
-import { absoluteTime, relativeTime, since } from '../lib/format'
+import { absoluteTime, relativeTime } from '../lib/format'
 import { cn } from '../lib/utils'
-import { ActionIcon, Dot } from './agent-marks'
+import { ActionIcon, Dot, Name } from './agent-marks'
 import { copyLabel, useCopy } from './copyable'
 import { useTip } from './tip'
 import { Badge } from './ui/badge'
@@ -51,29 +52,33 @@ type Pill = {
   /** The session is waiting on a person: the one thing here with a colour. */
   attention: boolean
   tone: 'on' | 'attention'
+  /** The word with how long it has held, `busy for 16 min`, as the board's row writes it. */
   word: string
   name: string
+  /** Whether Claude Code made the name from the folder, which is drawn very dim here as on the board. */
+  derived: boolean
+  /** Where the name came from, in a sentence. */
+  nameMeaning: string
   /** `Claude Code` or `Codex Desktop`: which harness this session belongs to. */
   harness: string
   meaning: string
   /**
-   * When this became what it is: `idle since 14 Sep 2026, 10:56 (3 h)` for a
-   * session whose status carries a moment, else `started …` or `updated …`
+   * When this became what it is: `idle for 3 h, since 14 Sep 2026, 10:56` for
+   * a session whose status carries a moment, else `started …` or `updated …`
    * with the exact time behind it.
    */
   age: string
-  /** Null when the age line already carries the exact moment itself. */
-  ageMeaning: string | null
+  /** The exact moment behind the age, and for a status time the registry stamp it is read from. */
+  ageMeaning: string
   waitingFor: string | null
   actions: readonly Action[]
 }
 
 /** What a pill says in one sentence, for the hover before the click. */
-const summarize = (pill: Pill) => `${pill.name}\n${pill.harness} · ${pill.meaning} · ${pill.age}`
+const summarize = (pill: Pill) => `${pill.name}\n${pill.nameMeaning}\n${pill.harness} · ${pill.meaning} · ${pill.age}`
 
 const claudePill = (session: ClaudeSession, now: number): Pill => {
   const attention = needsYou(session)
-  const word = wordOf(session)
   // How long it has held its status belongs to the word, not beside it: the
   // pill would otherwise say `idle` and `idle for 3 h` in the same breath.
   const changed = session.statusChangedAt
@@ -81,14 +86,16 @@ const claudePill = (session: ClaudeSession, now: number): Pill => {
     key: session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`,
     attention,
     tone: attention ? 'attention' : 'on',
-    word: changed === null ? word : `${word} · ${since(changed, now)}`,
+    word: heldWord({ session, now }),
     name: sessionName(session),
+    derived: isDerivedName(session),
+    nameMeaning: nameMeaning(session),
     harness: 'Claude Code',
     meaning: meaningOf(session),
     age: changed === null
       ? `started ${relativeTime(session.startedAt, now)}`
-      : `${word} since ${absoluteTime(changed)} (${since(changed, now)})`,
-    ageMeaning: changed === null ? `It started at ${absoluteTime(session.startedAt)}.` : null,
+      : `${heldWord({ session, now })}, since ${absoluteTime(changed)}`,
+    ageMeaning: heldMeaning(session) ?? `It started at ${absoluteTime(session.startedAt)}.`,
     waitingFor: attention ? session.waitingFor : null,
     actions: actionsFor(session),
   }
@@ -100,6 +107,8 @@ const codexPill = (thread: CodexThread, now: number): Pill => ({
   tone: 'on',
   word: wordOfThread(thread),
   name: thread.name,
+  derived: false,
+  nameMeaning: threadNameMeaning,
   harness: `Codex ${thread.origin}`,
   meaning: loadedMeaning(thread.loaded),
   age: `updated ${relativeTime(thread.updatedAt, now)}`,
@@ -186,18 +195,16 @@ function SessionPill({ pill }: { pill: Pill }) {
       >
         <Dot tone={pill.tone} />
         <span className={pill.attention ? undefined : 'text-muted-foreground'}>{pill.word}</span>
-        <span className="max-w-[24ch] truncate">{pill.name}</span>
+        <Name name={pill.name} derived={pill.derived} className="max-w-[24ch] truncate" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-auto min-w-64">
         {/* The label names the group it sits in, so the session it describes and
             the actions that act on it are one group and not two. */}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-normal">
-            <span className="block wrap-anywhere text-foreground">{pill.name}</span>
+            <Name name={pill.name} derived={pill.derived} className="block wrap-anywhere text-foreground" />
             <span className="block wrap-anywhere">{pill.harness} · {pill.meaning}</span>
-            <span className="block" title={pill.ageMeaning === null ? undefined : tip(pill.ageMeaning)}>
-              {pill.age}
-            </span>
+            <span className="block" title={tip(pill.ageMeaning)}>{pill.age}</span>
             {pill.waitingFor === null
               ? null
               : <span className="block text-attention wrap-anywhere">{pill.waitingFor}</span>}

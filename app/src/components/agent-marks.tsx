@@ -6,8 +6,19 @@ import type { CopyState } from './copyable'
 
 /**
  * The parts both agent surfaces draw, kept where each can only be drawn one
- * way: the dot beside a session's word, and the icon on one of its actions.
+ * way: a session's name, the dot beside its word, and the icon on one of its
+ * actions.
  */
+
+/**
+ * What a session is called. A name Claude Code made from the folder, because
+ * nobody named the session, is drawn very dim: it repeats the folder and says
+ * nothing about the work, yet it is still what tells two sessions in one
+ * folder apart.
+ */
+export function Name({ name, derived, className }: { name: string; derived: boolean; className?: string }) {
+  return <span className={cn(derived && 'opacity-30', className)}>{name}</span>
+}
 
 /** A dot that carries one fact: whether something is live, and whether it needs you. */
 export function Dot({ tone }: { tone: 'on' | 'attention' | 'off' | 'unknown' }) {
