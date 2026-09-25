@@ -10,9 +10,11 @@ import type { ContextFill } from '../../contract.ts';
  * Claude Code writes it down: the `usage` on the last reply in the session's
  * transcript. Only the file's tail is read, so a 40 MB transcript costs what a
  * new one does, and a transcript that cannot be found, read or understood
- * yields nothing rather than a guess. The file's modification time is never
- * read: the lines Claude Code appends between replies, hooks, progress and
- * links among them, move it when nothing has been said.
+ * yields nothing rather than a guess. It is read when the agents are listed and
+ * at no other time: nothing watches a transcript, so the count is as of the
+ * last listing. The file's modification time is never read either: the lines
+ * Claude Code appends between replies, hooks, progress and links among them,
+ * move it when nothing has been said.
  */
 
 /**
@@ -30,69 +32,113 @@ const keyLimit = 200;
 /** The model Claude Code names on a line it wrote without asking one, such as an API error. */
 const syntheticModel = '<synthetic>';
 
-const Count = Schema.Finite.pipe(Schema.optionalKey);
+/**
+ * The texts Claude Code writes as a whole reply of its own, which it leaves out
+ * of its count whatever model the line names (Claude Code 2.1.283): an
+ * interruption, a refused or rejected tool use, and "no response requested",
+ * which a model can also answer with.
+ */
+const cannedReplies: ReadonlySet<string> = new Set([
+  '[Request interrupted by user]',
+  '[Request interrupted by user for tool use]',
+  "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.",
+  'No response requested.',
+]);
+
+/** A count as Claude Code writes it: a number, or null on a line of its own, which counts as none. */
+const Count = Schema.Finite.pipe(Schema.NullOr, Schema.optionalKey);
+
+const LineJson = Schema.Unknown.pipe(Schema.fromJsonString);
+
+/** What a line says it is: a reply is looked at, and every other line is passed over. */
+const KindSchema = Schema.Struct({ type: Schema.String });
 
 /**
- * One pass of a request. A reply compacted on its way lists every pass, and the
- * last pass that is a message is what the model read.
+ * The fields that decide whether a reply counts at all, read loosely so that
+ * nothing about a line Claude Code passes over can refuse it: no usage, the
+ * synthetic model, an unmetered request, and a canned text all mean it counts
+ * nothing, as they do for Claude Code.
  */
-const PassSchema = Schema.Struct({
-  type: Schema.String.pipe(Schema.optionalKey),
-  input_tokens: Count,
-  output_tokens: Count,
-  cache_creation_input_tokens: Count,
-  cache_read_input_tokens: Count,
-});
-type Pass = typeof PassSchema.Type;
-
-/** A reply's line, only as far as the count needs it; every other field is ignored. */
-const ReplySchema = Schema.Struct({
-  type: Schema.Literal('assistant'),
-  timestamp: Schema.String.pipe(Schema.optionalKey),
-  isUnmetered: Schema.Boolean.pipe(Schema.optionalKey),
+const HeadSchema = Schema.Struct({
+  isUnmetered: Schema.Unknown.pipe(Schema.optionalKey),
   message: Schema.Struct({
-    model: Schema.String.pipe(Schema.optionalKey),
+    model: Schema.Unknown.pipe(Schema.optionalKey),
+    usage: Schema.Unknown.pipe(Schema.optionalKey),
+    content: Schema.Unknown.pipe(Schema.optionalKey),
+  }),
+});
+type Head = typeof HeadSchema.Type;
+
+const isCannedOpening = Schema.is(Schema.Struct({ type: Schema.Literal('text'), text: Schema.String }));
+
+/** The count itself, from a reply that counts: every field but these is ignored, and a null counts as none. */
+const ReplySchema = Schema.Struct({
+  timestamp: Schema.String.pipe(Schema.NullOr, Schema.optionalKey),
+  message: Schema.Struct({
     usage: Schema.Struct({
       input_tokens: Count,
       cache_creation_input_tokens: Count,
       cache_read_input_tokens: Count,
-      iterations: Schema.Array(PassSchema).pipe(Schema.optionalKey),
+      iterations: Schema.Unknown.pipe(Schema.Array, Schema.NullOr, Schema.optionalKey),
     }),
   }),
 });
 type Usage = typeof ReplySchema.Type['message']['usage'];
 
-/** What a line says it is: a reply is read, and every other line is passed over. */
-const KindSchema = Schema.Struct({ type: Schema.String });
+/**
+ * One pass of a request. A reply compacted on its way lists every pass, and the
+ * last pass that is a message is what the model read.
+ */
+const isPass = Schema.is(Schema.Struct({
+  type: Schema.String,
+  input_tokens: Schema.Finite,
+  output_tokens: Schema.Finite,
+  cache_creation_input_tokens: Schema.Finite,
+  cache_read_input_tokens: Schema.Finite,
+}));
 
-const LineJson = Schema.Unknown.pipe(Schema.fromJsonString);
+/** A pass that is not the model reading the conversation: a compaction, or an advisor's message. */
+const isSetAside = Schema.is(Schema.Struct({ type: Schema.Literals(['compaction', 'advisor_message']) }));
 
-const inputSide = (counts: Usage | Pass) =>
-  (counts.input_tokens ?? 0) + (counts.cache_creation_input_tokens ?? 0) + (counts.cache_read_input_tokens ?? 0);
+const inputSide = (counts: {
+  readonly input_tokens?: number | null;
+  readonly cache_creation_input_tokens?: number | null;
+  readonly cache_read_input_tokens?: number | null;
+}) => (counts.input_tokens ?? 0) + (counts.cache_creation_input_tokens ?? 0) + (counts.cache_read_input_tokens ?? 0);
 
-/** A pass Claude Code takes as what the reply read: a message, with every count present and something read. */
-const isReading = (pass: Pass) =>
-  (pass.type === 'message' || pass.type === 'fallback_message') &&
-  [pass.input_tokens, pass.output_tokens, pass.cache_creation_input_tokens, pass.cache_read_input_tokens].every(
-    (count) => count !== undefined && count >= 0,
-  ) &&
-  inputSide(pass) > 0;
+/** Whether Claude Code passes a reply over, before its count is read. */
+const isPassedOver = (head: Head) => {
+  const { content, model, usage } = head.message;
+  const first: unknown = Array.isArray(content) ? content[0] : undefined;
+  return usage === undefined ||
+    usage === null ||
+    model === syntheticModel ||
+    head.isUnmetered === true ||
+    (isCannedOpening(first) && cannedReplies.has(first.text));
+};
 
 /**
  * The tokens a reply read, counted the way Claude Code 2.1.283 counts them for
  * its status line: the input, cache-creation and cache-read tokens of the
- * usage, or of its last pass that is not a compaction or an advisor's, when
- * that pass is a complete message.
+ * usage, or of its last pass that is not set aside, when that pass is a
+ * complete message with something read.
  */
 const tokensRead = (usage: Usage): number => {
   const whole = inputSide(usage);
-  if (whole === 0 || usage.iterations === undefined) return whole;
-  const last = usage.iterations.findLast((pass) => pass.type !== 'compaction' && pass.type !== 'advisor_message');
-  return last !== undefined && isReading(last) ? inputSide(last) : whole;
+  if (whole === 0 || usage.iterations === undefined || usage.iterations === null) return whole;
+  const last: unknown = usage.iterations.findLast((pass) => !isSetAside(pass));
+  const reading = isPass(last) &&
+    (last.type === 'message' || last.type === 'fallback_message') &&
+    [last.input_tokens, last.output_tokens, last.cache_creation_input_tokens, last.cache_read_input_tokens].every(
+      (count) => count >= 0,
+    ) &&
+    inputSide(last) > 0;
+  return reading ? inputSide(last) : whole;
 };
 
-const isoOf = (stamp: string | undefined): string | null =>
-  stamp === undefined
+const isoOf = (stamp: string | null | undefined): string | null =>
+  stamp === undefined || stamp === null
     ? null
     : DateTime.make(stamp).pipe(Option.map((moment) => DateTime.formatIso(moment)), Option.getOrNull);
 
@@ -138,12 +184,37 @@ const tailLines = (path: string) =>
     }),
   );
 
+/** What one line of the tail says: nothing to count, a reply's count, or a reply whose count cannot be read. */
+type Reading =
+  | { readonly kind: 'passed-over' }
+  | { readonly kind: 'counted'; readonly tokens: number; readonly lineAt: string | null }
+  | { readonly kind: 'unreadable' };
+
+const passedOver: Reading = { kind: 'passed-over' };
+const unreadable: Reading = { kind: 'unreadable' };
+const counted = (tokens: number, lineAt: string | null): Reading => ({ kind: 'counted', tokens, lineAt });
+
+const readingOf = (line: string) =>
+  Effect.gen(function*() {
+    const value = yield* Schema.decodeEffect(LineJson)(line).pipe(Effect.option);
+    if (Option.isNone(value)) return passedOver;
+    const kind = yield* Schema.decodeUnknownEffect(KindSchema)(value.value).pipe(Effect.option);
+    if (Option.isNone(kind) || kind.value.type !== 'assistant') return passedOver;
+    const head = yield* Schema.decodeUnknownEffect(HeadSchema)(value.value).pipe(Effect.option);
+    if (Option.isNone(head)) return unreadable;
+    if (isPassedOver(head.value)) return passedOver;
+    const reply = yield* Schema.decodeUnknownEffect(ReplySchema)(value.value).pipe(Effect.option);
+    if (Option.isNone(reply)) return unreadable;
+    const tokens = tokensRead(reply.value.message.usage);
+    return tokens > 0 ? counted(tokens, isoOf(reply.value.timestamp)) : passedOver;
+  });
+
 /**
  * The context a live session's last reply left, or null when its transcript
  * cannot be found or read, or its tail holds no reply that can be. A line
- * Claude Code wrote without asking the model, an API error or an interruption,
- * counts nothing and is passed over, as Claude Code passes it over; a reply that
- * cannot be read ends the search, so an older reply never stands in for it.
+ * Claude Code passes over, an API error, an interruption or another line with
+ * no count of its own, is passed over here too; a reply whose count cannot be
+ * read ends the search, so an older reply never stands in for it.
  */
 export const contextOf = ({ projects, cwd, sessionId }: {
   /** Claude Code's `projects/` directory, or null when it cannot be named. */
@@ -158,15 +229,11 @@ export const contextOf = ({ projects, cwd, sessionId }: {
     const transcript = yield* transcriptOf(projects, cwd, sessionId);
     if (transcript === null) return null;
     for (const line of (yield* tailLines(transcript)).toReversed()) {
-      const value = yield* Schema.decodeEffect(LineJson)(line).pipe(Effect.option);
-      if (Option.isNone(value)) continue;
-      const kind = yield* Schema.decodeUnknownEffect(KindSchema)(value.value).pipe(Effect.option);
-      if (Option.isNone(kind) || kind.value.type !== 'assistant') continue;
-      const reply = yield* Schema.decodeUnknownEffect(ReplySchema)(value.value);
-      const tokens = reply.message.model === syntheticModel || reply.isUnmetered === true
-        ? 0
-        : tokensRead(reply.message.usage);
-      if (tokens > 0) return { tokens, transcript, lineAt: isoOf(reply.timestamp) } satisfies ContextFill;
+      const reading = yield* readingOf(line);
+      if (reading.kind === 'unreadable') return null;
+      if (reading.kind === 'counted') {
+        return { tokens: reading.tokens, transcript, lineAt: reading.lineAt } satisfies ContextFill;
+      }
     }
     return null;
   }).pipe(Effect.orElseSucceed(() => null));
