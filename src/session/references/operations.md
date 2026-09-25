@@ -413,25 +413,52 @@ items reaches an open index at once; a change under `context/`,
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through.
 
-The index at `/` draws the tracked worktrees as cards rather than as a table,
-under a header that holds only the settings icon, at its far end. It has no
-heading: the browser's tab names it Worktrees, and every card says what it is
-and how it moves from where it is, in the tips of the mark before a worktree's
-name, of an epic's heading and of a dim card, so nothing needs a page-wide
-sentence. A strip on top holds the main worktrees, one per repository whose main
-checkout has a session, each marked with a house and ordered by name, and they
-are never dragged: a main worktree is never in an epic. Below it is a card per
-epic, headed by the epic's name, how many worktrees are in it and an icon that
-renames it, with its worktrees inside, and a card of its own for each worktree
-in no epic. The cards are ordered by what is happening in them: a card with a
-live agent first, live as a pill counts it, then the newest activity first, and
-a card with nothing live and nothing in five days is drawn dim and last, as a
-quiet main worktree is drawn dim in the strip; the worktrees in an epic's card
-follow the same order, and a name settles a tie. Nothing stores an order or a
-fold, since every read draws them again. The cards stand in columns as wide as a
-card needs, and where the browser lays grid items out as masonry, with `display:
-grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
-above it; elsewhere each starts at the top of its row. No script lays them out.
+The index at `/` draws the tracked worktrees as a stack of sections, one per
+repository, rather than as a table, under a header that holds only the settings
+icon, at its far end. It has no heading: the browser's tab names it Worktrees,
+and every head and card says what it is and how it moves from where it is, in
+the tips of the marks before a name, of an epic's heading and of whatever is
+dim, so nothing needs a page-wide sentence. A repository is what Git names for
+every worktree of it: the worktrees that share one Git directory, named by its
+main worktree, the one Git lists first. Every row the daemon serves carries its
+repository, the main worktree's name and path and what that has checked out,
+from the same `git worktree list` as the row's own branch, and nothing about a
+repository is kept anywhere. A section is headed by its repository's main
+worktree, drawn as the constant it is, a worktree's two lines with a house
+before its name, and never dragged, since a main worktree is never in an epic.
+A repository whose main checkout has no session is headed all the same, so that
+its worktrees have a home: by the main worktree's name and branch as Git lists
+them, marked Not tracked, with no glyph, no link, no actions and no agents,
+since there is no session there to show and the daemon opens and lists nothing
+for a worktree it does not track. When Git cannot list a repository its rows are
+Not served in Git's words and such a head says so where its branch would be,
+and the rows keep their section, named by the main worktree Git listed when
+each was taken on. A folder outside Git belongs to no repository and has a
+section of its own, with no head. Below its head a section holds the
+repository's cards: a card per epic whose worktrees all belong to it, headed by
+the epic's name, how many worktrees are in it and an icon that renames it, with
+its worktrees inside, and a card of its own for each of its worktrees in no
+epic. An epic whose worktrees belong to more than one repository is drawn once,
+above the sections, under Across projects, since it is the one thing higher than
+a repository. So every worktree the index lists is drawn once: as a head, in an
+epic's card, or as a card of its own.
+
+The sections are ordered as the cards in them are, by what is happening in
+them: a section with a live agent first, live as a pill counts it, then the
+newest activity first, and a section with nothing live and nothing in five days
+is drawn dim and last, its head saying so in its tip. What is happening in a
+section is what is drawn in it, its head and its cards, and not its worktrees in
+an epic across repositories, so a repository whose worktrees are all in such
+epics is quiet, and a head is dim only while its section is. The cards in a
+section, and the epics across repositories, follow the same order: a card with
+a live agent first, then the newest activity, and a card with nothing live and
+nothing in five days dim and last; the worktrees in an epic's card follow it as
+well, and a name settles a tie. Nothing stores a section, an order or a fold,
+since every read draws them again. Each section's cards stand in columns as wide
+as a card needs, the same columns in every section, and where the browser lays
+grid items out as masonry, with `display: grid-lanes` or `grid-template-rows:
+masonry`, each card packs up under the one above it; elsewhere each starts at
+the top of its row. No script lays them out.
 
 A worktree is two lines wherever it is drawn, beside the glyph of what its
 session holds at its top left: a folder and its name, a terminal icon and a Zed
@@ -439,8 +466,8 @@ icon, and a pill per live agent, then a branch mark and its branch and the pull
 request gh reports for it. The marks are the worktree picker's, a folder, a
 branch, and a commit in place of the branch for a detached HEAD, so a name and a
 branch are told apart wherever a worktree is drawn. The folder's tip says what
-the worktree is here: on the page while it has a session, in an epic or in none,
-and where it can be dropped. A name stands without its path, which is its tip:
+the worktree is here: on the page while it has a session, at the head of its
+repository, in an epic or in none, and where it can be dropped. A name stands without its path, which is its tip:
 the name already tells the worktrees apart, since one whose folder shares the
 main checkout's name carries its parent folder's name before it. A worktree with
 a commit checked out rather than a branch reads `Detached HEAD` where the branch
@@ -481,13 +508,21 @@ drop. A worktree dropped onto an epic's card joins it, and so do all of a whole
 epic's worktrees. A worktree dropped onto another worktree's card in no epic
 makes an epic of the two, named in the dialog groups and batches are named in,
 which starts empty and makes nothing without a name. While a worktree is held,
-from a card of its own or out of an epic, a `+` is drawn after the cards, and
-only then, since it can do nothing otherwise; its tip is `New epic of <name>`,
-and so are the words over the held copy. A worktree dropped on it opens the same
-dialog and makes an epic of that one worktree, or puts it in the epic that
-already has the name given, and no name makes nothing. A worktree dragged out of
-its epic onto the space between and below the cards leaves it and becomes a card
-of its own. Escape puts it back. The rename icon opens the same dialog with the
+from a card of its own or out of an epic, a `+` is drawn after its repository's
+cards, and only then, since it can do nothing otherwise, and there, since an
+epic of one worktree stands with its repository; its tip is `New epic of
+<name>`, and so are the words over the held copy. A worktree dropped on it opens
+the same dialog and makes an epic of that one worktree, or puts it in the epic
+that already has the name given, and no name makes nothing. A worktree dragged
+out of its epic onto the space between and below the cards, the heads included,
+leaves it and becomes a card of its own in its repository's section, whichever
+section it was dropped in. Escape puts it back. Every drop works across
+repositories as it does within one, and where the epic stands follows from
+whose worktrees it holds: a worktree dropped onto a card or an epic of another
+repository makes or joins an epic that moves above the sections, under Across
+projects; a worktree that leaves such an epic goes back to its repository, and
+the epic, once what it holds belongs to one repository, goes into that
+repository's section. The rename icon opens the same dialog with the
 epic's name in it and moves every worktree in the epic to the new name, so a
 name another epic already has merges the two. A drop is written with the epic
 route, one request per worktree, which is drawn where it lands at once and read

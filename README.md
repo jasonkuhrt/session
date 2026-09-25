@@ -43,28 +43,35 @@ worktree; `-C` goes before the command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root has no heading, only
-its tab's name, Worktrees, and every card says what it is in its own tips. It
-shows every worktree the daemon knows as cards: the main worktrees pinned in a
-strip on top, then a card per epic with its worktrees inside and a card of its
-own for each worktree in none, the ones with a live agent first, then by their
-latest activity, and one with nothing live and nothing in five days dim and
-last. A worktree is two lines, marked as the worktree picker marks them: a
-folder and its name with the agents live in it, over a branch and its branch, or
-a commit for a detached HEAD, and the pull request gh reports for it. At its top
-left a glyph shows how many items each stage holds, every glyph measured against
-the fewest and the most any stage on the page holds, so a height means the same
-on every card. Drag a worktree onto an epic to join it, onto a worktree in no
-epic to make an epic of the two, onto the `+` that appears after the cards while
-it is held to make an epic of it alone, or out of its epic onto empty space to
-leave it; `session join "<epic>"` and `session leave` do the same from a
-terminal. Each board sits under `/w/<worktree name>/`. Activity is when the
-worktree last did anything: a Claude Code session's status change, a Codex
-thread's update, or an item file written. The index has no refresh button and
-needs none: any command that scaffolds a session registers it with a running
-daemon, a change to a session's items or epic reaches it as it is written, and a
-worktree whose `.session` goes away drops off the index by itself. The daemon
-also finds the other worktrees of the same repository that already have a
-`.session`.
+its tab's name, Worktrees, and every head and card says what it is in its own
+tips. It shows every worktree the daemon knows as a stack of sections, one per
+repository, each headed by its main worktree, marked with a house and never
+dragged, with the repository's cards below it: a card per epic with its
+worktrees inside and a card of its own for each worktree in none. A repository
+whose main checkout has no session is headed by its main worktree's name and
+branch, as Git lists them, marked Not tracked, so its worktrees still have a
+home, and a folder outside Git has a section of its own. An epic whose worktrees
+belong to more than one repository is drawn once, above the sections, under
+Across projects. Sections, and the cards in each, stand in the same order: the
+ones with a live agent first, then by their latest activity, and one with
+nothing live and nothing in five days dim and last. A worktree is two lines,
+marked as the worktree picker marks them: a folder and its name with the agents
+live in it, over a branch and its branch, or a commit for a detached HEAD, and
+the pull request gh reports for it. At its top left a glyph shows how many items
+each stage holds, every glyph measured against the fewest and the most any stage
+on the page holds, so a height means the same on every card. Drag a worktree
+onto an epic to join it, onto a worktree in no epic to make an epic of the two,
+from any repository, onto the `+` that appears after its repository's cards
+while it is held to make an epic of it alone, or out of its epic onto empty
+space to leave it and go back to its repository; `session join "<epic>"` and
+`session leave` do the same from a terminal. Each board sits under `/w/<worktree
+name>/`. Activity is when the worktree last did anything: a Claude Code
+session's status change, a Codex thread's update, or an item file written. The
+index has no refresh button and needs none: any command that scaffolds a session
+registers it with a running daemon, a change to a session's items or epic
+reaches it as it is written, and a worktree whose `.session` goes away drops off
+the index by itself. The daemon also finds the other worktrees of the same
+repository that already have a `.session`.
 
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
@@ -197,18 +204,23 @@ nothing else: it has no stage, lifecycle, owner or note, nothing about it
 accrues or asks for action, and it exists exactly while some worktree names it.
 A worktree is in at most one epic, since one file holds one name, and a main
 worktree is never in one: Git keeps the repository there, lists it first and
-will not move, lock or remove it, and the index pins it above the epics.
-Membership changes by a drag or a rename on the index, or by `session join` and
-`session leave`; deleting a worktree takes its membership with it, nothing is
-pruned, no path is stored, and nothing stores an order or a fold. Everything
-else about a worktree is read where it is kept: its session, `.session/`, which
-it has at most one of and which puts it on the index; its branch, from `git
-worktree list`, and none when detached; that branch's pull request, from `gh pr
-view`, taken as the one while one is open; and the agents in it, by the working
-directory their harness reports. An agent reaches an epic only through the
-worktree it works in, and no fact ties an agent to an epic, because none could
-be derived or verified. Linear issues are what the branch and the pull request
-name, and are not modeled.
+will not move, lock or remove it, and the index draws it at the head of its
+repository's section. Above the epic the index draws the repository, which is
+Git's rather than the tool's: the worktrees that share one Git directory, named
+by its main worktree, read from `git worktree list` whenever the index reads its
+rows and kept nowhere. An epic whose worktrees all belong to one repository is
+drawn in that repository's section, and one whose worktrees belong to more than
+one is drawn once, above them all. Membership changes by a drag or a rename on
+the index, or by `session join` and `session leave`; deleting a worktree takes
+its membership with it, nothing is pruned, no path is stored, and nothing stores
+an order or a fold. Everything else about a worktree is read where it is kept:
+its session, `.session/`, which it has at most one of and which puts it on the
+index; its branch, from `git worktree list`, and none when detached; that
+branch's pull request, from `gh pr view`, taken as the one while one is open;
+and the agents in it, by the working directory their harness reports. An agent
+reaches an epic only through the worktree it works in, and no fact ties an agent
+to an epic, because none could be derived or verified. Linear issues are what
+the branch and the pull request name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night

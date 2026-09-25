@@ -235,8 +235,8 @@ Back burner
   epic the worktree left. A command about the items does not: nothing about
   them depends on it.
 - A main worktree is never in an epic, since Git keeps the repository there and
-  lists it first: `session join` refuses one, and the index pins it above the
-  epics whatever its file says.
+  lists it first: `session join` refuses one, and the index draws it at the
+  head of its repository's section whatever its file says.
 - It is ignored with the rest of `.session/`, so it never enters a repository,
   and it goes with the worktree when the worktree is removed.
 
