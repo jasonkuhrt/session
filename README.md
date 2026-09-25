@@ -49,8 +49,8 @@ own for each worktree in none, the ones with a live agent first, then by their
 latest activity, and one with nothing live and nothing in five days dim and
 last. A worktree is two lines, its name and the agents live in it over its
 branch and the pull request gh reports for it, beside a glyph of how many items
-each stage holds. Drag a worktree onto an epic to join it, onto another
-worktree to make an epic of the two, or out of its epic onto empty space to
+each stage holds. Drag a worktree onto an epic to join it, onto a worktree in
+no epic to make an epic of the two, or out of its epic onto empty space to
 leave it; `session join "<epic>"` and `session leave` do the same from a
 terminal. Each board sits under `/w/<worktree name>/`. Activity is when the
 worktree last did anything: a Claude Code session's status change, a Codex

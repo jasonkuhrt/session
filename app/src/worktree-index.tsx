@@ -38,8 +38,8 @@ const headingMeaning = (
       live agent first, then by their latest activity; one with nothing live and nothing in five days is dim and last.
     </span>
     <span className="block">
-      Drag a worktree onto an epic to join it, onto another worktree to make an epic of the two, or out of its epic onto
-      the space between the cards to leave it.
+      Drag a worktree onto an epic to join it, onto a worktree in no epic to make an epic of the two, or out of its epic
+      onto the space between the cards to leave it.
     </span>
   </span>
 )
