@@ -22,6 +22,7 @@ import { absoluteTime, relativeTime, since } from '../lib/format'
 import { cn } from '../lib/utils'
 import { ActionIcon, Dot } from './agent-marks'
 import { copyLabel, useCopy } from './copyable'
+import { useTip } from './tip'
 import { Badge } from './ui/badge'
 import {
   DropdownMenu,
@@ -110,14 +111,15 @@ const codexPill = (thread: CodexThread, now: number): Pill => ({
 /** A value someone is going to paste somewhere else; the menu stays open for it. */
 function CopyItem({ action }: { action: Extract<Action, { kind: 'copy' }> }) {
   const [state, copy] = useCopy()
+  const tip = useTip()
   return (
     <DropdownMenuItem
       closeOnClick={false}
-      title={action.meaning}
+      title={tip(action.meaning)}
       aria-label={`${action.label}: ${action.value}`}
       onClick={() => void copy(action.value)}
     >
-      <ActionIcon action={action} copied={state === 'copied'} />
+      <ActionIcon action={action} copy={state} />
       {copyLabel({ label: action.label, state })}
     </DropdownMenuItem>
   )
@@ -133,10 +135,11 @@ function FocusItem({ action, onSettled }: {
   onSettled: (reason: string | null) => void
 }) {
   const [pending, setPending] = React.useState(false)
+  const tip = useTip()
   return (
     <DropdownMenuItem
       closeOnClick={false}
-      title={action.meaning}
+      title={tip(action.meaning)}
       disabled={pending}
       onClick={() => {
         void (async () => {
@@ -152,7 +155,7 @@ function FocusItem({ action, onSettled }: {
         })()
       }}
     >
-      <ActionIcon action={action} copied={false} /> {action.label}
+      <ActionIcon action={action} /> {action.label}
     </DropdownMenuItem>
   )
 }
@@ -161,6 +164,7 @@ function FocusItem({ action, onSettled }: {
 function SessionPill({ pill }: { pill: Pill }) {
   const [open, setOpen] = React.useState(false)
   const [failure, setFailure] = React.useState<string | null>(null)
+  const tip = useTip()
   const settle = (reason: string | null) => {
     setFailure(reason)
     if (reason === null) setOpen(false)
@@ -177,7 +181,7 @@ function SessionPill({ pill }: { pill: Pill }) {
       <DropdownMenuTrigger
         nativeButton={false}
         render={<Badge variant="outline" />}
-        title={summarize(pill)}
+        title={tip(summarize(pill))}
         className={cn('max-w-full cursor-pointer', pill.attention && 'font-medium text-attention')}
       >
         <Dot tone={pill.tone} />
@@ -191,7 +195,7 @@ function SessionPill({ pill }: { pill: Pill }) {
           <DropdownMenuLabel className="font-normal">
             <span className="block wrap-anywhere text-foreground">{pill.name}</span>
             <span className="block wrap-anywhere">{pill.harness} · {pill.meaning}</span>
-            <span className="block" {...(pill.ageMeaning === null ? {} : { title: pill.ageMeaning })}>
+            <span className="block" title={pill.ageMeaning === null ? undefined : tip(pill.ageMeaning)}>
               {pill.age}
             </span>
             {pill.waitingFor === null
@@ -207,7 +211,7 @@ function SessionPill({ pill }: { pill: Pill }) {
               : (
                 <DropdownMenuItem
                   key={actionKey(action)}
-                  title={action.meaning}
+                  title={tip(action.meaning)}
                   render={
                     <a
                       aria-label={`${action.label}: ${pill.name}`}
@@ -216,7 +220,7 @@ function SessionPill({ pill }: { pill: Pill }) {
                     />
                   }
                 >
-                  <ActionIcon action={action} copied={false} /> {action.label}
+                  <ActionIcon action={action} /> {action.label}
                 </DropdownMenuItem>
               )
           )}
@@ -239,6 +243,7 @@ function SessionPill({ pill }: { pill: Pill }) {
  * would say something is happening where nothing is known to be.
  */
 export function AgentsCell({ agents, now }: { agents: AgentsSummary; now: number }) {
+  const tip = useTip()
   const pills: Pill[] = []
   for (const session of sortSessions(agents.claude)) {
     if (isLive(session)) pills.push(claudePill(session, now))
@@ -250,7 +255,7 @@ export function AgentsCell({ agents, now }: { agents: AgentsSummary; now: number
   }
   if (pills.length === 0) {
     return (
-      <span className="text-muted-foreground" title="No agent is live in this worktree right now.">—</span>
+      <span className="text-muted-foreground" title={tip('No agent is live in this worktree right now.')}>—</span>
     )
   }
 

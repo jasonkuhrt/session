@@ -1,15 +1,20 @@
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
 import { isStage, moveAvailability, stageMeta } from '../lib/workflow'
+import { Tip } from './tip'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip'
+import { TooltipProvider } from './ui/tooltip'
+
+/** Why no stage can be reached from an archived item's page. */
+const archived = { enabled: false, reason: 'It is archived, so no stage holds it.' } as const
 
 /**
  * Where this item is, and where it may go from here. The five stages are a
  * fixed set that shows the shape of the flow, so a stage it cannot reach is
  * still drawn, very dim, and says on hover what has to happen first: the rule
  * that refused the move is the thing the reader is told, and nobody has to
- * remember the flow to see it.
+ * remember the flow to see it. An archived item is in none of them, so all
+ * five are dim.
  */
 export function StageControl({
   item,
@@ -18,9 +23,11 @@ export function StageControl({
   onMove,
 }: {
   item: Item
-  stage: Stage
+  /** The stage the item is filed in; null once it is archived. */
+  stage: Stage | null
   pending: boolean
-  onMove: (to: Stage) => void
+  /** Absent for an archived item, which has nowhere to go. */
+  onMove?: ((to: Stage) => void) | undefined
 }) {
   return (
     <TooltipProvider>
@@ -28,38 +35,38 @@ export function StageControl({
         className="grid w-full grid-cols-5"
         spacing={0}
         variant="outline"
-        value={[stage]}
+        value={stage === null ? [] : [stage]}
         onValueChange={(value) => {
           const target = value[0]
-          if (isStage(target) && moveAvailability(item, stage, target).enabled && !pending) onMove(target)
+          if (stage === null || !isStage(target) || pending) return
+          if (moveAvailability(item, stage, target).enabled) onMove?.(target)
         }}
       >
         {stageNames.map((candidate) => {
           const current = candidate === stage
-          const availability = moveAvailability(item, stage, candidate)
+          const availability = stage === null ? archived : moveAvailability(item, stage, candidate)
           const unavailable = pending || !availability.enabled
           const explanation = pending
             ? 'Another update is in progress'
             : availability.reason ?? stageMeta[candidate].hint
 
           return (
-            <Tooltip key={candidate}>
-              <TooltipTrigger
-                render={
-                  <ToggleGroupItem
-                    className="w-full aria-disabled:opacity-25"
-                    value={candidate}
-                    aria-disabled={!current && unavailable}
-                    onPressedChange={(_pressed, details) => {
-                      if (!current && unavailable) details.cancel()
-                    }}
-                  />
-                }
-              >
-                {stageMeta[candidate].label}
-              </TooltipTrigger>
-              <TooltipContent>{current ? stageMeta[candidate].hint : explanation}</TooltipContent>
-            </Tooltip>
+            <Tip
+              key={candidate}
+              meaning={current ? stageMeta[candidate].hint : explanation}
+              render={
+                <ToggleGroupItem
+                  className="w-full aria-disabled:opacity-25"
+                  value={candidate}
+                  aria-disabled={!current && unavailable}
+                  onPressedChange={(_pressed, details) => {
+                    if (!current && unavailable) details.cancel()
+                  }}
+                />
+              }
+            >
+              {stageMeta[candidate].label}
+            </Tip>
           )
         })}
       </ToggleGroup>

@@ -304,21 +304,44 @@ the route the CLI registers through.
 
 The index at `/` lists the tracked worktrees: name, branch, the agents at work
 in it, the item counts per stage, and activity, with a terminal icon beside each
-name. The batch in Execute is named beside that stage's count, which is the only
-place a batch is named, and a stage holding nothing renders an empty cell, so
-the five columns read as a pipeline by what is in them. Each board sits under
-`/w/<key>/`, where the key is the worktree name, `Heartbeat` or
-`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
-conflict: the later one is listed with the reason and is not served.
+name and the settings icon at the far end of its header. The batch in Execute is
+named beside that stage's count, which is the only place a batch is named, and a
+stage holding nothing renders an empty cell, so the five columns read as a
+pipeline by what is in them. Each board sits under `/w/<key>/`, where the key is
+the worktree name, `Heartbeat` or `email-backend/Heartbeat`. Two tracked
+worktrees whose names collide are a conflict: the later one is listed with the
+reason and is not served.
 
 ## Use the board
 
-A board's header shows its worktree's name and Git branch, the branch's pull
-request, the Linear issues the worktree names, one icon apiece for the session's
-Ledger, Context and Archive pages, a terminal icon, and "All sessions", which
-links back to the index. The page icons carry no count and no age; each names
-its page on hover. A non-Git folder uses its own `.session` and has no branch,
-so it has no pull request and names no issue either.
+A board's header starts with "All sessions", which links back to the index,
+then the worktree picker, the branch's pull request, the Linear issues the
+worktree names, one icon apiece for the session's Ledger, Context and Archive
+pages, and a terminal icon; the settings icon is at the far end. The picker is
+where the worktree and its branch are named: the control shows the worktree's
+name over the branch checked out in it, and opens a list of every worktree the
+daemon serves, each as the same two lines, its name over its branch, cut short
+rather than wrapped. Typing in the list narrows it by name or branch, and
+picking one opens that worktree's board. Until the index answers, and if it
+never does, the name and branch are plain text. The page icons carry no count
+and no age; each names its page as its tip. A non-Git folder uses its own
+`.session` and has no branch, so it has no pull request and names no issue
+either.
+
+The settings icon, at the far end of the board's header, of every page's
+trail, and of the index, opens the board's own settings. They are kept in the
+browser's localStorage under `session.settings`, as the JSON an Effect Schema
+writes, so they survive a reload and follow a change made in another tab of
+the same address; they say only how the board draws, and nothing in them
+reaches the daemon or the files. A setting missing from what is stored reads as
+its default; a stored value the schema cannot read leaves the defaults
+standing, and a write the browser refuses holds on the page until it reloads,
+and the menu says so either way. The one setting is Tips, off by default. With
+Tips on, every word and control says what it means when it is hovered or
+focused: the sentences this reference calls a tooltip, or says are on hover,
+are tips. With Tips off nothing comes up under the pointer, and a word that
+only carried a tip is plain text. A title that reports what just happened,
+such as a copy the clipboard refused, is not a tip and shows either way.
 
 The pull request is one chip, and the chip is a link to it: its number, gh's
 state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
@@ -425,8 +448,21 @@ control, which moves an item in one click and leaves you on the page in its new
 stage. All five stages are always drawn, because together they show the shape
 of the flow: a stage the item cannot reach is drawn very dim and says on hover
 what is needed first. "Complete work" is there for an item in Execute, and
-returns you to the board. Settle missing content with the agent or in the
-editor.
+leaves you on the page with the item archived. Settle missing content with the
+agent or in the editor. A code block on the page is a band across the window's
+full width, its text starting where the prose starts, and a line longer than
+the room to the right scrolls inside the band.
+
+An item filed under `archive/`, by "Complete work", `done`, `archive` or a
+commit's trailer, keeps its page. When no stage holds the id, the page reads
+the record under `archive/` whose name carries it, the one filed on the latest
+day when there are several, and shows the item as it was filed: "Archived" above the title with the state its name gives, `done`
+or the stage it was filed from, and the day; the record's path under the
+session; all five stages very dim, saying the item is archived; and the
+record's text in the reader. The record is read before the page changes, so an
+item filed while its page is open goes from its stage to the archive in one
+step. An id that is in no stage and no record reads "No item <ID> in this
+session.".
 
 A relative link in an item's Markdown names a path under the session. A link to
 a Markdown file opens it on the file page, below; a link to any other file, and
@@ -499,24 +535,25 @@ engine did not write is listed as it is.
 
 The header's three icons open a page apiece for those listings, and a fourth
 page renders one file. Each carries the trail All sessions / worktree / page,
-reads at the item page's width, and follows the files as the board does. The
-ledger page, `/w/<key>/ledger`, shows the entries newest first as cards: the
-title, the age with the exact moment on hover, the body in the item page's
-reader, and one small line of the entry's other keys as `key: value`. The
-context page, `/w/<key>/context`, shows `context/` as a tree, directories first
-and then by name. A directory starts collapsed and shows how many entries it
-holds; a file shows when it was written, copies its absolute path, and opens: a
-Markdown file on the file page, anything else as it is on disk, once, in a tab
-of its own. The archive page, `/w/<key>/archive`, lists the records newest first
-with the day, the id, the title and the state, whose meaning is on hover; each
-opens on the file page, and a name the engine did not write is listed as it is.
-The file page, `/w/<key>/file/<path>`, renders one Markdown file of the session
-with the item page's reader, Evidence collapsed, under the file's path as its
-trail and a copy of its absolute path; frontmatter at the top of a file, such as
-a ledger entry's, shows as the block of keys it is. A listing's notices stand
-above it, and an empty one reads "No entries.", "No files." or "No records.". A
-session whose items cannot be read still shows these pages, with the reason
-above them, because none of them reads the items.
+with the settings at its far end, reads at the item page's width, and follows
+the files as the board does. The ledger page, `/w/<key>/ledger`, shows the
+entries newest first as cards: the title, the age with the exact moment on
+hover, the body in the item page's reader, and one small line of the entry's
+other keys as `key: value`. The context page, `/w/<key>/context`, shows
+`context/` as a tree, directories first and then by name. A directory starts
+collapsed and shows how many entries it holds; a file shows when it was written,
+copies its absolute path, and opens: a Markdown file on the file page, anything
+else as it is on disk, once, in a tab of its own. The archive page,
+`/w/<key>/archive`, lists the records newest first with the day, the id, the
+title and the state, whose meaning is on hover; each opens on the file page, and
+a name the engine did not write is listed as it is. The file page,
+`/w/<key>/file/<path>`, renders one Markdown file of the session with the item
+page's reader, Evidence collapsed and code at the window's width, under the
+file's path as its trail and a copy of its absolute path; frontmatter at the top
+of a file, such as a ledger entry's, shows as the block of keys it is. A
+listing's notices stand above it, and an empty one reads "No entries.", "No
+files." or "No records.". A session whose items cannot be read still shows these
+pages, with the reason above them, because none of them reads the items.
 
 The board follows the files, and so does every page under it. The daemon watches
 that worktree's `.session` and pushes an event when anything under it changes,
@@ -561,8 +598,10 @@ follow at reduced contrast, and each tier is named as soon as the second one has
 anything in it. Every row keeps its age, because for a resumable row the age is
 the one fact that says how stale its state is.
 
-A Claude chip carries one word for the session, its name, its age, and its
-actions. The word is the `status` of a live session, and for a resumable one the
+A row starts with its actions, as icon buttons in a column as wide as the most
+actions any row has, then its harness, and lines up with every other row. A
+Claude chip carries its actions, one word for the session, its name, and its
+age. The word is the `status` of a live session, and for a resumable one the
 `state` Claude Code last knew it in:
 
 | word | what the listing means by it |
@@ -590,13 +629,19 @@ A live session's age is its time in status, `idle for 3 h`, because how long it
 has held is what decides whether to go to it; a resumable session's age is when
 it started. Both carry the exact moment.
 
-"Focus terminal" focuses the cmux tab holding the session's process, and appears
-only when the process is in one; when cmux refuses, the chip shows the line cmux
-returned. When there is no terminal to focus, the chip offers "Copy resume
-command" instead, if the session has one: `claude --resume <session id>` for an
-interactive session, `claude attach <id>` for a background one. "Copy session
-id" is there whenever the listing carries one. Names are never acted on, so
-nothing on the board says where a name came from.
+On the strip each action is an icon, named for what it does as the button's
+accessible name, with the sentence of what it does as its tip: a terminal for
+"Focus terminal", an arrow out for "Open in Codex", a clock turning back for
+"Copy resume command", and the copy mark for "Copy session id" and "Copy
+thread id". A copy reports itself on its icon, a tick once taken and a cross
+when the clipboard refused it. "Focus terminal" focuses the cmux tab holding
+the session's process, and appears only when the process is in one; when cmux
+refuses, the line cmux returned shows under the row. When there is no terminal
+to focus, the chip offers "Copy resume command" instead, if the session has
+one: `claude --resume <session id>` for an interactive session,
+`claude attach <id>` for a background one. "Copy session id" is there whenever
+the listing carries one. Names are never acted on, so nothing on the board says
+where a name came from.
 
 A Codex chip carries the thread's origin, its name or, failing that, its first
 line, and how long ago it was last active. "Open in Codex" hands
@@ -613,14 +658,15 @@ if nothing held it.
 The index carries one column per worktree, a pill per live session rather than a
 count: its dot, its word, and its name, ordered as the board orders its rows. A
 pill opens the menu of that session's actions, which is the board's own list
-rendered as a menu, under a line naming the session, its harness, what its word
-means, and its age. Copying keeps the menu open and says what happened; focusing
-a terminal closes it, or keeps it open showing the line cmux returned. Only live
-things are named here: a session whose process is gone and a thread nothing
-holds are handles, not work under way, and listing them would say something is
-happening where nothing is. They are on that worktree's own board, which is
-where a reader has already chosen the scope. A worktree with nothing live shows
-a dash, and notices are printed once under the header rather than on every row.
+rendered as a menu with each action's name written beside its icon, under a line
+naming the session, its harness, what its word means, and its age. Copying keeps
+the menu open and says what happened; focusing a terminal closes it, or keeps it
+open showing the line cmux returned. Only live things are named here: a session
+whose process is gone and a thread nothing holds are handles, not work under
+way, and listing them would say something is happening where nothing is. They
+are on that worktree's own board, which is where a reader has already chosen the
+scope. A worktree with nothing live shows a dash, and notices are printed once
+under the header rather than on every row.
 
 Its Activity column answers when the worktree last did anything and who did it:
 `Claude Code` for a session's status change, `Codex` for a thread's update,

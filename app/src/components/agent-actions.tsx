@@ -5,37 +5,35 @@ import type { Action } from '../lib/agents'
 import { actionKey } from '../lib/agents'
 import { openOnceOnClick } from '../lib/open-once'
 import { ActionIcon } from './agent-marks'
-import { copyLabel, useCopy } from './copyable'
+import { useCopy } from './copyable'
+import { Tip } from './tip'
 import { Button } from './ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /**
  * One session's actions, as the board's strip renders them: the shared list as
- * buttons, each carrying the sentence that says what it does. The index
- * renders the same list as a menu, so the two surfaces can never offer
- * different things or call them different names.
+ * icon buttons at the start of the row, each named for what it does and
+ * carrying the sentence that says so as its tip. The index renders the same
+ * list as a menu, with the names written out, so the two surfaces can never
+ * offer different things or call them different names.
  */
 
-/** A value someone is going to paste somewhere else. */
+/** A value someone is going to paste somewhere else; the icon reports what happened to the copy. */
 function CopyAction({ action }: { action: Extract<Action, { kind: 'copy' }> }) {
   const [state, copy] = useCopy()
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="xs"
-            aria-label={`${action.label}: ${action.value}`}
-            onClick={() => void copy(action.value)}
-          />
-        }
-      >
-        <ActionIcon action={action} copied={state === 'copied'} />
-        {copyLabel({ label: action.label, state })}
-      </TooltipTrigger>
-      <TooltipContent>{action.meaning}</TooltipContent>
-    </Tooltip>
+    <Tip
+      meaning={action.meaning}
+      render={
+        <Button
+          variant="outline"
+          size="icon-xs"
+          aria-label={`${action.label}: ${action.value}`}
+          onClick={() => void copy(action.value)}
+        />
+      }
+    >
+      <ActionIcon action={action} copy={state} />
+    </Tip>
   )
 }
 
@@ -48,32 +46,30 @@ function FocusAction({ action, name, onFocus, onFailure }: {
 }) {
   const [pending, setPending] = React.useState(false)
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="xs"
-            aria-label={`${action.label}: ${name}`}
-            disabled={pending}
-            onClick={() => {
-              void (async () => {
-                setPending(true)
-                try {
-                  const result = await onFocus(action.pid)
-                  onFailure(result.ok ? null : result.reason)
-                } finally {
-                  setPending(false)
-                }
-              })()
-            }}
-          />
-        }
-      >
-        <ActionIcon action={action} copied={false} /> {action.label}
-      </TooltipTrigger>
-      <TooltipContent>{action.meaning}</TooltipContent>
-    </Tooltip>
+    <Tip
+      meaning={action.meaning}
+      render={
+        <Button
+          variant="outline"
+          size="icon-xs"
+          aria-label={`${action.label}: ${name}`}
+          disabled={pending}
+          onClick={() => {
+            void (async () => {
+              setPending(true)
+              try {
+                const result = await onFocus(action.pid)
+                onFailure(result.ok ? null : result.reason)
+              } finally {
+                setPending(false)
+              }
+            })()
+          }}
+        />
+      }
+    >
+      <ActionIcon action={action} />
+    </Tip>
   )
 }
 
@@ -83,27 +79,25 @@ function LinkAction({ action, name }: {
   name: string
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="xs"
-            nativeButton={false}
-            render={
-              <a
-                aria-label={`${action.label}: ${name}`}
-                href={action.href}
-                onClick={openOnceOnClick(action.href)}
-              />
-            }
-          />
-        }
-      >
-        <ActionIcon action={action} copied={false} /> {action.label}
-      </TooltipTrigger>
-      <TooltipContent>{action.meaning}</TooltipContent>
-    </Tooltip>
+    <Tip
+      meaning={action.meaning}
+      render={
+        <Button
+          variant="outline"
+          size="icon-xs"
+          nativeButton={false}
+          render={
+            <a
+              aria-label={`${action.label}: ${name}`}
+              href={action.href}
+              onClick={openOnceOnClick(action.href)}
+            />
+          }
+        />
+      }
+    >
+      <ActionIcon action={action} />
+    </Tip>
   )
 }
 

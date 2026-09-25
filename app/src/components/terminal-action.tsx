@@ -2,8 +2,8 @@ import { SquareTerminal } from 'lucide-react'
 import * as React from 'react'
 
 import { DaemonApi } from '../lib/api'
+import { Tip } from './tip'
 import { Button } from './ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /** What the control does, said where it is drawn. */
 const terminalMeaning =
@@ -59,22 +59,20 @@ export function TerminalAction({ path, name, size }: {
   }
   return (
     <span className="flex items-center gap-2">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size={size}
-              aria-label={`Open a terminal in ${name} in cmux`}
-              disabled={pending}
-              onClick={() => void open()}
-            />
-          }
-        >
-          <SquareTerminal />
-        </TooltipTrigger>
-        <TooltipContent>{terminalMeaning}</TooltipContent>
-      </Tooltip>
+      <Tip
+        meaning={terminalMeaning}
+        render={
+          <Button
+            variant="ghost"
+            size={size}
+            aria-label={`Open a terminal in ${name} in cmux`}
+            disabled={pending}
+            onClick={() => void open()}
+          />
+        }
+      >
+        <SquareTerminal />
+      </Tip>
       {refusal === null ? null : <span className="text-xs text-destructive wrap-anywhere">{refusal}</span>}
     </span>
   )

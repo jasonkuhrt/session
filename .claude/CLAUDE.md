@@ -33,16 +33,16 @@ The board carries a read-only agents overlay beside the records: the Claude Code
 sessions Claude Code's own listing reports, grouped to worktrees by working
 directory, and each worktree's newest interactive Codex threads, with chips that
 focus a terminal, open a thread in Codex, or offer a resume command or an id to
-copy. One list of actions serves both surfaces, the board's strip as buttons and
-the index's pills as menus, so neither can offer what the other does not. The
-overlay is ordered by one concept: live things have a process behind them and
-can need you now; resumable things are handles, they are never drawn as urgent,
-and the index leaves them to the board. Every fact traces to a listing run at
-render time, including the word for a session: the `status` of a live one, the
-`state` something last knew a resumable one in, never a word mapped into
-another. Nothing is inferred from a timestamp, no Codex turn status is shown, no
-count is presented as all of a user's agents, and a source that fails shows a
-named notice instead of an empty list.
+copy. One list of actions serves both surfaces, the board's strip as icon
+buttons leading each row and the index's pills as menus, so neither can offer
+what the other does not. The overlay is ordered by one concept: live things have
+a process behind them and can need you now; resumable things are handles, they
+are never drawn as urgent, and the index leaves them to the board. Every fact
+traces to a listing run at render time, including the word for a session: the
+`status` of a live one, the `state` something last knew a resumable one in,
+never a word mapped into another. Nothing is inferred from a timestamp, no Codex
+turn status is shown, no count is presented as all of a user's agents, and a
+source that fails shows a named notice instead of an empty list.
 
 The board's header holds to the overlay's rule: the pull request and Linear
 chips carry only what `gh` and `linear` answered when the daemon last asked,
@@ -51,14 +51,26 @@ answer, and the terminal action asks `cmux` when it is clicked and shows cmux's
 own line when it refuses.
 
 Every rendered thing says what it means from where it is: a word carries its
-sentence in a tooltip or a `title`, a control says what it will do, and no
-surface needs a document to read. A control that cannot act is not drawn,
-rather than drawn disabled with a reason, unless it belongs to a fixed set that
-shows the shape of the flow, such as the five stages on an item's page: then it
-is drawn very dim, with the reason on hover, because hiding it would make the
-reader remember the flow instead of seeing it. The overlay adds no state and no
-verb: the files remain the work, the CLI is unchanged, and the `### Agent`
-convention in the records stays a convention the board does not interpret.
+sentence as a tip, a control says what it will do, and no surface needs a
+document to read. Tips are shown only while the Tips setting is on, and it is
+off by default, because a sentence under every passing pointer gets in the way
+more than it helps; every tooltip and explanatory `title` goes through `Tip`,
+`Explained` or `useTip`, so the one setting governs all of them, and the
+settings menu says what each setting does in the menu itself. A control that
+cannot act is not drawn, rather than drawn disabled with a reason, unless it
+belongs to a fixed set that shows the shape of the flow, such as the five
+stages on an item's page: then it is drawn very dim, with the reason as its
+tip, because hiding it would make the reader remember the flow instead of
+seeing it. An item's page stays with the item when it is archived, all five
+stages dim. The overlay adds no state and no verb: the files remain the work,
+the CLI is unchanged, and the `### Agent` convention in the records stays a
+convention the board does not interpret.
+
+The board's own settings are an Effect Schema kept in the browser's
+localStorage through `KeyValueStore`: how the board draws, never the work, and
+nothing in them reaches the daemon. A new setting is a field of the schema with
+its default, which is all its storage needs, and an item in the settings menu
+that says what it does.
 
 Keep stage names identical in files, CLI, and UI. Design collaboration and focused
 explanations compose through `design-together` and `show-me`.

@@ -158,16 +158,17 @@ export const sortThreads = (threads: readonly CodexThread[]): CodexThread[] =>
 
 /**
  * What can be done with one session, as data. Both surfaces render this list —
- * the strip as buttons, the index as a menu — so neither can offer an action
- * the other does not, and neither can offer one the listing did not support.
- * Every action carries the sentence that says what it does, so the control
- * explains itself wherever it is drawn.
+ * the strip as icon buttons, the index as a menu — so neither can offer an
+ * action the other does not, and neither can offer one the listing did not
+ * support. Every action carries its name and the sentence that says what it
+ * does, so the control explains itself wherever it is drawn.
  */
 export type Action =
   | { kind: 'focus'; label: string; meaning: string; pid: number }
   /** An address an app answers, handed to that app; the board opens no tab for it. */
   | { kind: 'link'; label: string; meaning: string; href: string }
-  | { kind: 'copy'; label: string; meaning: string; value: string }
+  /** A value for the clipboard: the command that resumes the session, or its id; each has its own icon. */
+  | { kind: 'copy'; subject: 'resume' | 'id'; label: string; meaning: string; value: string }
 
 /**
  * Where a Claude Code session can be reached, and only where it actually can
@@ -187,6 +188,7 @@ export const actionsFor = (session: ClaudeSession): Action[] => {
   if (session.terminal === null && session.resume !== null) {
     actions.push({
       kind: 'copy',
+      subject: 'resume',
       label: 'Copy resume command',
       meaning: `Copies the command that picks this session up in a terminal: ${session.resume}`,
       value: session.resume,
@@ -195,6 +197,7 @@ export const actionsFor = (session: ClaudeSession): Action[] => {
   if (session.sessionId !== null) {
     actions.push({
       kind: 'copy',
+      subject: 'id',
       label: 'Copy session id',
       meaning: `Copies this session's id: ${session.sessionId}`,
       value: session.sessionId,
@@ -216,6 +219,7 @@ export const actionsForThread = (thread: CodexThread): Action[] => {
   if (thread.resume !== null) {
     actions.push({
       kind: 'copy',
+      subject: 'resume',
       label: 'Copy resume command',
       meaning: `Copies the command that picks this thread up in a terminal: ${thread.resume}`,
       value: thread.resume,
@@ -223,6 +227,7 @@ export const actionsForThread = (thread: CodexThread): Action[] => {
   }
   actions.push({
     kind: 'copy',
+    subject: 'id',
     label: 'Copy thread id',
     meaning: `Copies this thread's id: ${thread.id}`,
     value: thread.id,

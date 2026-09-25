@@ -1,8 +1,9 @@
 import type { ArchiveRecord } from '../contract'
-import { Explained } from './components/agent-marks'
 import { BoardPageFrame, ListingEmpty, PageLoading } from './components/board-page'
+import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
+import { archiveStateMeaning } from './lib/archive'
 import { filePageHref } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
@@ -17,37 +18,6 @@ const columnMeaning = {
   title: 'The item’s title when it was filed; it opens the record, which is the item’s text exactly as its file held it.',
   state: 'How the item left the stages: done when it was finished, or the stage it was filed from.',
 } as const
-
-/**
- * What a state word says about how an item left. `done` is finished work;
- * every other word is the stage `session archive` filed it from, which sets an
- * item aside without finishing it.
- */
-const stateMeaning = (state: string) => {
-  switch (state) {
-    case 'done': {
-      return 'done: it was finished, filed with session done, the board’s Complete work, or a commit’s Session-Done trailer.'
-    }
-    case 'triage': {
-      return 'triage: it was filed from Triage with session archive, a candidate that was rejected.'
-    }
-    case 'design': {
-      return 'design: it was filed from Design with session archive, while its design questions were still open.'
-    }
-    case 'batch': {
-      return 'batch: it was filed from Batch with session archive, settled work that never ran.'
-    }
-    case 'queue': {
-      return 'queue: it was filed from Queue with session archive, before its batch started.'
-    }
-    case 'execute': {
-      return 'execute: it was filed from Execute with session archive, a started item that was abandoned.'
-    }
-    default: {
-      return `${state}: the state the record’s file name gives.`
-    }
-  }
-}
 
 /**
  * The session's archive, newest first by the day in each name. It is memory,
@@ -91,6 +61,7 @@ const recordLink = 'rounded-sm underline-offset-4 outline-none hover:underline f
 
 /** One record: the day, the item, its title, and how it left, as its name gives them. */
 function RecordRow({ record }: { record: ArchiveRecord }) {
+  const tip = useTip()
   const { date, id, title, state } = record
   if (date === null || id === null || title === null || state === null) {
     return (
@@ -99,7 +70,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
           <a
             className={recordLink}
             href={filePageHref(record.path)}
-            title="This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file."
+            title={tip('This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file.')}
           >
             {record.name}
           </a>
@@ -112,12 +83,12 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
       <TableCell className="font-mono text-muted-foreground tabular-nums">{date}</TableCell>
       <TableCell className="font-mono">{id}</TableCell>
       <TableCell className="whitespace-normal">
-        <a className={recordLink} href={filePageHref(record.path)} title={`Read the record of ${id} on a page of its own.`}>
+        <a className={recordLink} href={filePageHref(record.path)} title={tip(`Read the record of ${id} on a page of its own.`)}>
           {title}
         </a>
       </TableCell>
       <TableCell>
-        <Explained meaning={stateMeaning(state)}>{state}</Explained>
+        <Explained meaning={archiveStateMeaning(state)}>{state}</Explained>
       </TableCell>
     </TableRow>
   )

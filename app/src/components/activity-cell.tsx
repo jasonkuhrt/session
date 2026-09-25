@@ -1,5 +1,6 @@
 import type { Activity } from '../../contract'
 import { absoluteTime, relativeTime } from '../lib/format'
+import { useTip } from './tip'
 
 /**
  * What happened here last, and what left the moment behind, so a status change
@@ -23,9 +24,10 @@ const activityMeaning = (activity: Activity) => {
 }
 
 export function ActivityCell({ activity, now }: { activity: Activity | null; now: number }) {
-  if (activity === null) return <span title="Nothing has happened in this worktree yet.">—</span>
+  const tip = useTip()
+  if (activity === null) return <span title={tip('Nothing has happened in this worktree yet.')}>—</span>
   return (
-    <span title={activityMeaning(activity)}>
+    <span title={tip(activityMeaning(activity))}>
       {activityWho[activity.kind]} · {relativeTime(activity.at, now)}
     </span>
   )

@@ -63,13 +63,21 @@ mistaken for one that is working. The port stays reachable either way.
 
 A board reads that worktree's five stage directories and shows a Kanban board.
 Each card is a link to its item's own page at `/w/<worktree name>/item/<ID>`,
-which reads the Markdown at a reading width and carries the same workflow
-actions, so a long item is a page you can link someone to rather than a panel.
+which reads the Markdown at a reading width, with code blocks running the
+window's full width, and carries the same workflow actions, so a long item is a
+page you can link someone to rather than a panel. The page stays with its item
+when it is finished or set aside, and shows it as archived.
 The board is a viewer with workflow actions: move an item, compose a batch,
 start the queued batch, complete an item. It follows the files as they
 change, over a stream the daemon pushes, and pauses while a card is being
 dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.
+
+The board's header starts with "All sessions" and the worktree picker, which
+shows the worktree's name over the branch checked out in it and switches to any
+other worktree's board. The gear at the top right of every page holds the
+board's own settings, kept in this browser. Tips, off by default, makes every
+word and control say what it means when it is hovered or focused.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules
@@ -101,9 +109,9 @@ process behind it: a Claude Code session with a pid, or a Codex thread an app
 holds open, and only a live thing can need you now. A resumable thing is a
 handle and the state something last knew it in; the only thing to do with one is
 pick it back up. The board's strip lists both, live rows first and resumable
-rows below them, each row carrying one word for how it is doing, its name, its
-age, and the ways to reach it: focus its cmux tab, open the thread in Codex, or
-copy its resume command or its id.
+rows below them, each row leading with the ways to reach it as icon buttons,
+focus its cmux tab, open the thread in Codex, or copy its resume command or its
+id, then one word for how it is doing, its name, and its age.
 The index names only what is live, a pill per session that opens that same list
 as a menu; a worktree whose agents are all resumable shows a dash, and its board
 is where they are. The listing is recomputed when the index renders and when the
@@ -145,10 +153,12 @@ tool: nothing in the layout requires a process to be running or to have run,
 every rule is checkable from the files alone, and every record is ordinary
 Markdown. Every stage is a directory of numbered item files, and the numeric
 prefix is card order. The browser and server read and move those files directly;
-they must not add a second task database or hidden lifecycle state, and the board
-never writes an item's content. Moves preserve stable IDs and record content. A
-revision check guards every mutation, and a mutation writes its files before it
-deletes the ones it replaced.
+they must not add a second task database or hidden lifecycle state, and the
+board never writes an item's content. The board's own settings are the one thing
+kept outside the files: they live in the browser's localStorage, say only how
+the board draws, and never reach the daemon. Moves preserve stable IDs and
+record content. A revision check guards every mutation, and a mutation writes
+its files before it deletes the ones it replaced.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night

@@ -184,6 +184,7 @@
               "app/server/daemon.ts",
               "app/server/http.ts",
               "app/src/lib/api.ts",
+              "app/src/lib/settings.ts",
               "src/session/scripts/session.ts"
             ],
             "options": {

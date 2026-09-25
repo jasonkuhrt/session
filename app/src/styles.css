@@ -187,6 +187,23 @@
 .markdown-reader code { background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
 .markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); font-size: .9em; line-height: 1.6; }
 .markdown-reader pre code { padding: 0; background: none; font-size: 1em; }
+/*
+ * Code is not prose: its lines are as long as they are, and the reading
+ * column cuts them. On a page that is its Markdown, an item's or a file's, a
+ * block runs the page's full width as a band, with its text starting where the
+ * prose starts, so reading down the page never jumps sideways; a line longer
+ * than the room to the right scrolls inside the band. The page frame is the
+ * container `cqw` counts, and the column is centred in it. Only a block whose
+ * box is the column's own bleeds, at the top level or in Evidence: `50%` is
+ * half of the box a block sits in, and one inside a list item or a quote sits
+ * in an indented box, so it keeps to it.
+ */
+:is(.markdown-page, .markdown-page > .evidence-panel > div) > pre {
+  width: 100cqw;
+  margin-left: calc(50% - 50cqw);
+  padding-inline: calc(50cqw - 50%) 1.5rem;
+  border-radius: 0;
+}
 /* An image keeps to the column, at its own proportions. */
 .markdown-reader img { max-width: 100%; height: auto; }
 .markdown-reader blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }

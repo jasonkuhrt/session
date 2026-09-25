@@ -4,6 +4,7 @@ import * as React from 'react'
 import type { ContextEntry } from '../contract'
 import { BoardPageFrame, ListingEmpty, ListingNotices, PageLoading } from './components/board-page'
 import { useCopy } from './components/copyable'
+import { useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
 import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
@@ -134,6 +135,7 @@ const fileLink =
  * only a name.
  */
 function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
+  const tip = useTip()
   const { path } = node.entry
   const count = node.children.length
   const label = (
@@ -144,7 +146,7 @@ function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
   )
   if (count === 0) {
     return (
-      <div className={cn(rowClass, 'pl-8')} title={`${path}/ is empty.`}>
+      <div className={cn(rowClass, 'pl-8')} title={tip(`${path}/ is empty.`)}>
         {label}
       </div>
     )
@@ -157,7 +159,7 @@ function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
           rowClass,
           'group/directory w-full text-left outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50',
         )}
-        title={`${expanded ? 'Hide' : 'Show'} what ${path}/ holds. ${holding(count)}`}
+        title={tip(`${expanded ? 'Hide' : 'Show'} what ${path}/ holds. ${holding(count)}`)}
       >
         <ChevronRight
           aria-hidden
@@ -180,6 +182,7 @@ function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
  * read, so until then there is no copy to offer.
  */
 function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
+  const tip = useTip()
   const { path, writtenAt } = node.entry
   const markdown = isMarkdownPath(path)
   const href = markdown ? filePageHref(path) : rawFileHref(path)
@@ -188,7 +191,7 @@ function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
     <div className={cn(rowClass, 'group/file pl-8 hover:bg-muted')}>
       {markdown
         ? (
-          <a className={fileLink} href={href} title={`Read ${path} on a page of its own.`}>
+          <a className={fileLink} href={href} title={tip(`Read ${path} on a page of its own.`)}>
             {node.name}
           </a>
         )
@@ -198,13 +201,13 @@ function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
             href={href}
             rel="noreferrer"
             target="_blank"
-            title={`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`}
+            title={tip(`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`)}
             onClick={absolute === null ? undefined : openOnceOnClick(absolute)}
           >
             {node.name}
           </a>
         )}
-      <span className="ml-auto shrink-0 text-xs text-muted-foreground" title={`Written at ${absoluteTime(writtenAt)}.`}>
+      <span className="ml-auto shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(writtenAt)}.`)}>
         {relativeTime(writtenAt, now)}
       </span>
       {directory === null ? null : <CopyPath path={`${directory}/${path}`} />}
@@ -219,13 +222,14 @@ function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
  */
 function CopyPath({ path }: { path: string }) {
   const [state, copy] = useCopy()
+  const tip = useTip()
   const label = state === 'idle' ? `Copy the absolute path ${path}` : state === 'copied' ? 'Copied' : 'Copy failed'
   return (
     <Button
       variant="ghost"
       size="icon-xs"
       aria-label={label}
-      title={label}
+      title={state === 'idle' ? tip(label) : label}
       className={cn(
         'shrink-0 text-muted-foreground',
         state === 'idle' && 'opacity-0 group-hover/file:opacity-100 focus-visible:opacity-100',

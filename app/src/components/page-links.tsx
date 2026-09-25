@@ -3,8 +3,8 @@ import { Archive, FolderTree, ScrollText } from 'lucide-react'
 import type { Listing } from '../lib/base'
 import { listingHref } from '../lib/base'
 import { listingMeta } from '../lib/listings'
+import { Tip } from './tip'
 import { Button } from './ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /** The mark of each listing, from the one icon set the board draws with. */
 const icons = { ledger: ScrollText, context: FolderTree, archive: Archive } as const
@@ -23,21 +23,20 @@ export function PageLinks() {
       {listings.map((listing) => {
         const Icon = icons[listing]
         return (
-          <Tooltip key={listing}>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  nativeButton={false}
-                  render={<a aria-label={listingMeta[listing].label} href={listingHref(listing)} />}
-                />
-              }
-            >
-              <Icon />
-            </TooltipTrigger>
-            <TooltipContent>{listingMeta[listing].meaning}</TooltipContent>
-          </Tooltip>
+          <Tip
+            key={listing}
+            meaning={listingMeta[listing].meaning}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                nativeButton={false}
+                render={<a aria-label={listingMeta[listing].label} href={listingHref(listing)} />}
+              />
+            }
+          >
+            <Icon />
+          </Tip>
         )
       })}
     </nav>

@@ -1,8 +1,8 @@
 import type { LinearIssue } from '../../contract'
 import { absoluteTime } from '../lib/format'
 import { openOnceOnClick } from '../lib/open-once'
+import { Tip } from './tip'
 import { Badge } from './ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /**
  * One Linear issue this worktree names, as one chip that is a link to it: the
@@ -14,33 +14,31 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
  */
 export function LinearIssueChip({ issue, reportedAt }: { issue: LinearIssue; reportedAt: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Badge
-            variant="outline"
-            render={
-              <a
-                aria-label={`Linear issue ${issue.id}: ${issue.title}`}
-                href={issue.url}
-                rel="noreferrer"
-                target="_blank"
-                onClick={openOnceOnClick(issue.url)}
-              />
-            }
-          />
-        }
-      >
-        {issue.id}
-      </TooltipTrigger>
-      <TooltipContent>
+    <Tip
+      meaning={
         <span className="block space-y-1">
           <span className="block font-medium">{issue.id} {issue.title}</span>
           <span className="block">linear reports its state as {issue.state}.</span>
           <span className="block">linear was asked at {absoluteTime(reportedAt)}.</span>
           <span className="block">Brings forward the Linear tab this board opened for it, or opens one.</span>
         </span>
-      </TooltipContent>
-    </Tooltip>
+      }
+      render={
+        <Badge
+          variant="outline"
+          render={
+            <a
+              aria-label={`Linear issue ${issue.id}: ${issue.title}`}
+              href={issue.url}
+              rel="noreferrer"
+              target="_blank"
+              onClick={openOnceOnClick(issue.url)}
+            />
+          }
+        />
+      }
+    >
+      {issue.id}
+    </Tip>
   )
 }

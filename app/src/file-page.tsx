@@ -4,6 +4,7 @@ import type { Crumb } from './components/board-page'
 import { BoardPageFrame, PageLoading } from './components/board-page'
 import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
+import { useTip } from './components/tip'
 import { ApiError, problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
 import { absoluteHref, isMarkdownPath, listingHref, rawFileHref } from './lib/base'
 import { useFollowed } from './lib/follow'
@@ -117,11 +118,12 @@ function FileContent({ path, markdown, text }: { path: string; markdown: boolean
   if (!markdown) return <NotMarkdown path={path} />
   if (text === null) return null
   if (text.kind === 'refused') return <p className="text-sm text-muted-foreground">{text.sentence}</p>
-  return <Markdown collapseEvidence>{withFrontmatterShown(text.text)}</Markdown>
+  return <Markdown collapseEvidence page>{withFrontmatterShown(text.text)}</Markdown>
 }
 
 /** What the page says of a file it does not render, and the way to see the file as it is. */
 function NotMarkdown({ path }: { path: string }) {
+  const tip = useTip()
   const href = rawFileHref(path)
   const absolute = absoluteHref(href)
   return (
@@ -132,7 +134,7 @@ function NotMarkdown({ path }: { path: string }) {
         href={href}
         rel="noreferrer"
         target="_blank"
-        title={`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`}
+        title={tip(`Open ${path} as it is on disk, in a tab of its own; a second click brings that tab back.`)}
         onClick={absolute === null ? undefined : openOnceOnClick(absolute)}
       >
         Open it as it is on disk
