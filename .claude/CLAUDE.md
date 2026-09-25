@@ -27,13 +27,14 @@ everything it runs; the user's own settings stay.
 The index's unit above the worktree is the epic: a name and the linked worktrees
 whose sessions name it in `.session/meta/epic`, one line, and nothing else, so
 it exists exactly while a worktree names it. A worktree is in at most one epic
-and a main worktree in none. Membership changes only by a drag on the index or
-`session join` and `session leave`, through the engine's one write, `setEpic`,
-which the daemon's route reaches by a worktree's path with the epic the index
-last read; nothing stores an order or a fold. An agent reaches an epic only
-through the worktree its working directory is in, and no fact ties an agent to
-an epic. Each tracked worktree's `.session` watch also feeds the index's
-`worktrees` event, settled, for every change a row shows.
+and a main worktree in none. Membership changes only by a drag on the index, a
+rename from an epic's heading, or `session join` and `session leave`, through
+the engine's one write, `setEpic`, which the daemon's route reaches by a
+worktree's path with the epic the index last read; nothing stores an order or a
+fold. An agent reaches an epic only through the worktree its working directory
+is in, and no fact ties an agent to an epic. Each tracked worktree's `.session`
+watch also feeds the index's `worktrees` event, settled, for every change a row
+shows.
 
 A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
 each tracked worktree's session, its reflog and the repository's remote-tracking
