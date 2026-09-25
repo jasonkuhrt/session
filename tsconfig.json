@@ -266,5 +266,5 @@
       }
     ]
   },
-  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "install.ts"]
+  "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "scripts/**/*.ts", "install.ts"]
 }
