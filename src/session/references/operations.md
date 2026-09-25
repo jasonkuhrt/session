@@ -839,11 +839,25 @@ follow at reduced contrast, and each tier is named as soon as the second one has
 anything in it. Every row keeps its age, because for a resumable row the age is
 the one fact that says how stale its state is.
 
-A row starts with its actions, as icon buttons in a column as wide as the most
-actions any row has, then its harness, and lines up with every other row. A
-Claude chip carries its actions, one word for the session, its name, and its
-age. The word is the `status` of a live session, and for a resumable one the
-`state` Claude Code last knew it in:
+A row reads in one line and lines up with every other row: the session's name
+first, then its harness, its word with its time, what is in its context when
+that can be read, and its actions, as icon buttons in a column as wide as the
+most actions any row has, right after what the row says about the session.
+
+The name is the listing's `name`. Claude Code makes one from the folder for a
+session nobody named, the folder in lower case and two hex digits,
+`heartbeat-fc`, and the session's registry file, `sessions/<pid>.json` in Claude
+Code's directory, records it as `nameSource: derived`. Such a name repeats the
+folder and says nothing about the work, so it is drawn very dim; it is still
+drawn, because it is what tells two sessions in one folder apart. A name given
+with `/rename` or `--name` is recorded as `user` and drawn as it is, and any
+other word the registry writes there is shown in the name's tip as it arrived.
+The registry's word is the whole test: a name that only looks made up is not
+second-guessed, and a session with no process has no registry file to say, so
+its name is drawn as it is.
+
+The word is the `status` of a live session, and for a resumable one the `state`
+Claude Code last knew it in:
 
 | word | what the listing means by it |
 | --- | --- |
@@ -866,9 +880,33 @@ session's `blocked` is a memory, not a request, so it is never accented; it
 sorts last, and its word's tooltip says that its process is gone, what Claude
 Code last knew, and that `claude attach` picks it up.
 
-A live session's age is its time in status, `idle for 3 h`, because how long it
-has held is what decides whether to go to it; a resumable session's age is when
-it started. Both carry the exact moment.
+A live session's word carries its time in status, labeled for what it is, `busy
+for 16 min`, because how long it has held is what decides whether to go to it.
+It is the time since the registry file's `statusUpdatedAt`, which Claude Code
+writes when the status changes, and the tip names that stamp and its file. No
+other stamp stands in for it: the file's `updatedAt` moves on a rename as well.
+A live session whose registry file cannot be read, and a resumable session,
+show when they started instead, `started 3 d ago`. Every time carries the exact
+moment.
+
+What is in a live session's context is read from the tail of its transcript,
+`projects/<key>/<session id>.jsonl` in Claude Code's directory, where the key is
+the working directory with every character but a letter or a digit turned into
+`-`, as Claude Code names it; past 200 characters Claude Code cuts the key and
+adds a hash, so a long one is found by its cut name. The last 64 KB are read,
+line-aligned, which holds the last reply for nearly every transcript whatever
+its size, and the count is the last assistant line's `usage`: its input,
+cache-creation and cache-read tokens, the count Claude Code's own status line
+works from, taken from the last message pass when the usage lists passes. It
+reads `128k in context`, and its tip carries the exact count, when the line was
+written and the transcript's path. It is a count and never a share, because
+neither the listing nor the line says how large the window is. A line Claude
+Code wrote without asking the model, such as an API error, counts nothing and is
+passed over; a reply that cannot be read ends the search, so an older reply
+never stands in for a newer one. A session whose transcript cannot be found or
+read, or whose tail holds no reply, shows nothing there and no notice. The
+transcript's modification time is never read: hooks, progress and link entries
+move it when nothing has been said.
 
 On the strip each action is an icon, named for what it does as the button's
 accessible name, with the sentence of what it does as its tip: a terminal for
@@ -881,14 +919,15 @@ refuses, the line cmux returned shows under the row. When there is no terminal
 to focus, the chip offers "Copy resume command" instead, if the session has
 one: `claude --resume <session id>` for an interactive session,
 `claude attach <id>` for a background one. "Copy session id" is there whenever
-the listing carries one. Names are never acted on, so nothing on the board says
-where a name came from.
+the listing carries one. Names are never acted on: a name is not a handle.
 
-A Codex chip carries the thread's origin, its name or, failing that, its first
-line, and how long ago it was last active. "Open in Codex" hands
-`codex://threads/<id>` to the Codex app, which is where the thread opens, so no
-tab is opened for it; it is always available, because that id comes from the
-same listing being rendered, and "Copy thread id" is there beside it. The word is
+A Codex row starts the same way, with the thread's name or, failing that, the
+first line of its preview, as Codex lists them, then its origin, its word, and
+how long ago it was last active; Codex records no context for a thread, so that
+column is empty. "Open in Codex" hands `codex://threads/<id>` to the Codex app,
+which is where the thread opens, so no tab is opened for it; it is always
+available, because that id comes from the same listing being rendered, and
+"Copy thread id" is there beside it. The word is
 `open` when a live process holds the thread's writer lock, `not open` when the
 locks were read and this thread was not among them, and `unknown` when they
 could not be read at all. Only `not open` is resumable: it is the one answer
@@ -897,7 +936,9 @@ that already has an active writer, and an `unknown` thread is never demoted as
 if nothing held it.
 
 On the index each worktree carries a pill per live session rather than a count:
-its dot, its word, and its name, ordered as the board orders its rows. A
+its dot, its word with its time as the board's row writes it, `busy for 16 min`,
+and its name, very dim when Claude Code made it, ordered as the board orders its
+rows. A
 pill opens the menu of that session's actions, which is the board's own list
 rendered as a menu with each action's name written beside its icon, under a line
 naming the session, its harness, what its word means, and its age. Copying keeps
