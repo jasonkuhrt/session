@@ -1,7 +1,9 @@
+import { FolderGit2, GitBranch, GitCommitHorizontal } from 'lucide-react'
 import * as React from 'react'
 
 import type { Session, WorktreeSummary } from '../../contract'
 import { IndexApi } from '../lib/api'
+import { checkoutLabel } from '../lib/format'
 import { cn } from '../lib/utils'
 import { useTip } from './tip'
 import { Button } from './ui/button'
@@ -16,19 +18,33 @@ import {
 } from './ui/combobox'
 
 /** A worktree this board can switch to. */
-type Option = { key: string; name: string; path: string; branch: string | null }
+type Option = { key: string; name: string; path: string; branch: string | null; detached: boolean }
 
 /**
  * How the picker names a worktree, on the control and in the list alike: its
- * name over the branch checked out in it, a line each. A line too long for the
- * popup is cut short rather than wrapped, so every option is the same two
- * lines and the list reads down one edge.
+ * name over what it has checked out, a line each, and each line marked with
+ * what it is, a folder for the worktree and a branch for the branch, or a
+ * commit when Git has a commit checked out rather than a branch. A line too
+ * long for the popup is cut short rather than wrapped, so every option is the
+ * same two lines and the list reads down one edge.
  */
-function WorktreeLabel({ name, branch, className }: { name: string; branch: string | null; className?: string }) {
+function WorktreeLabel({ name, branch, detached, className }: {
+  name: string
+  branch: string | null
+  detached: boolean
+  className?: string
+}) {
+  const CheckoutIcon = detached ? GitCommitHorizontal : GitBranch
   return (
-    <span className={cn('grid min-w-0 text-left', className)}>
-      <span className="truncate font-medium">{name}</span>
-      <span className="truncate text-xs font-normal text-muted-foreground">{branch ?? 'No branch'}</span>
+    <span className={cn('grid min-w-0 gap-0.5 text-left', className)}>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <FolderGit2 aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="truncate font-medium">{name}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-xs font-normal text-muted-foreground">
+        <CheckoutIcon aria-hidden className="size-3.5 shrink-0" />
+        <span className="truncate">{checkoutLabel({ branch, detached })}</span>
+      </span>
     </span>
   )
 }
@@ -71,12 +87,14 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
 
   const options: Option[] = (worktrees ?? [])
     .filter((row) => row.conflict === null)
-    .map((row) => ({ key: row.key, name: row.name, path: row.path, branch: row.branch }))
+    .map((row) => ({ key: row.key, name: row.name, path: row.path, branch: row.branch, detached: row.detached }))
     .toSorted((left, right) => left.name.localeCompare(right.name))
   const selected = options.find((option) => option.path === current.path) ?? null
 
   // As wide as the control that replaces it can be, so a long branch is cut the same way.
-  if (options.length === 0) return <WorktreeLabel name={current.name} branch={current.branch} className="max-w-80" />
+  if (options.length === 0) {
+    return <WorktreeLabel name={current.name} branch={current.branch} detached={current.detached} className="max-w-80" />
+  }
 
   return (
     <Combobox
@@ -97,7 +115,7 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
         title={tip('The worktree whose session this board shows, and the branch checked out in it. Pick another worktree to switch to its board.')}
         render={<Button variant="outline" className="h-auto max-w-80 justify-between gap-3 py-1.5" />}
       >
-        <WorktreeLabel name={current.name} branch={current.branch} />
+        <WorktreeLabel name={current.name} branch={current.branch} detached={current.detached} />
       </ComboboxTrigger>
       {/* The popup grows to the longest option, up to a cap past which a line
           is cut short, so a long name does not squeeze every other one. */}
@@ -107,7 +125,7 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
         <ComboboxList className="max-h-[min(28rem,calc(var(--available-height)---spacing(9)))]">
           {(option: Option) => (
             <ComboboxItem key={option.key} value={option}>
-              <WorktreeLabel name={option.name} branch={option.branch} />
+              <WorktreeLabel name={option.name} branch={option.branch} detached={option.detached} />
             </ComboboxItem>
           )}
         </ComboboxList>

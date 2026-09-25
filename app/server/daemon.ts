@@ -43,17 +43,25 @@ import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import { eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
 import { contextDirectory, ledgerDirectory } from './layout.ts';
-import { issuesFor, type PullRequestReading, pullRequestFor, pullRequestReport } from './links/index.ts';
+import {
+  checkedOutBranch,
+  issuesFor,
+  type PullRequestReading,
+  pullRequestFor,
+  pullRequestReport,
+} from './links/index.ts';
 import { aliasHostnames } from './portless.ts';
 import { makeRepository, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
+  type Checkout,
+  checkoutIn,
   encodeWorktreeKey,
   ensureSession,
-  listGitWorktrees,
-  refreshWorktreeMetadata,
+  listRepositories,
   resolveWorktreeSession,
+  type WorktreeError,
   type WorktreeSession,
 } from './worktree.ts';
 
@@ -326,8 +334,8 @@ type Tracked = {
     readonly reading: PullRequestReading;
     /** When gh was asked, in epoch milliseconds. */
     readonly askedAt: number;
-    /** `refMoves` as it stood when gh was asked; a ref that has moved since makes the answer old. */
-    readonly refMoves: number;
+    /** `moves` as it stood when gh was asked; a move since makes the answer old. */
+    readonly moves: number;
   } | null;
   /** The gh ask under way, which every caller in the meantime shares. */
   pullRequestRead: Promise<PullRequestReading> | undefined;
@@ -339,8 +347,11 @@ type Tracked = {
   issues: { readonly report: IssuesReport; readonly from: PullRequestReading } | null;
   /** The linear ask under way and the answer of gh's it reads from; a caller reading from the same answer shares it. */
   issuesRead: { readonly from: PullRequestReading; readonly read: Promise<IssuesReport> } | undefined;
-  /** How many times a remote-tracking ref has moved while the worktree was tracked. */
-  refMoves: number;
+  /**
+   * How many times, while the worktree was tracked, another branch was
+   * checked out or the remote-tracking ref of the one gh answered for moved.
+   */
+  moves: number;
   /** Pushed to the worktree's boards after every ask of either source, because every ask moves a report's date. */
   readonly linksEvents: SessionEventSource;
 };
@@ -412,8 +423,15 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
 /** A commit, an amend, a rebase or a push writes Git's logs in a burst. */
 const trailerSettle = '500 millis';
 
-/** Which of a worktree's watches a change came from. */
-type Change = 'session' | 'reflog' | 'remotes';
+/**
+ * Which of a worktree's watches a change came from. A remote-tracking ref's
+ * change names the ref, by its log's path under `logs/refs/remotes`, such as
+ * `origin/feat/x`.
+ */
+type Change =
+  | { readonly kind: 'session' }
+  | { readonly kind: 'reflog' }
+  | { readonly kind: 'remotes'; readonly ref: string };
 
 /**
  * The parts of a session no trailer depends on: what agents keep in
@@ -440,20 +458,24 @@ const touchesItems = (event: FileSystem.WatchEvent): boolean =>
 const worktreeChanges = (session: WorktreeSession) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
-    const watched: ReadonlyArray<{ readonly directory: string; readonly recursive: boolean; readonly change: Change }> = [
-      { directory: session.directory, recursive: true, change: 'session' },
+    const watched: ReadonlyArray<{
+      readonly directory: string;
+      readonly recursive: boolean;
+      readonly kind: Change['kind'];
+    }> = [
+      { directory: session.directory, recursive: true, kind: 'session' },
       ...(session.git === null ? [] : [
-        { directory: join(session.git.directory, 'logs'), recursive: false, change: 'reflog' as const },
-        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true, change: 'remotes' as const },
+        { directory: join(session.git.directory, 'logs'), recursive: false, kind: 'reflog' as const },
+        { directory: join(session.git.common, 'logs', 'refs', 'remotes'), recursive: true, kind: 'remotes' as const },
       ]),
     ];
     const streams: Array<Stream.Stream<Change, PlatformError>> = [];
-    for (const { directory, recursive, change } of watched) {
+    for (const { directory, recursive, kind } of watched) {
       if (yield* fs.exists(directory)) {
         streams.push(
           fs.watch(directory, { recursive }).pipe(
-            Stream.filter((event) => change !== 'session' || touchesItems(event)),
-            Stream.map(() => change),
+            Stream.filter((event) => kind !== 'session' || touchesItems(event)),
+            Stream.map((event): Change => (kind === 'remotes' ? { kind, ref: event.path } : { kind })),
           ),
         );
       }
@@ -486,32 +508,45 @@ const linksFreshnessMilliseconds = 60_000;
 /** How often the clock asks whether a worktree's links have reached that age. */
 const linksCheck = '10 seconds';
 
-/** A push or a fetch moves several remote-tracking refs at once; one ask answers the burst. */
+/** A push, a fetch or a checkout writes its logs in a burst; one ask answers it. */
 const linksSettle = '500 millis';
 
-type LinksTrigger = 'clock' | 'refs';
+type LinksTrigger = 'clock' | 'refs' | 'reflog';
 
 /**
- * One worktree's link re-reads, one at a time: on the clock, and when a
- * remote-tracking ref moves. Nothing on this machine says that a check
- * finished or a review landed, so the clock is what keeps an open board or
- * index current; nothing in the session's files says anything about either, so the
- * session's own changes are never a trigger.
+ * One worktree's link re-reads, one at a time: on the clock, when the
+ * remote-tracking ref of the branch gh last answered for moves, and when the
+ * worktree's own reflog does, which is where a checkout of another branch
+ * shows up. A fetch that moves the repository's other refs is not a trigger,
+ * because it moves no answer of this worktree's; every worktree of a
+ * repository watches the same refs, and each would otherwise ask at once.
+ * Nothing on this machine says that a check finished or a review landed, so
+ * the clock is what keeps an open board or index current; nothing in the
+ * session's files says anything about either, so the session's own changes
+ * are never a trigger.
  */
-const linksLoop = (
-  changes: Stream.Stream<Change, PlatformError>,
-  onTrigger: (trigger: LinksTrigger) => Effect.Effect<void>,
-) =>
+const linksLoop = (changes: Stream.Stream<Change, PlatformError>, loops: {
+  /** Whether a moved remote-tracking ref is the one of the branch gh last answered for. */
+  readonly answeredRef: (ref: string) => boolean;
+  readonly onTrigger: (trigger: LinksTrigger) => Effect.Effect<void>;
+}) =>
   Stream.tick(linksCheck).pipe(
     Stream.map((): LinksTrigger => 'clock'),
     Stream.merge(
       changes.pipe(
-        Stream.filter((change) => change === 'remotes'),
+        Stream.filter((change) => change.kind === 'remotes' && loops.answeredRef(change.ref)),
         Stream.debounce(linksSettle),
         Stream.map((): LinksTrigger => 'refs'),
       ),
     ),
-    Stream.runForEach(onTrigger),
+    Stream.merge(
+      changes.pipe(
+        Stream.filter((change) => change.kind === 'reflog'),
+        Stream.debounce(linksSettle),
+        Stream.map((): LinksTrigger => 'reflog'),
+      ),
+    ),
+    Stream.runForEach(loops.onTrigger),
   );
 
 /**
@@ -521,6 +556,7 @@ const linksLoop = (
  */
 const worktreeLoops = (session: WorktreeSession, loops: {
   readonly pass: Effect.Effect<void>;
+  readonly answeredRef: (ref: string) => boolean;
   readonly onLinksTrigger: (trigger: LinksTrigger) => Effect.Effect<void>;
 }) =>
   Effect.scoped(
@@ -531,7 +567,7 @@ const worktreeLoops = (session: WorktreeSession, loops: {
           reconcileLoop(changes, loops.pass).pipe(
             Effect.catchCause((cause) => Effect.logError(`Trailer passes stopped for ${session.directory}`, cause)),
           ),
-          linksLoop(changes, loops.onLinksTrigger).pipe(
+          linksLoop(changes, { answeredRef: loops.answeredRef, onTrigger: loops.onLinksTrigger }).pipe(
             Effect.catchCause((cause) => Effect.logError(`Link re-reads stopped for ${session.directory}`, cause)),
           ),
         ],
@@ -542,13 +578,12 @@ const worktreeLoops = (session: WorktreeSession, loops: {
 
 /**
  * gh's answer for a worktree, when it can be served as it is: asked within the
- * last minute, and not before a remote-tracking ref moved. The moves are
- * counted rather than timed, because a move and the ask it causes can land in
- * one millisecond.
+ * last minute, and not before a move. The moves are counted rather than timed,
+ * because a move and the ask it causes can land in one millisecond.
  */
 const freshPullRequest = (entry: Tracked, now: number) =>
   entry.pullRequest !== null &&
-    entry.pullRequest.refMoves === entry.refMoves &&
+    entry.pullRequest.moves === entry.moves &&
     now - entry.pullRequest.askedAt < linksFreshnessMilliseconds
     ? entry.pullRequest.reading
     : null;
@@ -593,11 +628,12 @@ export const runDaemon = async () => {
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */
   const pullRequestEvents = makeSessionEvents();
   /**
-   * gh is asked about at most this many worktrees at once, whichever pages
-   * are asking: the index wants every row, and a process per row at once is
-   * the fan-out `worktreeConcurrency` exists to prevent.
+   * The asks the index starts wait here for a turn, this many at once: the
+   * index wants every row, and a process per row at once is the fan-out
+   * `worktreeConcurrency` exists to prevent. A board's own asks do not wait
+   * behind them, since a board wants one answer, now.
    */
-  const ghAsks = Semaphore.makeUnsafe(worktreeConcurrency);
+  const indexAsks = Semaphore.makeUnsafe(worktreeConcurrency);
 
   /**
    * Stamped with the moment it started, so a slow listing that lands after a
@@ -686,19 +722,18 @@ export const runDaemon = async () => {
    * Ask gh again. An ask is shared by every caller that arrives while it runs,
    * so a page opening mid-ask waits for this answer rather than starting a
    * second one, and every ask is pushed to the worktree's boards and to the
-   * index. The ask is stamped once it holds a turn at gh, which is when it
-   * begins.
+   * index.
    */
   const askPullRequest = (entry: Tracked): Promise<PullRequestReading> => {
     if (entry.pullRequestRead !== undefined) return entry.pullRequestRead;
     const read = (async () => {
       try {
-        const asked = await runNode(ghAsks.withPermit(Effect.gen(function*() {
-          const refMoves = entry.refMoves;
+        const asked = await runNode(Effect.gen(function*() {
+          const moves = entry.moves;
           const askedAt = yield* Clock.currentTimeMillis;
           const reading = yield* pullRequestFor({ path: entry.path, git: entry.session.git !== null });
-          return { reading, askedAt, refMoves };
-        })));
+          return { reading, askedAt, moves };
+        }));
         entry.pullRequest = asked;
         entry.linksEvents.changed();
         pullRequestEvents.changed();
@@ -756,24 +791,54 @@ export const runDaemon = async () => {
   const indexWants = (entry: Tracked) => entry.conflict === null && pullRequestEvents.watched();
 
   /**
-   * What a trigger does to a worktree's links. With no page listening for
-   * them, which is no board of the worktree open and no index open, nothing is
-   * asked, and a ref that moved only makes the last answer old, so the next
-   * page to open asks again. With either open, gh is asked again once its
-   * answer is no longer fresh, after any ask already under way, which may have
-   * begun before the ref moved; with a board open, linear is asked again too
-   * whenever gh's answer is newer than the issues.
+   * One row's pull request for the index, asked in its turn, and only if by
+   * then a page still wants it and it is still old: a page that closed while
+   * the ask waited spawns nothing, and a board that asked in the meantime has
+   * already answered it.
+   */
+  const freshenForIndex = (entry: Tracked) =>
+    runNode(indexAsks.withPermit(Effect.promise(async () => {
+      if (!indexWants(entry) && !entry.linksEvents.watched()) return;
+      if (freshPullRequest(entry, await runNode(Clock.currentTimeMillis)) !== null) return;
+      await askPullRequest(entry);
+    })));
+
+  /** Whether a moved remote-tracking ref, named as `<remote>/<branch>`, is the one of the branch gh last answered for. */
+  const answeredRef = (path: string, ref: string) => {
+    const branch = tracked.get(path)?.pullRequest?.reading.branch ?? null;
+    return branch !== null && ref.slice(ref.indexOf('/') + 1) === branch;
+  };
+
+  /**
+   * Whether a trigger moved the worktree's answer: a moved ref always did,
+   * since it was filtered to the answered branch's own; a reflog change did
+   * when another branch is checked out now than the one gh answered for.
+   */
+  const moved = async (entry: Tracked, trigger: LinksTrigger) => {
+    if (trigger === 'refs') return true;
+    if (trigger === 'clock' || entry.pullRequest === null) return false;
+    return (await runNode(checkedOutBranch(entry.path))) !== entry.pullRequest.reading.branch;
+  };
+
+  /**
+   * What a trigger does to a worktree's links. A move makes the last answer
+   * old whether or not anything listens, so the next page to open asks again.
+   * With no page listening, which is no board of the worktree open and no
+   * index open, nothing is asked. With a board open, gh is asked again once
+   * its answer is no longer fresh, after any ask already under way, which may
+   * have begun before the move, and linear whenever gh's answer is newer than
+   * the issues; with only the index open, gh is asked in the index's turn.
    */
   const onLinksTrigger = async (path: string, trigger: LinksTrigger) => {
     const entry = tracked.get(path);
     if (entry === undefined) return;
-    if (trigger === 'refs') entry.refMoves += 1;
-    const board = entry.linksEvents.watched();
-    if (!board && !indexWants(entry)) return;
     try {
+      if (await moved(entry, trigger)) entry.moves += 1;
+      const board = entry.linksEvents.watched();
+      if (!board && !indexWants(entry)) return;
       await entry.pullRequestRead;
       if (board) await linksOf(entry);
-      else await currentPullRequest(entry);
+      else await freshenForIndex(entry);
     } catch (error) {
       // The pages already show the last answer; the next trigger tries again.
       console.error(`${entry.path}: links not read: ${error instanceof Error ? error.message : String(error)}`);
@@ -792,7 +857,7 @@ export const runDaemon = async () => {
     );
     await Promise.all(stale.map(async (entry) => {
       try {
-        await askPullRequest(entry);
+        await freshenForIndex(entry);
       } catch (error) {
         console.error(`${entry.path}: pull request not read: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -827,8 +892,8 @@ export const runDaemon = async () => {
     if (tracked.has(path)) return;
     const key = encodeWorktreeKey(session.worktree.name);
     const owner = [...tracked.values()].find((entry) => entry.key === key);
-    const conflict = owner === undefined ? null : `The key ${key} already belongs to ${owner.path}.`;
-    if (conflict !== null) console.error(`${path}: ${conflict}`);
+    const conflict = owner === undefined ? null : `${path} has no board: its key ${key} already belongs to ${owner.path}.`;
+    if (conflict !== null) console.error(conflict);
     const events = makeSessionEvents();
     tracked.set(path, {
       path,
@@ -841,6 +906,7 @@ export const runDaemon = async () => {
       watcher: forkNode(watchDirectory(session.directory, events)),
       loops: forkNode(worktreeLoops(session, {
         pass: Effect.promise(() => reconcile(path)),
+        answeredRef: (ref) => answeredRef(path, ref),
         onLinksTrigger: (trigger) => Effect.promise(() => onLinksTrigger(path, trigger)),
       })),
       trailerProblems: [],
@@ -849,7 +915,7 @@ export const runDaemon = async () => {
       pullRequestRead: undefined,
       issues: null,
       issuesRead: undefined,
-      refMoves: 0,
+      moves: 0,
       linksEvents: makeSessionEvents(0),
     });
   };
@@ -968,18 +1034,15 @@ export const runDaemon = async () => {
   /** Git knows the siblings; a worktree joins the index once it has a session. */
   const discover = async () => {
     const known = [...tracked.values()];
-    const probed = await mapWorktrees(known, async (entry) => {
-      const [trackable, siblings] = await Promise.all([
-        isTrackable(entry.path),
-        runNode(listGitWorktrees(entry.path).pipe(Effect.orElseSucceed(() => []))),
-      ]);
-      return { entry, trackable, siblings };
-    });
+    const [probed, listings] = await Promise.all([
+      mapWorktrees(known, async (entry) => ({ entry, trackable: await isTrackable(entry.path) })),
+      runNode(listRepositories({ sessions: known.map((entry) => entry.session), concurrency: worktreeConcurrency })),
+    ]);
+    for (const item of probed) if (!item.trackable) untrack(item.entry.path);
+    // A repository's worktrees are still worth knowing even as one of them leaves.
     const candidates = new Set<string>();
-    for (const item of probed) {
-      // Its siblings are still worth knowing even as this one leaves.
-      if (!item.trackable) untrack(item.entry.path);
-      for (const sibling of item.siblings) candidates.add(sibling.path);
+    for (const listing of listings.values()) {
+      if (Result.isSuccess(listing)) for (const sibling of listing.success) candidates.add(sibling.path);
     }
     const sessions = await mapWorktrees([...candidates], async (path) => ({
       path,
@@ -991,7 +1054,12 @@ export const runDaemon = async () => {
     await persist();
   };
 
-  const summarize = async (entry: Tracked): Promise<WorktreeSummary> => {
+  /**
+   * One row of the index. What the worktree has checked out comes from its
+   * repository's listing, which the route asked once for all of that
+   * repository's rows.
+   */
+  const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { TRIAGE: 0, DESIGN: 0, BATCH: 0, QUEUE: 0, EXECUTE: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
@@ -1001,11 +1069,12 @@ export const runDaemon = async () => {
       name: entry.session.worktree.name,
       path: entry.path,
       branch: entry.session.worktree.branch,
+      detached: entry.session.worktree.detached,
       agents: overlay,
       trailerProblems: entry.trailerProblems,
     };
     try {
-      const metadata = await runNode(refreshWorktreeMetadata(entry.session.worktree));
+      if (Result.isFailure(checkout)) throw checkout.failure;
       const loaded = await runNode(
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
@@ -1016,7 +1085,7 @@ export const runDaemon = async () => {
       const batch = execute?.items[0]?.group ?? null;
       return {
         ...base,
-        branch: metadata.branch,
+        ...checkout.success,
         executing: batch === null || batch === '' ? null : batch,
         counts,
         lastChange: loaded.lastChange,
@@ -1036,13 +1105,22 @@ export const runDaemon = async () => {
     }
   };
 
+  /** Every row of the index, from one `git worktree list` per repository rather than one per row. */
+  const summaries = async () => {
+    const rows = [...tracked.values()];
+    const listings = await runNode(
+      listRepositories({ sessions: rows.map((entry) => entry.session), concurrency: worktreeConcurrency }),
+    );
+    return await mapWorktrees(rows, (entry) => summarize(entry, checkoutIn({ listings, session: entry.session })));
+  };
+
   const handlerFor = async (entry: Tracked) => {
     if (entry.handler !== undefined) return entry.handler;
     await runNode(ensureSession(entry.session));
     entry.handler = await runNode(makeRequestHandler({
       repository: entry.repository,
       distDirectory,
-      worktree: entry.session.worktree,
+      session: entry.session,
       events: entry.events,
       agents: {
         read: () => overlayFor(entry.path),
@@ -1154,7 +1232,7 @@ export const runDaemon = async () => {
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
         await sweepTracked();
         await freshenAgents();
-        return json(await mapWorktrees([...tracked.values()], (entry) => summarize(entry)));
+        return json(await summaries());
       }
       // The index has no board to scope this to, and the session it acts on may
       // be in any worktree it lists, so the root serves the board's own route.
@@ -1171,7 +1249,7 @@ export const runDaemon = async () => {
         if (typeof path === 'string') await track([path]);
         await discover();
         await listAgents();
-        const rows = await mapWorktrees([...tracked.values()], (entry) => summarize(entry));
+        const rows = await summaries();
         worktreeEvents.changed();
         return json(rows);
       }

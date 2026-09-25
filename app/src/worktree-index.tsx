@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { TooltipProvider } from './components/ui/tooltip'
 import { bandRows } from './lib/bands'
 import { useNow } from './lib/clock'
+import { checkoutLabel } from './lib/format'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
 import { cn } from './lib/utils'
 import { stageMeta } from './lib/workflow'
@@ -35,6 +36,10 @@ const columnMeaning = {
   agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
   activity: 'The newest moment anything happened in this worktree: a Claude Code status change, a Codex thread update, or an item file written.',
 }
+
+const detachedMeaning = 'Git has a commit checked out in this worktree rather than a branch, so it has no branch and no pull request.'
+
+const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branch.'
 
 /** A stage column says what the stage is for and what an empty cell means. */
 const stageMeaning = (stage: Stage) =>
@@ -168,7 +173,7 @@ function Row({ row, pullRequest, now, muted, terminal }: {
         <NameCell row={row} terminal={terminal} />
         <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
-            <Badge variant="destructive" title={tip('Two tracked worktrees want the same address, so this one has no board.')}>
+            <Badge variant="destructive" title={tip('The daemon cannot serve this worktree’s board, for the reason beside this.')}>
               Not served
             </Badge>
             <span className="text-muted-foreground">{row.conflict}</span>
@@ -183,7 +188,7 @@ function Row({ row, pullRequest, now, muted, terminal }: {
       <NameCell row={row} terminal={terminal} />
       <TableCell className="text-muted-foreground">
         {row.branch === null
-          ? <span title={tip('This folder is not a Git worktree, so it has no branch.')}>No branch</span>
+          ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
           : <Copyable value={row.branch}>{row.branch}</Copyable>}
       </TableCell>
       <PullRequestCell report={pullRequest} />

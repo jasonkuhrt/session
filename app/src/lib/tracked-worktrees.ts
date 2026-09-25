@@ -1,33 +1,7 @@
 import * as React from 'react'
 
 import { eventsUrl, IndexApi } from './api'
-
-/**
- * One of the index's reads: its last answer, why the latest read failed, and
- * the read itself. Only the newest read lands, so a slow one cannot put an
- * older answer back, and a read that fails keeps the last answer on screen.
- */
-function useNewestRead<A>(
-  read: (signal?: AbortSignal) => Promise<A>,
-  describe: (error: unknown) => string,
-) {
-  const [answer, setAnswer] = React.useState<A | null>(null)
-  const [problem, setProblem] = React.useState<string | null>(null)
-  const latest = React.useRef(0)
-  const load = React.useCallback(async (signal?: AbortSignal) => {
-    const mine = ++latest.current
-    try {
-      const next = await read(signal)
-      if (!signal?.aborted && mine === latest.current) {
-        setAnswer(next)
-        setProblem(null)
-      }
-    } catch (error) {
-      if (!signal?.aborted && mine === latest.current) setProblem(describe(error))
-    }
-  }, [read, describe])
-  return { answer, problem, load }
-}
+import { useNewestRead } from './newest-read'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : null)
 
@@ -52,8 +26,8 @@ const pullRequestsProblem = (error: unknown) =>
  * changes land while it is down and the index otherwise never polls.
  */
 export function useTrackedWorktrees() {
-  const rows = useNewestRead(IndexApi.read, rowsProblem)
-  const pullRequests = useNewestRead(IndexApi.pullRequests, pullRequestsProblem)
+  const rows = useNewestRead({ read: IndexApi.read, describe: rowsProblem })
+  const pullRequests = useNewestRead({ read: IndexApi.pullRequests, describe: pullRequestsProblem })
   const loadRows = rows.load
   const loadPullRequests = pullRequests.load
 

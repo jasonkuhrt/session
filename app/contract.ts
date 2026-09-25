@@ -44,7 +44,10 @@ export type Session = {
   worktree?: {
     name: string;
     path: string;
+    /** The branch checked out; null on a detached HEAD, and outside Git. */
     branch: string | null;
+    /** True when Git has a commit checked out rather than a branch. */
+    detached: boolean;
   };
 };
 
@@ -64,6 +67,7 @@ export const SessionSchema = Schema.Struct({
     name: Schema.String,
     path: Schema.String,
     branch: Schema.NullOr(Schema.String),
+    detached: Schema.Boolean,
   })),
   stages: Schema.Array(Schema.Struct({
     stage: Schema.Literals(stageNames),
@@ -488,7 +492,8 @@ export type Links = {
 
 /**
  * The index's pull requests: gh's last report for each tracked worktree, by
- * the worktree's path. A worktree gh has not been asked about yet is absent.
+ * the worktree's path. A worktree gh has not been asked about yet is absent,
+ * and so is one the index lists as not served.
  */
 export type PullRequestReports = { readonly [path: string]: PullRequestReport };
 
@@ -538,7 +543,10 @@ export type WorktreeSummary = {
   key: string;
   name: string;
   path: string;
+  /** The branch checked out; null on a detached HEAD, and outside Git. */
   branch: string | null;
+  /** True when Git has a commit checked out rather than a branch. */
+  detached: boolean;
   /** The batch in Execute, and null when Execute is empty. */
   executing: string | null;
   counts: Record<Stage, number>;
@@ -558,6 +566,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   name: Schema.String,
   path: Schema.String,
   branch: Schema.NullOr(Schema.String),
+  detached: Schema.Boolean,
   executing: Schema.NullOr(Schema.String),
   counts: Schema.Struct({
     TRIAGE: Schema.Int,

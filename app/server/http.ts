@@ -8,7 +8,7 @@ import type { AgentsSummary, FocusResult, Links, Session, StreamEvent, TerminalR
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
-import { refreshWorktreeMetadata, type WorktreeMetadata } from './worktree.ts';
+import { checkoutOf, type WorktreeSession } from './worktree.ts';
 
 /* eslint-disable max-lines -- The HTTP boundary: the board's route table and the handlers the root shares with it live together, so the two surfaces can never answer one request two ways. */
 
@@ -246,7 +246,8 @@ export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => 
 export const makeRequestHandler = (options: {
   readonly repository: SessionRepository;
   readonly distDirectory: string;
-  readonly worktree: WorktreeMetadata;
+  /** The worktree the board belongs to, as the daemon resolved it when it began tracking it. */
+  readonly session: WorktreeSession;
   /** Pushed on every write under the worktree's `.session`. */
   readonly events: SessionEvents;
   /**
@@ -281,10 +282,12 @@ export const makeRequestHandler = (options: {
     const run = Effect.runPromiseWith(yield* Effect.context<ChildProcessSpawner>());
     const { repository } = options;
     const distDirectory = resolve(options.distDirectory);
-    const attachWorktree = async (session: Session): Promise<Session> => ({
-      ...session,
-      worktree: await run(refreshWorktreeMetadata(options.worktree)),
-    });
+    // The name and path are fixed while the worktree is tracked; what it has
+    // checked out is read again with every session read.
+    const attachWorktree = async (session: Session): Promise<Session> => {
+      const { name, path } = options.session.worktree;
+      return { ...session, worktree: { name, path, ...(await run(checkoutOf(options.session))) } };
+    };
 
     return async (request: Request): Promise<Response> => {
       try {

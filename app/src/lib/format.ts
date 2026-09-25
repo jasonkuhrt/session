@@ -60,3 +60,10 @@ export function absoluteTime(iso: string): string {
   const at = Date.parse(iso)
   return Number.isNaN(at) ? iso : new Date(at).toLocaleString()
 }
+
+/**
+ * What a worktree has checked out, in Git's words: the branch, a detached
+ * HEAD when Git has a commit checked out instead, and no branch outside Git.
+ */
+export const checkoutLabel = ({ branch, detached }: { readonly branch: string | null; readonly detached: boolean }) =>
+  branch ?? (detached ? 'Detached HEAD' : 'No branch')
