@@ -72,10 +72,15 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
             {purpose === null
               ? null
               : (
+                // A native button, which the sortable never starts a drag
+                // from: on the checkbox's own span a press held a moment
+                // lifted the card instead of ticking the box.
                 <Checkbox
+                  nativeButton
+                  render={<button type="button" aria-label={`Choose ${item.title}`} />}
+                  className="cursor-pointer"
                   checked={selectedIds.has(item.id)}
                   onCheckedChange={selected => onSelect(item.id, selected)}
-                  aria-label={`Choose ${item.title}`}
                   title={tip(`Include this item in the ${purpose}.`)}
                 />
               )}
@@ -89,7 +94,12 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
           </div>
           {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Copyable value={item.id}>{item.id}</Copyable>
+            {/* The id is for copying, not reading, so it stays very dim until pointed at. */}
+            <Copyable value={item.id}>
+              <span className="opacity-30 transition-opacity group-hover/copyable:opacity-100 group-focus-visible/copyable:opacity-100">
+                {item.id}
+              </span>
+            </Copyable>
             {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => onComplete(item)} title={tip(`Complete ${item.title}`)} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
           </div>
         </CardContent>

@@ -508,7 +508,8 @@ there is no way to type a body or create an item in it. A card shows the text of
 the item's first paragraph under its title, as a reader of the Markdown sees
 it, without the marks around its words; headings, code, tables and HTML are not
 paragraphs, so a body that opens with an example shows its first sentence, and
-a body with no paragraph shows nothing more than the title. A card's title is a link
+a body with no paragraph shows nothing more than the title. The item's id sits
+under that, very dim until pointed at, and a click copies it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and above
 its title the name of its group when it has one, labelled Batch in Queue and
