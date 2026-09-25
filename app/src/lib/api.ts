@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import type { StreamEvent } from '../../contract'
+import type { EpicWrite, StreamEvent } from '../../contract'
 import {
   AgentsSummarySchema,
   ArchiveListingSchema,
@@ -198,10 +198,13 @@ export const IndexApi = {
       decodeFocus,
     )),
 
-  /** Puts a worktree in the epic of that name, or in none with null, by the key the index lists it under. */
-  setEpic: (key: string, epic: string | null) =>
+  /**
+   * Puts a worktree in the epic of that name, or in none with null, by its
+   * path, refused when its file no longer names the epic the index read.
+   */
+  setEpic: (write: EpicWrite) =>
     run(send(
-      HttpClientRequest.post(`/api/worktrees/${key}/epic`).pipe(HttpClientRequest.bodyJsonUnsafe({ epic })),
+      HttpClientRequest.post('/api/worktrees/epic').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
       decodeEpic,
     )),
 }

@@ -7,7 +7,7 @@ import * as React from 'react'
 import type { WorktreeSummary } from '../../contract'
 import { landing } from '../lib/drag'
 import type { IndexCard } from '../lib/epics'
-import { draggedId, movable, reachable, targetId } from '../lib/epics'
+import { draggedId, movable, targetId } from '../lib/epics'
 import { cn } from '../lib/utils'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
@@ -25,7 +25,7 @@ import { cardClass, WorktreeRow } from './worktree-row'
 
 type EpicCardShape = Extract<IndexCard, { kind: 'epic' }>
 
-/** What the draggable cards also need: every row, to know which can be reached, and what a drag is doing. */
+/** What the draggable cards also need: every row, which a drop's outcome is read from, and what a drag is doing. */
 export type DragContext = RowContext & {
   readonly rows: readonly WorktreeSummary[]
   /** While a drop is written, nothing is picked up. */
@@ -62,7 +62,7 @@ const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: Co
  * between the cards it leaves its epic and becomes a card of its own.
  */
 function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext }) {
-  const canMove = movable({ row, rows: context.rows })
+  const canMove = movable(row)
   const { ref, isDragSource } = useDraggable({
     id: draggedId({ kind: 'row', path: row.path }),
     type: 'row',
@@ -118,20 +118,18 @@ function EpicHeading({ card, movable: canMove, onRename, ref }: {
  * An epic's card: its heading, then its worktrees, busiest first. It takes a
  * worktree dropped on it into the epic, and a whole epic dropped on it, whose
  * worktrees all join it. Held by its heading, it goes onto another epic the
- * same way. An epic with a worktree the index cannot reach is neither held nor
- * renamed, since a write to all of it would miss that one.
+ * same way.
  */
 export function EpicCard({ card, context }: { card: EpicCardShape; context: DragContext }) {
-  const whole = card.rows.every(row => reachable({ row, rows: context.rows }))
   const into = targetId({ kind: 'epic', name: card.name })
   const { ref: holdRef, handleRef, isDragSource } = useDraggable({
     id: draggedId({ kind: 'epic', name: card.name }),
     type: 'epic',
-    disabled: !whole || context.writing,
+    disabled: context.writing,
   })
   const { ref: dropRef } = useDroppable({ id: into, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
-  const actionable = whole && !context.writing
+  const actionable = !context.writing
   return (
     <Card ref={ref} size="sm" className={cardClass({ quiet: card.quiet, lands: context.landingOn === into, held: isDragSource })}>
       <EpicHeading ref={handleRef} card={card} movable={actionable} onRename={actionable ? context.onRename : undefined} />
@@ -149,7 +147,7 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
  */
 export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 'loose' }>; context: DragContext }) {
   const { row } = card
-  const canMove = movable({ row, rows: context.rows })
+  const canMove = movable(row)
   const onto = targetId({ kind: 'loose', path: row.path })
   const { ref: holdRef, isDragSource } = useDraggable({
     id: draggedId({ kind: 'row', path: row.path }),

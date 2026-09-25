@@ -226,8 +226,8 @@ Back burner
 - `meta/epic` is a regular file, not a link or a directory. `check` names a
   file that breaks any of these rules with its fix, to rewrite it with `session
   join "<epic>"` or remove it with `session leave`, and the index shows the
-  same sentence on the worktree's row. No other command reads it: nothing about
-  the items depends on it.
+  same sentence on the worktree's row, which it draws in no epic and serves as
+  ever. No other command reads it: nothing about the items depends on it.
 - A main worktree is never in an epic, since Git keeps the repository there and
   lists it first: `session join` refuses one, and the index pins it above the
   epics whatever its file says.

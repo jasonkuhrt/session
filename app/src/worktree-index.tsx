@@ -80,15 +80,20 @@ export function WorktreeIndex() {
 
   /**
    * Put worktrees in epics, one request per worktree, since each worktree's
-   * file is its own, and draw them there until the rows read afterwards,
-   * which are what the page shows from then on, whatever landed.
+   * file is its own, each carrying the epic the index read for it, so a file
+   * changed since is refused rather than overwritten; and draw them there
+   * until the rows read afterwards, which are what the page shows from then
+   * on, whatever landed.
    */
   const write = async (changes: readonly EpicChange[]) => {
     if (changes.length === 0) return
+    const read = new Map((listed ?? []).map((row) => [row.path, row.epic]))
     setWriting(true)
     setFailure(null)
     setWrites(new Map(changes.map((change) => [change.row.path, change.epic])))
-    const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change.row.key, change.epic)))
+    const results = await Promise.allSettled(changes.map((change) =>
+      IndexApi.setEpic({ path: change.row.path, epic: change.epic, from: read.get(change.row.path) ?? null })
+    ))
     const refusals = [...new Set(results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : [])))]
     await reload()
     setWrites(new Map())

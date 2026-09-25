@@ -1557,13 +1557,15 @@ export const makeRepository = (directory: string) =>
      * in its own worktree, never touch one file, and null removes it. `meta/`
      * is made when nothing holds its name; nothing is written through a `meta`
      * that is a link or not a directory, or over an `epic` that is a directory.
-     * It answers the epic the file named before, for the caller to say what
-     * changed, and none for a file the rules reject, which it replaces.
+     * `from`, when given, is the epic the writer last read, a file the rules
+     * reject reading as none: a file that names anything else refuses the
+     * write, as a stale revision refuses a move. It answers the epic the file
+     * named before, for the caller to say what changed.
      */
-    const setEpic = (epic: string | null) =>
+    const setEpic = (input: { readonly epic: string | null; readonly from?: string | null | undefined }) =>
       semaphore.withPermit(
         Effect.gen(function*() {
-          const name = epic === null ? null : epic.trim();
+          const name = input.epic === null ? null : input.epic.trim();
           const problem = name === null ? null : epicNameProblem(name);
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: `Not joined: ${problem}.` });
           if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
@@ -1588,6 +1590,12 @@ export const makeRepository = (directory: string) =>
             return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${epicFact} must be a file.` });
           }
           const previous = yield* readEpic.pipe(Effect.orElseSucceed(() => null));
+          if (input.from !== undefined && input.from !== previous) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: `${metaDirectory}/${epicFact} changed on disk since it was read; reload and try again.`,
+            });
+          }
           if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, `${name}\n`);
           else if (linked || type !== null) yield* fs.remove(path);
           return { previous };

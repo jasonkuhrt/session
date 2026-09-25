@@ -30,6 +30,7 @@ import type {
   AgentsSummary,
   DaemonCapabilities,
   DaemonInfo,
+  EpicWrite,
   IssuesReport,
   Links,
   PullRequestReports,
@@ -474,7 +475,8 @@ type Tracked = {
   /**
    * Why its board is not served: another tracked worktree owned its key when
    * it was taken on. The first worktree to claim a key owns it until it
-   * leaves, and then the next one to have claimed it does.
+   * leaves, and then the next one to have claimed it does, as a restart would
+   * give it.
    */
   conflict: string | null;
   handler: ((request: Request) => Promise<Response>) | undefined;
@@ -562,9 +564,6 @@ const mapWorktrees = <A, B>(
 
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
-
-/** `POST /api/worktrees/<key>/epic`: a key is a worktree's name, encoded segment by segment, so it may hold a `/`. */
-const epicRoute = /^\/api\/worktrees\/(.+)\/epic$/u;
 
 /** How old an overlay a board may be served before the daemon lists again. */
 const agentsFreshnessMilliseconds = 30_000;
@@ -1117,7 +1116,7 @@ export const runDaemon = async () => {
     entry.trailerEvents.close();
     entry.linksEvents.close();
     // A key it owned passes to the next worktree that claimed it, as a restart
-    // would give it, so that one's board is served and its row is reachable.
+    // would give it, so that one's board is served.
     if (entry.conflict !== null) return;
     const next = [...tracked.values()].find((candidate) => candidate.key === entry.key && candidate.conflict !== null);
     if (next !== undefined) next.conflict = null;
@@ -1294,10 +1293,11 @@ export const runDaemon = async () => {
    * One row of the index. What the worktree has checked out comes from its
    * repository's listing, which the route asked once for all of that
    * repository's rows. Its epic is read on its own, from its file, so a row
-   * whose items or Git cannot be read stays in its epic; a file the rules
-   * reject is why its row cannot be read, with the sentence `check` gives.
-   * Whether it is main was settled by Git when it was taken on, since a path
-   * that is its repository's main worktree stays one for as long as it exists.
+   * whose items or Git cannot be read stays in its epic, and a file the rules
+   * reject puts the row in no epic with the sentence `check` gives, and serves
+   * it all the same: the file is about the index, not about the work. Whether
+   * it is main was settled by Git when it was taken on, since a path that is
+   * its repository's main worktree stays one for as long as it exists.
    */
   const summarize = async (entry: Tracked, checkout: Result.Result<Checkout, WorktreeError>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
@@ -1314,6 +1314,7 @@ export const runDaemon = async () => {
       agents: overlay,
       trailerProblems: entry.trailerProblems,
       epic: Result.isSuccess(epic) ? epic.success : null,
+      epicProblem: Result.isFailure(epic) ? epic.failure.message : null,
       main: entry.session.worktree.main,
     };
     try {
@@ -1321,7 +1322,6 @@ export const runDaemon = async () => {
       const loaded = await runNode(
         Effect.all({ session: entry.repository.load, lastChange: entry.repository.lastChange }),
       );
-      if (Result.isFailure(epic)) throw epic.failure;
       for (const stage of loaded.session.stages) counts[stage.stage] = stage.items.length;
       // The batch in Execute names the work under way; a batch with no name is
       // nothing to render, so it reads as an empty Execute rather than a blank.
@@ -1423,22 +1423,25 @@ export const runDaemon = async () => {
 
   /**
    * Set a worktree's epic for the index's drags, as `session join` and
-   * `session leave` set it: by the key the index lists it under, which only
-   * the worktree that owns the key answers to, so a row listed under a key it
-   * does not own is never the one written. The session is converged first, as
-   * every command converges it, and one that has gone is not brought back. The
-   * watch on the session is what tells the index.
+   * `session leave` set it, by the worktree's path, as a terminal is asked
+   * for: every row the index lists has one of its own, served or not, so no
+   * key two rows share can send a write to the wrong worktree. The write is
+   * refused when the file names another epic than the one the index read. A
+   * path the daemon does not track, or whose session has gone, is not written,
+   * and a session is never brought back by it; one that is there is converged
+   * first, as every command converges it. The watch on the session is what
+   * tells the index.
    */
-  const setEpicAt = async (key: string, epic: string | null): Promise<WorktreeEpic> => {
-    const entry = [...tracked.values()].find((candidate) => candidate.key === key && candidate.conflict === null);
+  const setEpicAt = async (input: EpicWrite): Promise<WorktreeEpic> => {
+    const entry = tracked.get(resolve(input.path));
     if (entry === undefined || !(await isTrackable(entry.path))) {
-      throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree under that key; reload the index.' });
+      throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
     await runNode(Effect.gen(function*() {
       yield* ensureSession(entry.session);
-      yield* setWorktreeEpic({ session: entry.session, repository: entry.repository, epic });
+      yield* setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from });
     }));
-    return { epic: epic === null ? null : epic.trim() };
+    return { epic: input.epic === null ? null : input.epic.trim() };
   };
 
   /** A terminal in a tracked worktree; undefined for a path the daemon does not track. */
@@ -1492,9 +1495,10 @@ export const runDaemon = async () => {
       if (request.method === 'POST' && url.pathname === '/api/terminal') {
         return await terminalResponse({ request, open: terminalAt });
       }
-      // The index's drags set a worktree's epic by the key it lists it under.
-      const epicOf = request.method === 'POST' ? epicRoute.exec(url.pathname) : null;
-      if (epicOf !== null) return await epicResponse({ request, write: (epic) => setEpicAt(epicOf[1]!, epic) });
+      // The index's drags set a worktree's epic, by its path, as a terminal is asked for.
+      if (request.method === 'POST' && url.pathname === '/api/worktrees/epic') {
+        return await epicResponse({ request, write: setEpicAt });
+      }
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));
         const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;

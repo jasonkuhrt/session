@@ -222,13 +222,18 @@ a `join` in each of its worktrees, and a name another epic has merges the two.
 Deleting a worktree takes its membership with it, and nothing else has to be
 done.
 
-The index writes the same file through `POST /api/worktrees/<key>/epic {epic}`,
-with an epic's name or `null` for none, by the key the index lists the worktree
-under, and answers with the epic the worktree is in now. The daemon converges
-the session first, as a command does, and refuses a main worktree, a name the
-rules reject, a session that has gone, and a key no tracked worktree owns. The
-watch on the session is what tells the index, as it is for a `join` in a
-terminal.
+The index writes the same file through `POST /api/worktrees/epic {path, epic,
+from}`: the worktree by its path, as `POST /api/terminal` takes it, so a row
+the index lists but does not serve is reached as well and a key two rows share
+can never send a write to the wrong one; the epic's name, or `null` for none;
+and `from`, the epic the index last read for that worktree. When the file names
+anything else by then, a file the rules reject reading as none, the write is
+refused with 409, changed on disk, as a stale revision refuses a move. The
+route answers with the epic the worktree is in now. The daemon converges the
+session first, as a command does, and refuses a main worktree, a name the rules
+reject, and, with 404, a path it does not track or whose session has gone,
+which it never brings back. The watch on the session is what tells the index,
+as it is for a `join` in a terminal.
 
 ## Set up
 
@@ -440,11 +445,13 @@ names each stage with its count and the batch under way, which is where a batch
 is named. Each board sits under `/w/<key>/`, where the key is the worktree name,
 `Heartbeat` or `email-backend/Heartbeat`. Two tracked worktrees whose names
 collide are a conflict: the later one is listed with a reason that names both
-folders, and is not served until the first one leaves. A row the daemon cannot
-read, for such a conflict, for a session or a Git it cannot read, or for a
-`meta/epic` that breaks the rules, reads Not served with the reason in place of
-its second line and has no link to its board; it stays in its epic's card
-while its file names one.
+folders, and is not served until the first one leaves. A row the daemon does
+not serve, for such a conflict or for a session or a Git it cannot read, reads
+Not served with the reason in place of its second line and has no link to its
+board; it stays in its epic's card while its file names one. A `meta/epic` the
+rules reject puts its worktree in no epic and says why on the second line, in
+the sentence `check` gives, and the row is served as ever: the file is about the
+index, not the work.
 
 The cards change their epics by drag. A worktree is held by its row, and a whole
 epic by its heading; the pointer carries a copy of what is held while the card
@@ -465,8 +472,11 @@ lands at once and read again once it is written; a refusal, such as a main
 worktree's, shows above the cards in the daemon's words. While a card is held,
 and while a drop is being written, the index reads nothing, remembers that it
 was told something changed, and reads once when it is let go, so no card moves
-under the pointer. An epic that holds a worktree the index cannot reach by its
-key, one that lost its key to another, is neither held nor renamed.
+under the pointer. Every worktree the index lists can be dragged but a main
+one, a worktree it does not serve included, since the epic route takes a path.
+Each drop carries the epic the index read for every worktree it writes, so one
+whose file was changed in the meantime is refused as changed on disk, and the
+index reads again.
 
 ## Use the board
 

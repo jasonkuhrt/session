@@ -118,17 +118,11 @@ export function withEpics({ rows, epics }: {
 }
 
 /**
- * Whether the index can write a row's epic. The route takes the key a row is
- * listed under, and only the worktree that owns the key answers to it, so a
- * row not served because another row holds its key has none of its own to be
- * reached by. Any other row can be, one not served for another reason too.
+ * Whether a row can be dragged: every worktree the index lists can, a row
+ * the daemon does not serve included, since the epic route takes a worktree
+ * by its path; a main worktree cannot, since it is never in an epic.
  */
-export const reachable = ({ row, rows }: { readonly row: WorktreeSummary; readonly rows: readonly WorktreeSummary[] }) =>
-  row.conflict === null || !rows.some((other) => other.path !== row.path && other.key === row.key)
-
-/** Whether a row can be dragged: a main worktree is never in an epic, so it stays pinned. */
-export const movable = ({ row, rows }: { readonly row: WorktreeSummary; readonly rows: readonly WorktreeSummary[] }) =>
-  !row.main && reachable({ row, rows })
+export const movable = (row: WorktreeSummary) => !row.main
 
 /** What is held: one worktree, by its row, or a whole epic, by its card's heading. */
 export type Dragged = { readonly kind: 'row'; readonly path: string } | { readonly kind: 'epic'; readonly name: string }

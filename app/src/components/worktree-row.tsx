@@ -28,7 +28,7 @@ const detachedMeaning = 'Git has a commit checked out in this worktree rather th
 
 const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branch.'
 
-const notServedMeaning = 'The daemon cannot read this worktree’s row, for the reason beside this, so its board is not linked from here.'
+const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
 const mainMeaning =
   'The main worktree of its repository: Git keeps the repository here and lists it first, so it is pinned above the epics and is never in one.'
@@ -41,7 +41,8 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * One worktree in two lines, since there are no columns to carry the rest:
  * its name and the agents live in it, then its branch and pull request, with
  * the glyph of what its session holds beside both. A row the daemon cannot
- * read says why in place of the second line.
+ * serve says why in place of the second line, and a `meta/epic` it cannot
+ * read as a name says why on it, in the words `session check` gives.
  */
 export function WorktreeRow({ row, context }: { row: WorktreeSummary; context: RowContext }) {
   return (
@@ -71,6 +72,7 @@ export function WorktreeRow({ row, context }: { row: WorktreeSummary; context: R
             </>
           )
           : <NotServed reason={row.conflict} />}
+        {row.epicProblem === null ? null : <span className="text-xs wrap-anywhere text-destructive">{row.epicProblem}</span>}
       </div>
     </div>
   )

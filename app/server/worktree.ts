@@ -229,16 +229,19 @@ const mainWorktreeRefusal = (name: string) =>
  * Put a worktree in the epic of that name, or in none with null, through the
  * one rule both the CLI and the daemon join by: a main worktree is never in an
  * epic. Leaving is always allowed, so a hand-made file in a main worktree can
- * be taken out the same way. Answers the epic its file named before.
+ * be taken out the same way. `from` is the epic the writer last read, which
+ * the index sends and a command does not. Answers the epic its file named
+ * before.
  */
 export const setWorktreeEpic = (input: {
   readonly session: WorktreeSession;
   readonly repository: SessionRepository;
   readonly epic: string | null;
+  readonly from?: string | null | undefined;
 }) =>
   input.epic !== null && input.session.worktree.main
     ? Effect.fail(new RepositoryError({ kind: 'conflict', message: mainWorktreeRefusal(input.session.worktree.name) }))
-    : input.repository.setEpic(input.epic);
+    : input.repository.setEpic({ epic: input.epic, from: input.from });
 
 /**
  * Route key for a worktree: its name, encoded segment by segment so a nested
