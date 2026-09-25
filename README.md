@@ -75,8 +75,8 @@ dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
 later edit on disk.
 
 The board's header starts with "All sessions" and the worktree picker, which
-shows the worktree's name over the branch checked out in it and switches to any
-other worktree's board. The gear at the top right of every page holds the
+shows the worktree's name over the branch checked out in it, each line marked
+with an icon for what it is, and switches to any other worktree's board. The gear at the top right of every page holds the
 board's own settings, kept in this browser. Tips, off by default, makes every
 word and control say what it means when it is hovered or focused.
 
