@@ -3,6 +3,7 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
+import type { Repository } from '../contract.ts';
 import { capture } from './command.ts';
 import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 
@@ -26,6 +27,12 @@ export type WorktreeMetadata = Checkout & {
    * lock or remove. False outside Git.
    */
   readonly main: boolean;
+  /**
+   * Where its repository's main worktree is, as Git listed it first when this
+   * worktree was taken on: its own path when it is main, and null outside
+   * Git. It names the repository when Git cannot list it later.
+   */
+  readonly mainPath: string | null;
 };
 
 export type WorktreeSession = {
@@ -46,6 +53,8 @@ export class WorktreeError extends Data.TaggedError('WorktreeError')<{
 
 type GitWorktree = Checkout & {
   readonly path: string;
+  /** Git marks the entry bare: a bare repository's own directory, which it lists first and which is no worktree. */
+  readonly bare: boolean;
 };
 
 const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
@@ -81,6 +90,7 @@ export const listGitWorktrees = (workingDirectory: string) =>
               path: resolve(worktree.slice('worktree '.length)),
               branch: branch?.slice('branch refs/heads/'.length) ?? null,
               detached: fields.includes('detached'),
+              bare: fields.includes('bare'),
             };
           }),
       catch: (cause) =>
@@ -131,6 +141,30 @@ export const checkoutIn = (input: {
   }));
 };
 
+/**
+ * The repository a session's worktree belongs to, by what Git lists first for
+ * it, from the same listing as the worktree's own checkout, or, when Git could
+ * not list it, by what it listed when the worktree was taken on, with nothing
+ * known checked out there. That entry is the Git directory the worktrees
+ * share, `bare`, where no main worktree stands. Null outside Git.
+ */
+export const repositoryIn = (input: {
+  readonly listings: ReadonlyMap<string, RepositoryListing>;
+  readonly session: WorktreeSession;
+}): Repository | null => {
+  const { git, worktree } = input.session;
+  if (git === null || worktree.mainPath === null) return null;
+  const listing = input.listings.get(git.common);
+  const main = listing !== undefined && Result.isSuccess(listing) ? listing.success[0] : undefined;
+  const path = main?.path ?? worktree.mainPath;
+  return {
+    name: basename(path),
+    path,
+    bare: main?.bare === true || path === resolve(git.common),
+    checkout: main === undefined ? null : { branch: main.branch, detached: main.detached },
+  };
+};
+
 /** What one session's worktree has checked out now, from one listing of its repository. */
 export const checkoutOf = (session: WorktreeSession) =>
   listRepositories({ sessions: [session], concurrency: 1 }).pipe(
@@ -165,7 +199,8 @@ const locateGit = (start: string) =>
  * The worktree a path belongs to, its session, and the name the daemon keys
  * it by. Git lists the main worktree first, so the first entry is the main:
  * it keeps its folder's name, a linked worktree whose folder shares that name
- * takes its parent's before it, and it is the one never in an epic.
+ * takes its parent's before it, it is the one never in an epic, and it names
+ * the repository every one of them belongs to.
  */
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
@@ -178,7 +213,7 @@ export const resolveWorktreeSession = (input: string) =>
     if (located === null) {
       return {
         directory: isSessionDirectory ? candidate : join(start, '.session'),
-        worktree: { name: basename(start), path: start, main: false, ...outsideGit },
+        worktree: { name: basename(start), path: start, main: false, mainPath: null, ...outsideGit },
         git: null,
       } satisfies WorktreeSession;
     }
@@ -209,6 +244,7 @@ export const resolveWorktreeSession = (input: string) =>
         name,
         path: worktreePath,
         main,
+        mainPath: mainWorktree.path,
         branch: current.branch,
         detached: current.detached,
       },
@@ -218,8 +254,8 @@ export const resolveWorktreeSession = (input: string) =>
 
 /**
  * Why a main worktree cannot join an epic, naming the rule and the way round
- * it: Git keeps the repository in it and lists it first, so the index pins it
- * above the epics instead.
+ * it: Git keeps the repository in it and lists it first, so the index draws it
+ * at the head of its repository's section instead.
  */
 const mainWorktreeRefusal = (name: string) =>
   `Not joined: ${name} is its repository’s main worktree, and a main worktree is never in an epic; ` +

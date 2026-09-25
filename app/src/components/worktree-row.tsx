@@ -1,9 +1,10 @@
 import { House } from 'lucide-react'
 
 import type { DaemonCapabilities, PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
+import type { StageRange } from '../lib/dashboard'
 import { landing } from '../lib/drag'
-import type { MainTile, StageRange } from '../lib/epics'
 import { checkoutLabel } from '../lib/format'
+import { mainMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
 import { AgentPills } from './agent-pills'
 import { Copyable } from './copyable'
@@ -12,7 +13,6 @@ import { StageGlyph } from './stage-glyph'
 import { Explained, useTip } from './tip'
 import { TrailerCount } from './trailer-problems'
 import { Badge } from './ui/badge'
-import { Card } from './ui/card'
 import { TerminalAction, ZedAction } from './worktree-actions'
 import { CheckoutMark, WorktreeMark } from './worktree-marks'
 
@@ -36,11 +36,6 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
-const quietTileMeaning = 'Nothing is live here and nothing has happened in five days, so this tile is dim.'
-
-const mainMeaning =
-  'The main worktree of its repository: Git keeps the repository here and lists it first, so it is pinned above the epics and is never in one.'
-
 /** How a card looks for what it is and what a drag is doing to it: dim when quiet, outlined where a held card would land, faint while it is the one held. */
 export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boolean; held: boolean }) =>
   cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40')
@@ -52,12 +47,14 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * marked as the worktree picker marks it. A row the daemon cannot serve has no
  * glyph and says why in place of the second line, and a `meta/epic` it cannot
  * read as a name says why on it, in the words `session check` gives.
- * `meaning` is what the mark before the name says the worktree is here.
+ * `meaning` is what the mark before the name says the worktree is here, and
+ * `name` the name it is drawn under, where a head needs more than its own.
  */
-export function WorktreeRow({ row, context, meaning = listedMeaning }: {
+export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name }: {
   row: WorktreeSummary
   context: RowContext
   meaning?: string
+  name?: string
 }) {
   return (
     // The glyph's column is as wide as a glyph whether or not the row draws
@@ -78,7 +75,7 @@ export function WorktreeRow({ row, context, meaning = listedMeaning }: {
           <Explained meaning={meaning}>
             <WorktreeMark />
           </Explained>
-          <WorktreeName row={row} />
+          <WorktreeName row={row} name={name} />
         </span>
         <TrailerCount problems={row.trailerProblems} />
         {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
@@ -89,7 +86,7 @@ export function WorktreeRow({ row, context, meaning = listedMeaning }: {
         {row.conflict === null
           ? (
             <>
-              <Checkout row={row} />
+              <Checkout branch={row.branch} detached={row.detached} />
               <PullRequestSlot report={context.pullRequests[row.path]} />
             </>
           )
@@ -103,10 +100,11 @@ export function WorktreeRow({ row, context, meaning = listedMeaning }: {
 /**
  * The name alone, which already tells the worktrees apart: a worktree whose
  * folder shares the main checkout's name carries its parent folder's name
- * before it. Where it sits is its tip. It opens the worktree's board, unless
- * the daemon cannot serve one.
+ * before it, and so does a head whose section shares its name with another.
+ * Where it sits is its tip. It opens the worktree's board, unless the daemon
+ * cannot serve one.
  */
-function WorktreeName({ row }: { row: WorktreeSummary }) {
+function WorktreeName({ row, name }: { row: WorktreeSummary; name: string }) {
   const tip = useTip()
   return row.conflict === null
     ? (
@@ -115,21 +113,21 @@ function WorktreeName({ row }: { row: WorktreeSummary }) {
         href={`/w/${row.key}/`}
         title={tip(row.path)}
       >
-        {row.name}
+        {name}
       </a>
     )
-    : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{row.name}</span>
+    : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{name}</span>
 }
 
-/** What the worktree has checked out, in Git's words and under the picker's mark: its branch, to copy, or why it has none. */
-function Checkout({ row }: { row: WorktreeSummary }) {
+/** What a worktree has checked out, in Git's words and under the picker's mark: its branch, to copy, or why it has none. */
+export function Checkout({ branch, detached }: { branch: string | null; detached: boolean }) {
   const tip = useTip()
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <CheckoutMark detached={row.detached} />
-      {row.branch === null
-        ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
-        : <Copyable value={row.branch}><span className="wrap-anywhere">{row.branch}</span></Copyable>}
+      <CheckoutMark detached={detached} />
+      {branch === null
+        ? <span title={tip(detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel({ branch, detached })}</span>
+        : <Copyable value={branch}><span className="wrap-anywhere">{branch}</span></Copyable>}
     </span>
   )
 }
@@ -151,31 +149,5 @@ function NotServed({ reason }: { reason: string }) {
       <Badge variant="destructive" title={tip(notServedMeaning)}>Not served</Badge>
       <span className="wrap-anywhere">{reason}</span>
     </span>
-  )
-}
-
-/**
- * The main worktrees, one per repository whose main checkout has a session,
- * pinned above the cards by name and never dragged: a main worktree is never
- * in an epic.
- */
-export function MainStrip({ mains, context }: { mains: readonly MainTile[]; context: RowContext }) {
-  const tip = useTip()
-  if (mains.length === 0) return null
-  return (
-    <section aria-label="Main worktrees" className="worktree-strip">
-      {mains.map(tile => (
-        <Card
-          key={tile.row.path}
-          size="sm"
-          title={tile.quiet ? tip(quietTileMeaning) : undefined}
-          className={cardClass({ quiet: tile.quiet, lands: false, held: false })}
-        >
-          <div className="px-3 py-2.5">
-            <WorktreeRow row={tile.row} context={context} />
-          </div>
-        </Card>
-      ))}
-    </section>
   )
 }

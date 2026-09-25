@@ -211,20 +211,18 @@
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }
 
 /*
- * The index's cards: columns as wide as a card needs, as many as the window
- * holds, each card as tall as its rows. Where the browser lays cards out as
- * masonry, a card packs up under the one above it in its column; elsewhere
- * each starts at the top of its row. No script lays them out. Chrome 153
- * supports neither syntax as it ships: behind its experimental web platform
- * features flag it has `display: grid-lanes`, the syntax the CSS Working
- * Group settled on, and never `display: masonry` or `grid-template-rows:
- * masonry`, the earlier proposal, which Firefox keeps behind a flag of its
- * own. The strip of main worktrees shares the columns, so its tiles line up
- * with the cards below, and stays a plain grid, since every tile in it is one
- * worktree's two lines.
+ * The index's cards, one grid under each repository's head and one for the
+ * epics across repositories: columns as wide as a card needs, as many as the
+ * window holds, each card as tall as its rows, so every grid on the page has
+ * the same columns. Where the browser lays cards out as masonry, a card packs
+ * up under the one above it in its column; elsewhere each starts at the top of
+ * its row. No script lays them out. Chrome 153 supports neither syntax as it
+ * ships: behind its experimental web platform features flag it has `display:
+ * grid-lanes`, the syntax the CSS Working Group settled on, and never
+ * `display: masonry` or `grid-template-rows: masonry`, the earlier proposal,
+ * which Firefox keeps behind a flag of its own.
  */
-.worktree-cards,
-.worktree-strip {
+.worktree-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
   align-items: start;

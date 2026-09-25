@@ -1,6 +1,6 @@
 import type { Stage } from '../../contract'
 import { stageNames } from '../../contract'
-import type { StageRange } from '../lib/epics'
+import type { StageRange } from '../lib/dashboard'
 import { cn } from '../lib/utils'
 import { Explained } from './tip'
 

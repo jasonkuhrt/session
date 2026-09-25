@@ -10,13 +10,15 @@ import { Skeleton } from './components/ui/skeleton'
 import { TooltipProvider } from './components/ui/tooltip'
 import { useCapabilities } from './components/worktree-actions'
 import type { DragContext } from './components/worktree-cards'
-import { CardSpace, EpicCard, HeldPreview, LooseCard, NewEpicTarget } from './components/worktree-cards'
-import { MainStrip } from './components/worktree-row'
+import { CardSpace, HeldPreview } from './components/worktree-cards'
+import { AcrossProjects, ProjectSection } from './components/worktree-sections'
 import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
+import type { Dashboard } from './lib/dashboard'
+import { dashboardOf, epicCardsOf, sectionKeyOf, stageRangeOf } from './lib/dashboard'
 import { dragSensors } from './lib/drag'
-import type { Dashboard, Dragged, DropOutcome } from './lib/epics'
-import { dashboardOf, draggedOf, dropOutcome, outcomeWords, stageRangeOf, targetId, targetOf, withEpics } from './lib/epics'
+import type { Dragged, DropOutcome } from './lib/epics'
+import { draggedOf, dropOutcome, outcomeWords, targetId, targetOf, withEpics } from './lib/epics'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
 
 const skeletonCards = [1, 2, 3, 4, 5, 6]
@@ -198,10 +200,11 @@ export function WorktreeIndex() {
 }
 
 /**
- * The strip and the cards, inside the drag, where what is held and what it is
- * over are known: the card it would land in is outlined, and the pointer
- * carries the card with the words of what dropping it there would do. While a
- * worktree is held, a `+` after the cards takes it into an epic of its own.
+ * The stack, inside the drag, where what is held and what it is over are
+ * known: the card it would land in is outlined, and the pointer carries the
+ * card with the words of what dropping it there would do. While a worktree is
+ * held, a `+` after its own repository's cards takes it into an epic of its
+ * own, which stands there.
  */
 function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragContext }) {
   const { source, target } = useDragOperation()
@@ -211,17 +214,23 @@ function Cards({ dashboard, context }: { dashboard: Dashboard; context: DragCont
   const landingOn = outcome === null || over === null ? null : targetId(over)
   const held: DragContext = { ...context, landingOn }
   const heldRow = dragged?.kind === 'row' ? context.rows.find((row) => row.path === dragged.path) ?? null : null
+  const home = heldRow === null ? null : sectionKeyOf(heldRow)
   return (
     <>
-      <MainStrip mains={dashboard.mains} context={context} />
       <CardSpace context={held}>
-        <div className="worktree-cards">
-          {dashboard.cards.map((card) =>
-            card.kind === 'epic'
-              ? <EpicCard key={`epic:${card.name}`} card={card} context={held} />
-              : <LooseCard key={card.row.path} card={card} context={held} />
+        <div className="flex flex-col gap-10">
+          {dashboard.sections.map((section) =>
+            section.kind === 'across'
+              ? <AcrossProjects key={section.key} section={section} context={held} />
+              : (
+                <ProjectSection
+                  key={section.key}
+                  section={section}
+                  context={held}
+                  newEpicOf={section.key === home ? heldRow?.name ?? null : null}
+                />
+              )
           )}
-          {heldRow === null ? null : <NewEpicTarget name={heldRow.name} context={held} />}
         </div>
       </CardSpace>
       {/* Dropped, the card is drawn where the drop put it, so nothing flies back first. */}
@@ -248,18 +257,21 @@ function Held({ dragged, dashboard, context, words }: {
 }) {
   if (dragged === null) return null
   if (dragged.kind === 'epic') {
-    const card = dashboard.cards.find((candidate) => candidate.kind === 'epic' && candidate.name === dragged.name)
-    return card?.kind === 'epic' ? <HeldPreview held={{ kind: 'epic', card }} words={words} context={context} /> : null
+    const card = epicCardsOf(dashboard).find((candidate) => candidate.name === dragged.name)
+    return card === undefined ? null : <HeldPreview held={{ kind: 'epic', card }} words={words} context={context} />
   }
   const row = context.rows.find((candidate) => candidate.path === dragged.path)
   return row === undefined ? null : <HeldPreview held={{ kind: 'row', row }} words={words} context={context} />
 }
 
-/** The shape the cards will take, so the first paint is not a single slab. */
+/** The shape a repository's section will take, its head over its cards, so the first paint is not a single slab. */
 function LoadingCards() {
   return (
-    <div className="worktree-cards">
-      {skeletonCards.map((card) => <Skeleton key={card} className="h-24 rounded-xl" />)}
+    <div className="flex flex-col gap-3">
+      <Skeleton className="h-11 rounded-md" />
+      <div className="worktree-cards">
+        {skeletonCards.map((card) => <Skeleton key={card} className="h-24 rounded-xl" />)}
+      </div>
     </div>
   )
 }

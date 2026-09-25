@@ -1,125 +1,12 @@
 import type { WorktreeSummary } from '../../contract'
-import { stageNames } from '../../contract'
-import { isLive } from './agents'
-import { hour } from './format'
 
 /**
- * How the index draws the worktrees it lists: the main worktrees pinned in a
- * strip, and below them cards, one per epic with its worktrees inside and one
- * per worktree in none, ordered by what is happening in them. An epic is only
- * the name its worktrees' files share, so it exists while one names it, and
- * everything here is derived from the rows on every read: no order and no fold
- * is kept anywhere.
+ * How the index's drags change epics: what is held, what it is over, what
+ * dropping it there would do and the words it carries saying so, and the
+ * epics a write is putting worktrees in, drawn until it lands. An epic is
+ * only the name its worktrees' files share, so nothing here is kept: every
+ * outcome is read from the rows drawn when the card was dropped.
  */
-
-/** Nothing live and nothing for this long makes a worktree quiet, drawn dim and last: the bound the index's activity bands used. */
-const quietAfter = 5 * 24 * hour
-
-/** Whether an agent is live in a worktree, as its pills say: a Claude Code session with a process, or a Codex thread an app holds. */
-export const hasLiveAgent = (row: WorktreeSummary) =>
-  row.agents.claude.some(isLive) || row.agents.codex.some((thread) => thread.loaded === true)
-
-/** When anything last happened in a worktree, in epoch milliseconds; null when nothing has. */
-const activityAt = (row: WorktreeSummary): number | null => {
-  if (row.activity === null) return null
-  const at = Date.parse(row.activity.at)
-  return Number.isNaN(at) ? null : at
-}
-
-/** What is happening in some worktrees together: whether any has a live agent, the newest moment, and whether that makes them quiet. */
-type Standing = { readonly live: boolean; readonly latest: number | null; readonly quiet: boolean }
-
-const standingOf = (rows: readonly WorktreeSummary[], now: number): Standing => {
-  const live = rows.some((row) => hasLiveAgent(row))
-  const moments = rows.flatMap((row) => {
-    const at = activityAt(row)
-    return at === null ? [] : [at]
-  })
-  const latest = moments.length === 0 ? null : Math.max(...moments)
-  return { live, latest, quiet: !live && (latest === null || now - latest > quietAfter) }
-}
-
-/**
- * What is happening first: anything not quiet before anything quiet, a live
- * agent before none, then the newest moment first. A name settles a tie, so
- * two reads of the same rows always draw the same order.
- */
-const busierFirst = (
-  left: { readonly standing: Standing; readonly name: string },
-  right: { readonly standing: Standing; readonly name: string },
-) => {
-  if (left.standing.quiet !== right.standing.quiet) return left.standing.quiet ? 1 : -1
-  if (left.standing.live !== right.standing.live) return left.standing.live ? -1 : 1
-  if (left.standing.latest !== right.standing.latest) {
-    if (left.standing.latest === null) return 1
-    if (right.standing.latest === null) return -1
-    return right.standing.latest - left.standing.latest
-  }
-  return left.name.localeCompare(right.name)
-}
-
-/** A main worktree as the strip draws it. */
-export type MainTile = { readonly row: WorktreeSummary; readonly quiet: boolean }
-
-/** A card below the strip: an epic and its worktrees, busiest first, or one worktree in no epic. */
-export type IndexCard =
-  | { readonly kind: 'epic'; readonly name: string; readonly rows: readonly WorktreeSummary[]; readonly quiet: boolean }
-  | { readonly kind: 'loose'; readonly row: WorktreeSummary; readonly quiet: boolean }
-
-/** The index as it is drawn. */
-export type Dashboard = { readonly mains: readonly MainTile[]; readonly cards: readonly IndexCard[] }
-
-/**
- * The strip and the cards for these rows. A main worktree is never in an
- * epic, so it goes in the strip whatever its file says, by name, since the
- * strip stays put; every other worktree goes in its epic's card, or in a card
- * of its own.
- */
-export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }): Dashboard {
-  const mains = rows
-    .filter((row) => row.main)
-    .toSorted((left, right) => left.name.localeCompare(right.name))
-    .map((row) => ({ row, quiet: standingOf([row], now).quiet }))
-  const members = new Map<string, WorktreeSummary[]>()
-  const loose: WorktreeSummary[] = []
-  for (const row of rows) {
-    if (row.main) continue
-    if (row.epic === null) loose.push(row)
-    else members.set(row.epic, [...(members.get(row.epic) ?? []), row])
-  }
-  const rowOrder = (left: WorktreeSummary, right: WorktreeSummary) =>
-    busierFirst({ standing: standingOf([left], now), name: left.name }, { standing: standingOf([right], now), name: right.name })
-  const epics = [...members].map(([name, epicRows]) => {
-    const standing = standingOf(epicRows, now)
-    const card: IndexCard = { kind: 'epic', name, rows: epicRows.toSorted(rowOrder), quiet: standing.quiet }
-    return { card, standing, name }
-  })
-  const singles = loose.map((row) => {
-    const standing = standingOf([row], now)
-    const card: IndexCard = { kind: 'loose', row, quiet: standing.quiet }
-    return { card, standing, name: row.name }
-  })
-  return { mains, cards: [...epics, ...singles].toSorted(busierFirst).map((entry) => entry.card) }
-}
-
-/**
- * The fewest and the most items any stage drawn on the page holds. Every
- * glyph's bars are measured against this one range, so a bar's height means
- * the same on every card in one view.
- */
-export type StageRange = { readonly least: number; readonly most: number }
-
-/**
- * The range for the rows the page draws, read from them on every render and
- * kept nowhere. Only a row whose glyph is drawn counts: a row the daemon does
- * not serve has none.
- */
-export function stageRangeOf(rows: readonly WorktreeSummary[]): StageRange {
-  const counts = rows
-    .filter((row) => row.conflict === null)
-    .flatMap((row) => stageNames.map((stage) => row.counts[stage]))
-  return counts.length === 0 ? { least: 0, most: 0 } : { least: Math.min(...counts), most: Math.max(...counts) }
-}
 
 /**
  * The rows with the epics a write is putting them in, drawn while it is
@@ -149,8 +36,8 @@ export type Dragged = { readonly kind: 'row'; readonly path: string } | { readon
 
 /**
  * What a held thing is over: an epic's card, a card of one worktree in no
- * epic, the `+` drawn after the cards while a worktree is held, or the space
- * between and below the cards.
+ * epic, the `+` drawn after its repository's cards while a worktree is held,
+ * or the space between and below the cards.
  */
 export type DropTarget =
   | { readonly kind: 'epic'; readonly name: string }

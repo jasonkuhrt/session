@@ -603,6 +603,45 @@ export const LinksSchema = Schema.Struct({
 
 export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequestReportSchema);
 
+/**
+ * The repository a worktree belongs to, as Git names it for every worktree of
+ * it: by what Git lists first for it, its main worktree, which holds the
+ * repository, or its Git directory where no main worktree stands. Every row of
+ * one repository carries the same one, read in the same listing as the row's
+ * own branch, so the index heads each repository's section with it whether or
+ * not a session is there.
+ */
+export type Repository = {
+  /** The name of what Git lists first, its folder's, which names the repository. */
+  name: string;
+  /** Where that is, which tells the repository from every other. */
+  path: string;
+  /**
+   * Whether Git lists the repository's Git directory first, where a main
+   * worktree would be: a bare repository's, which Git marks bare, and the Git
+   * directory of a submodule or a separate one, which it lists in the main
+   * worktree's place unmarked. That directory is no worktree and holds no
+   * session, so the index heads the repository with its name alone.
+   */
+  bare: boolean;
+  /**
+   * What the listing says is checked out there, which the index shows for a
+   * main worktree; null when Git could not list the repository, which each of
+   * its rows says in place of its own branch.
+   */
+  checkout: { branch: string | null; detached: boolean } | null;
+};
+
+export const RepositorySchema = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  bare: Schema.Boolean,
+  checkout: Schema.NullOr(Schema.Struct({
+    branch: Schema.NullOr(Schema.String),
+    detached: Schema.Boolean,
+  })),
+});
+
 /** One row of the index: a tracked worktree and what its session holds. */
 export type WorktreeSummary = {
   /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
@@ -640,8 +679,10 @@ export type WorktreeSummary = {
    * The row is served all the same, in no epic.
    */
   epicProblem: string | null;
-  /** Whether this is its repository's main worktree, which Git lists first and the index pins above the epics. */
+  /** Whether this is its repository's main worktree, which Git lists first and the index draws at the head of the repository's section. */
   main: boolean;
+  /** The repository the worktree belongs to, named by its main worktree; null for a folder outside Git, which the index gives a section of its own. */
+  repository: Repository | null;
 };
 
 /**
@@ -688,6 +729,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   epic: Schema.NullOr(Schema.String),
   epicProblem: Schema.NullOr(Schema.String),
   main: Schema.Boolean,
+  repository: Schema.NullOr(RepositorySchema),
 });
 
 /** The result of asking the daemon to focus a session's terminal. */

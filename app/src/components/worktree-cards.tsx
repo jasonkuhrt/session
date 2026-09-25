@@ -5,9 +5,10 @@ import { Boxes, Pencil, Plus } from 'lucide-react'
 import * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
+import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
-import type { IndexCard } from '../lib/epics'
 import { draggedId, movable, targetId } from '../lib/epics'
+import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
@@ -17,13 +18,12 @@ import type { RowContext } from './worktree-row'
 import { cardClass, WorktreeRow } from './worktree-row'
 
 /**
- * The index's cards below the strip: an epic with its worktrees in it, or one
- * worktree in no epic. A card is held by what it is, a worktree by its row and
- * an epic by its heading, and the pointer carries a plain copy of it, so the
- * card itself stays where it is, faint, until the drop.
+ * The index's cards, under their repository's head or above the repositories:
+ * an epic with its worktrees in it, or one worktree in no epic. A card is held
+ * by what it is, a worktree by its row and an epic by its heading, and the
+ * pointer carries a plain copy of it, so the card itself stays where it is,
+ * faint, until the drop.
  */
-
-type EpicCardShape = Extract<IndexCard, { kind: 'epic' }>
 
 /** What the draggable cards also need: every row, which a drop's outcome is read from, and what a drag is doing. */
 export type DragContext = RowContext & {
@@ -34,24 +34,6 @@ export type DragContext = RowContext & {
   readonly landingOn: string | null
   readonly onRename: (card: EpicCardShape) => void
 }
-
-/** The order the cards stand in, said by every card that can say it, since the page has no heading to say it once. */
-const orderMeaning = 'The cards with a live agent come first, then the newest activity.'
-
-const epicMeaning = (name: string) =>
-  `An epic: the worktrees whose sessions name “${name}”, the busiest first. ${orderMeaning} Drag this heading onto another epic to merge the two.`
-
-/** What a worktree in no epic is, and where it can be dropped, said by the mark before its name. */
-const looseMeaning =
-  `A worktree in no epic, on this page while it has a session. ${orderMeaning} Drag it onto an epic to join it, onto another worktree in no epic to make an epic of the two, or onto the + that appears after the cards to start an epic of its own.`
-
-/** The same for a worktree in an epic, which can also be dropped out of it. */
-const epicRowMeaning = (epic: string) =>
-  `A worktree in “${epic}”, on this page while it has a session. Drag it onto another epic to join that one, onto a worktree in no epic to make an epic of the two, onto the + that appears after the cards to start an epic of its own, or onto the space between the cards to leave “${epic}”.`
-
-const worktreeCountMeaning = 'How many worktrees are in this epic.'
-
-const quietCardMeaning = 'Nothing is live here and nothing has happened in five days, so this card is dim, and last.'
 
 /**
  * One ref for an element that is two things to the drag library at once, a
@@ -71,9 +53,10 @@ const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: Co
 
 /**
  * A worktree in an epic's card, held by its row: dragged onto another epic it
- * joins it, onto a worktree in no epic the two make one, onto the `+` after the
- * cards it makes an epic alone, once named, and onto the space between the
- * cards it leaves its epic and becomes a card of its own.
+ * joins it, onto a worktree in no epic the two make one, onto the `+` after its
+ * repository's cards it makes an epic alone, once named, and onto the space
+ * between the cards it leaves its epic and becomes a card of its own, under
+ * its repository.
  */
 function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext }) {
   const canMove = movable(row)
@@ -93,7 +76,7 @@ function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext 
       aria-label={`Drag ${row.name}`}
       className={cn('px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
-      <WorktreeRow row={row} context={context} meaning={epicRowMeaning(row.epic ?? '')} />
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic: row.epic ?? '' })} />
     </div>
   )
 }
@@ -179,10 +162,11 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
 }
 
 /**
- * A worktree in no epic, as a card of its own. Held, it is its worktree: onto
- * an epic it joins it, onto another card like it the two make an epic, and
- * onto the `+` after the cards it makes an epic alone, each named in the
- * dialog. It takes another worktree dropped on it the same way.
+ * A worktree in no epic, as a card of its own under its repository. Held, it
+ * is its worktree: onto an epic it joins it, onto another card like it the two
+ * make an epic, and onto the `+` after its repository's cards it makes an epic
+ * alone, each named in the dialog. It takes another worktree dropped on it the
+ * same way, from any repository.
  */
 export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 'loose' }>; context: DragContext }) {
   const { row } = card
@@ -214,17 +198,18 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       )}
     >
       <div className="px-3 py-2.5">
-        <WorktreeRow row={row} context={context} meaning={looseMeaning} />
+        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} />
       </div>
     </Card>
   )
 }
 
 /**
- * Where a held worktree starts an epic of its own: a `+` after the cards,
- * drawn only while a worktree is held, since it cannot act otherwise. Dropped
- * here, the worktree is named into a new epic in the dialog, and a name an
- * epic already has puts it in that one.
+ * Where a held worktree starts an epic of its own: a `+` after its
+ * repository's cards, drawn only while a worktree is held, since it cannot act
+ * otherwise, and there because an epic of one worktree stands with its
+ * repository. Dropped here, the worktree is named into a new epic in the
+ * dialog, and a name an epic already has puts it in that one.
  */
 export function NewEpicTarget({ name, context }: { name: string; context: DragContext }) {
   const onto = targetId({ kind: 'new' })
@@ -245,8 +230,9 @@ export function NewEpicTarget({ name, context }: { name: string; context: DragCo
 }
 
 /**
- * The space between and below the cards: a worktree dropped here leaves its
- * epic and becomes a card of its own. It ranks below every card, so the
+ * The space between and below the cards, the heads included: a worktree
+ * dropped here leaves its epic and becomes a card of its own under its
+ * repository, wherever it was dropped. It ranks below every card, so the
  * pointer over a card is over the card.
  */
 export function CardSpace({ context, children }: { context: DragContext; children: React.ReactNode }) {
