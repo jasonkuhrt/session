@@ -4,6 +4,7 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
+import type { OpenResult } from '../contract.ts';
 
 /**
  * Running a command and keeping what it printed. Git, the agent listings and
@@ -31,6 +32,12 @@ export type Command = {
   readonly args: ReadonlyArray<string>;
   readonly cwd?: string | undefined;
   readonly env?: Record<string, string> | undefined;
+  /**
+   * False hands the child `env` and nothing else, as a fresh login starts;
+   * otherwise `env` is added to the daemon's own, since a child without PATH
+   * or HOME cannot find its own configuration.
+   */
+  readonly extendEnv?: boolean | undefined;
   /** Without one the command may hang forever; with one its group is killed. */
   readonly timeout?: Duration.Input | undefined;
 };
@@ -47,9 +54,7 @@ export const capture = (input: Command) => {
       const handle = yield* ChildProcess.make(input.command, [...input.args], {
         cwd: input.cwd,
         env: input.env,
-        // `env` replaces the whole environment unless this says otherwise, and
-        // a child without PATH or HOME cannot find its own configuration.
-        extendEnv: true,
+        extendEnv: input.extendEnv ?? true,
       });
       const [stdout, stderr, exitCode] = yield* Effect.all(
         [
@@ -79,3 +84,28 @@ export const capture = (input: Command) => {
     ),
   );
 };
+
+/** What a command said went wrong, verbatim, or the plainest true sentence about it. */
+export const refusal = ({ command, result }: {
+  readonly command: string;
+  readonly result: { readonly stderr: string; readonly exitCode: number };
+}): string => {
+  const line = result.stderr.split('\n').find((candidate) => candidate.trim() !== '');
+  return line ?? `${command} exited ${result.exitCode}.`;
+};
+
+/**
+ * One command, and what it printed: its first line when it worked, the line
+ * it complained with when it did not, and the plainest true sentence when it
+ * never ran or never finished. `name` is how a refusal with no line of its
+ * own names the command, when its first two words would not.
+ */
+export const say = (input: Command & { readonly name?: string | undefined }) =>
+  capture(input).pipe(
+    Effect.map((result): OpenResult =>
+      result.exitCode === 0
+        ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
+        : { ok: false, line: refusal({ command: input.name ?? `${input.command} ${input.args[0] ?? ''}`.trim(), result }) }
+    ),
+    Effect.catch((error) => Effect.succeed<OpenResult>({ ok: false, line: error.message })),
+  );

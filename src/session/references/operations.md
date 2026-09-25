@@ -369,8 +369,8 @@ the route the CLI registers through.
 
 The index at `/` lists the tracked worktrees: name, branch, the pull request gh
 reports for that branch, the agents at work in it, the item counts per stage,
-and activity, with a terminal icon beside each name and the settings icon at the
-far end of its header. A name stands without its path, which is its tip: the
+and activity, with a terminal icon and a Zed icon beside each name and the
+settings icon at the far end of its header. A name stands without its path, which is its tip: the
 name already tells the worktrees apart, since one whose folder shares the main
 checkout's name carries its parent folder's name before it. A worktree with a
 commit checked out rather than a branch reads `Detached HEAD` where the branch
@@ -391,8 +391,8 @@ reason that names both folders, and is not served.
 ## Use the board
 
 A board's header starts with "All sessions", which links back to the index,
-then the worktree picker with the terminal icon beside it, since the terminal
-opens in that worktree, then the branch's pull request, the Linear issues the
+then the worktree picker with the terminal and Zed icons beside it, since both
+open that worktree, then the branch's pull request, the Linear issues the
 worktree names, an icon for the session's rules when it has `RULES.md`, which
 opens it on the file page, and one icon apiece for its Ledger, Context and
 Archive pages; the settings icon is at the far end. The picker is
@@ -531,6 +531,38 @@ starts it. When cmux refuses any step, its line shows beside the icon. The
 icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
 reports as `terminal`, so a daemon started from a shell without cmux on its
 PATH draws none.
+
+The Zed icon beside it asks the daemon for Zed on that worktree with
+`POST /api/zed`, and the daemon runs `zed --classic <path>`. `--classic`
+decides the same whatever the user's `cli_default_open_behavior`:
+- **Focus.** Zed brings forward the window one of whose projects has the
+  worktree itself as a root.
+- **New window.** A worktree no window has opens in a new window, never in
+  another window's sidebar.
+- **Parent folders.** A window on a folder that holds the worktree matches
+  only while that project has not scanned the worktree as a folder yet, or
+  excludes it from scanning.
+- **Without the flag.** A CLI that no one can answer settles on the existing
+  window, and Zed writes that choice into the user's settings and puts the
+  worktree in the active window's sidebar.
+
+The Zed CLI hands Zed its whole environment, and Zed gives it to the new
+window's terminals, tasks and language servers in place of the one Zed would
+load for the folder. So the daemon runs the CLI where Zed itself would look. It
+starts the user's login shell from only what launchd gives every app. The shell
+moves into the worktree, so its directory hooks such as direnv run; fish is
+first given a prompt, which its hooks wait for. Then the shell becomes the CLI.
+
+Afterwards the daemon brings forward, with `open -a`, the app that CLI lies
+in, since a request that starts in a background process cannot count on Zed
+reaching the front by itself. A worktree whose session has gone opens nothing,
+in Zed or in cmux, and leaves the index. Zed would read a path that has gone as
+a file, and open it in the active window.
+
+When zed or `open` refuses, its line shows beside the icon. When Zed is not
+running, it first restores its last session, so a worktree that was in it can
+end up with a second window. The icon is drawn only while `zed` is on the
+daemon's PATH, which `GET /api/daemon` reports as `zed`.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and

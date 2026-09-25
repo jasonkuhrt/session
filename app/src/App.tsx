@@ -7,9 +7,9 @@ import { Board } from './components/board'
 import type { NameRequest } from './components/session-dialogs'
 import { CompleteDialog, NameDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
-import { useTerminalAvailable } from './components/terminal-action'
 import { TrailerProblems } from './components/trailer-problems'
 import type { Choosing } from './components/workflow-card'
+import { useCapabilities } from './components/worktree-actions'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { eventsUrl, SessionApi } from './lib/api'
@@ -33,7 +33,7 @@ function App() {
   const [choosing, setChoosing] = React.useState<Choosing>(null)
   const [selection, setSelection] = React.useState<Set<string>>(new Set())
   const now = useNow()
-  const terminal = useTerminalAvailable()
+  const capabilities = useCapabilities()
 
   const load = React.useCallback(async (signal?: AbortSignal): Promise<Session | null> => {
     try {
@@ -184,7 +184,8 @@ function App() {
         rules={session?.rules ?? false}
         links={links.answer}
         linksError={links.problem}
-        terminal={terminal}
+        terminal={capabilities.terminal}
+        zed={capabilities.zed}
       />
       <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
       <TrailerProblems problems={trailers} />

@@ -14,7 +14,7 @@ import {
   LinksSchema,
   PullRequestReportsSchema,
   SessionSchema,
-  TerminalResultSchema,
+  OpenResultSchema,
   TrailerProblemSchema,
   WorktreeSummarySchema,
 } from '../../contract'
@@ -39,7 +39,7 @@ const decodeLinks = Schema.decodeUnknownEffect(LinksSchema)
 const decodePullRequests = Schema.decodeUnknownEffect(PullRequestReportsSchema)
 const decodeCapabilities = Schema.decodeUnknownEffect(DaemonCapabilitiesSchema)
 const decodeFocus = Schema.decodeUnknownEffect(FocusResultSchema)
-const decodeTerminal = Schema.decodeUnknownEffect(TerminalResultSchema)
+const decodeOpen = Schema.decodeUnknownEffect(OpenResultSchema)
 const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
 const decodeContext = Schema.decodeUnknownEffect(ContextListingSchema)
 const decodeArchive = Schema.decodeUnknownEffect(ArchiveListingSchema)
@@ -199,7 +199,7 @@ export const IndexApi = {
 
 /**
  * What the daemon itself answers, at the root whichever page is asking: what
- * it can do for a page, and a terminal in any worktree it tracks.
+ * it can do for a page, and a terminal or Zed in any worktree it tracks.
  */
 export const DaemonApi = {
   capabilities: (signal?: AbortSignal) =>
@@ -209,6 +209,13 @@ export const DaemonApi = {
   terminal: (path: string) =>
     run(send(
       HttpClientRequest.post('/api/terminal').pipe(HttpClientRequest.bodyJsonUnsafe({ path })),
-      decodeTerminal,
+      decodeOpen,
+    )),
+
+  /** Asks for Zed on the worktree at this path: the window open on it brought forward, or a new one. */
+  zed: (path: string) =>
+    run(send(
+      HttpClientRequest.post('/api/zed').pipe(HttpClientRequest.bodyJsonUnsafe({ path })),
+      decodeOpen,
     )),
 }

@@ -56,10 +56,10 @@ The board's header and the index's pull request column hold to the overlay's
 rule: the pull request and Linear chips carry only what `gh` and `linear`
 answered when the daemon last asked, each source dated in its tooltips by its
 own ask, with a named notice in their place when a source cannot answer, and the
-terminal action asks `cmux` when it is clicked and shows cmux's own line when it
-refuses. The daemon asks a source only for a page that shows its answer: gh for
-the index or a board, linear for a board alone, so an open index never spends
-Linear's limit.
+terminal and Zed actions ask `cmux` and `zed` when they are clicked and show the
+tool's own line when it refuses. The daemon asks a source only for a page that
+shows its answer: gh for the index or a board, linear for a board alone, so an
+open index never spends Linear's limit.
 
 Every rendered thing says what it means from where it is: a word carries its
 sentence as a tip, a control says what it will do, and no surface needs a

@@ -4,7 +4,7 @@ import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import { stageNames } from '../contract.ts';
-import type { AgentsSummary, FocusResult, Links, Session, StreamEvent, TerminalResult, TrailerProblem } from '../contract.ts';
+import type { AgentsSummary, FocusResult, Links, Session, StreamEvent, OpenResult, TrailerProblem } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
@@ -47,7 +47,7 @@ const CompleteItem = Schema.Struct({
 const FocusSession = Schema.Struct({
   pid: Schema.Int,
 });
-const OpenTerminal = Schema.Struct({
+const OpenWorktree = Schema.Struct({
   path: Schema.String,
 });
 
@@ -147,16 +147,16 @@ export const focusResponse = ({ request, focus }: {
 }) => sharedWrite(request, FocusSession, async (input) => json(await focus(input.pid)));
 
 /**
- * A terminal in a worktree, at the root, for a board's header and the index's
- * rows alike. It is asked for by path, and a path the daemon does not track is
- * not somewhere it opens one.
+ * A worktree opened in a tool, cmux's terminal or Zed, at the root, for a
+ * board's header and the index's rows alike. It is asked for by path, and a
+ * path the daemon does not track is not somewhere it opens anything.
  */
-export const terminalResponse = ({ request, open }: {
+export const openResponse = ({ request, open }: {
   readonly request: Request;
-  /** cmux's answer for a tracked worktree's path; undefined for any other path. */
-  readonly open: (path: string) => Promise<TerminalResult | undefined>;
+  /** The tool's answer for a tracked worktree's path; undefined for any other path. */
+  readonly open: (path: string) => Promise<OpenResult | undefined>;
 }) =>
-  sharedWrite(request, OpenTerminal, async (input) => {
+  sharedWrite(request, OpenWorktree, async (input) => {
     const result = await open(input.path);
     return result === undefined
       ? json({ error: 'The daemon tracks no worktree at that path.' }, { status: 404 })

@@ -1,13 +1,13 @@
 import * as React from 'react'
 
-import type { PullRequestReport, Stage, WorktreeSummary } from '../contract'
+import type { DaemonCapabilities, PullRequestReport, Stage, WorktreeSummary } from '../contract'
 import { stageNames } from '../contract'
 import { ActivityCell } from './components/activity-cell'
 import { AgentsCell } from './components/agents-cell'
 import { Copyable } from './components/copyable'
 import { PullRequestChip } from './components/pull-request-chip'
 import { SettingsMenu } from './components/settings-menu'
-import { TerminalAction, useTerminalAvailable } from './components/terminal-action'
+import { TerminalAction, useCapabilities, ZedAction } from './components/worktree-actions'
 import { Explained, useTip } from './components/tip'
 import { TrailerCount } from './components/trailer-problems'
 import { Alert, AlertDescription } from './components/ui/alert'
@@ -30,7 +30,7 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /** What each column holds, said where its name is. */
 const columnMeaning = {
-  worktree: 'A Git worktree the daemon is tracking; its name opens that worktree’s board, and the terminal beside it opens a terminal there in cmux.',
+  worktree: 'A Git worktree the daemon is tracking; its name opens that worktree’s board, and the icons beside it open a terminal there in cmux and the worktree in Zed.',
   branch: 'The Git branch checked out in that worktree.',
   pullRequest: 'The pull request gh reports for that branch, when it has one: its number, where it stands, and its checks. While this page is open, gh is asked about every row again once its answer is a minute old, and at once when a push or a fetch moves a remote-tracking ref.',
   agents: 'The agents live in that worktree right now: a Claude Code session with a running process, or a Codex thread an app holds. Sessions that are only resumable are on the worktree’s own board.',
@@ -48,7 +48,7 @@ const stageMeaning = (stage: Stage) =>
 export function WorktreeIndex() {
   const { rows, notice, pullRequests, pullRequestsNotice } = useTrackedWorktrees()
   const now = useNow()
-  const terminal = useTerminalAvailable()
+  const capabilities = useCapabilities()
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
 
   return (
@@ -112,7 +112,7 @@ export function WorktreeIndex() {
                         pullRequest={pullRequests[row.path]}
                         now={now}
                         muted={entry.band.muted}
-                        terminal={terminal}
+                        capabilities={capabilities}
                       />
                     ))}
                   </React.Fragment>
@@ -131,9 +131,9 @@ export function WorktreeIndex() {
  * folder shares the main checkout's name carries its parent folder's name
  * before it, and a name a second worktree claims is listed as a conflict.
  * Where it sits is its tip. A terminal there is one click away whenever the
- * daemon can run cmux.
+ * daemon can run cmux, and Zed whenever it can run zed.
  */
-function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }) {
+function NameCell({ row, capabilities }: { row: WorktreeSummary; capabilities: DaemonCapabilities }) {
   const tip = useTip()
   return (
     <TableCell title={tip(row.path)}>
@@ -147,19 +147,20 @@ function NameCell({ row, terminal }: { row: WorktreeSummary; terminal: boolean }
           </a>
         ) : <span className="font-medium text-muted-foreground">{row.name}</span>}
         <TrailerCount problems={row.trailerProblems} />
-        {terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
+        {capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
+        {capabilities.zed ? <ZedAction path={row.path} name={row.name} size="icon-xs" /> : null}
       </span>
     </TableCell>
   )
 }
 
-function Row({ row, pullRequest, now, muted, terminal }: {
+function Row({ row, pullRequest, now, muted, capabilities }: {
   row: WorktreeSummary
   /** gh's last report for the row's branch; undefined until gh has been asked. */
   pullRequest: PullRequestReport | undefined
   now: number
   muted: boolean
-  terminal: boolean
+  capabilities: DaemonCapabilities
 }) {
   const tip = useTip()
   // Dimmed, not disabled: a session with nothing in it recedes, and its name is
@@ -170,7 +171,7 @@ function Row({ row, pullRequest, now, muted, terminal }: {
   if (row.conflict !== null) {
     return (
       <TableRow className={dim}>
-        <NameCell row={row} terminal={terminal} />
+        <NameCell row={row} capabilities={capabilities} />
         <TableCell colSpan={9} className="whitespace-normal wrap-anywhere">
           <span className="flex flex-wrap items-baseline gap-2">
             <Badge variant="destructive" title={tip('The daemon cannot serve this worktree’s board, for the reason beside this.')}>
@@ -185,7 +186,7 @@ function Row({ row, pullRequest, now, muted, terminal }: {
 
   return (
     <TableRow className={dim}>
-      <NameCell row={row} terminal={terminal} />
+      <NameCell row={row} capabilities={capabilities} />
       <TableCell className="text-muted-foreground">
         {row.branch === null
           ? <span title={tip(row.detached ? detachedMeaning : outsideGitMeaning)}>{checkoutLabel(row)}</span>
