@@ -264,10 +264,13 @@ export const DaemonInfoSchema = Schema.Struct({
 export type DaemonCapabilities = {
   /** Whether `cmux` is on the daemon's PATH, which is what the terminal action runs. */
   terminal: boolean;
+  /** Whether `zed` is on the daemon's PATH, which is what the Zed action runs. */
+  zed: boolean;
 };
 
 export const DaemonCapabilitiesSchema = Schema.Struct({
   terminal: Schema.Boolean,
+  zed: Schema.Boolean,
 });
 
 /**
@@ -652,12 +655,13 @@ export const FocusResultSchema = Schema.Union([
 ]);
 
 /**
- * The result of asking the daemon for a terminal in a worktree: whether cmux
- * did it, and what cmux printed either way, so a refusal is in cmux's words.
+ * The result of asking the daemon to open a worktree in cmux or in Zed:
+ * whether the tool did it, and what it printed either way, so a refusal is in
+ * the tool's own words.
  */
-export type TerminalResult = { ok: boolean; line: string };
+export type OpenResult = { ok: boolean; line: string };
 
-export const TerminalResultSchema = Schema.Struct({
+export const OpenResultSchema = Schema.Struct({
   ok: Schema.Boolean,
   line: Schema.String,
 });

@@ -206,12 +206,13 @@ database.
 A board's header shows the branch's pull request and the Linear issues that
 the branch and the pull request name, as chips carrying only what gh and linear
 answered, several issues sharing one chip that lists them, and the index carries
-each worktree's pull request chip on its row. Beside the worktree picker sits a
+each worktree's pull request chip on its row. Beside the worktree picker sit a
 terminal action that brings forward the worktree's cmux workspace or opens one,
-and beside the chips an icon for `RULES.md`, when the session has one, and one
-for each of the session's three pages. The chips and the terminal action open
-their target once, bringing back the tab or the workspace already open rather
-than opening another.
+and a Zed action that brings forward the Zed window on that worktree or opens a
+new one, and beside the chips an icon for `RULES.md`, when the session has one,
+and one for each of the session's three pages. The chips and both actions open
+their target once, bringing back the tab, the workspace or the window already
+open rather than opening another.
 
 The pages sit beside the board, under its address `/w/<key>/`, where the key
 names the worktree; they are read-only views of the files and follow them as

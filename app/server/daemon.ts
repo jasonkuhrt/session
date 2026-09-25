@@ -43,7 +43,7 @@ import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { epicResponse, eventStream, focusResponse, makeRequestHandler, namedChannels, terminalResponse } from './http.ts';
+import { epicResponse, eventStream, focusResponse, makeRequestHandler, namedChannels, openResponse } from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
@@ -67,6 +67,7 @@ import {
   type WorktreeError,
   type WorktreeSession,
 } from './worktree.ts';
+import { openInZed, zedOnPath } from './zed.ts';
 
 /* eslint-disable max-lines -- One process boundary: its state file, its registry, its routes and the client that upserts it belong in one place. */
 
@@ -1419,22 +1420,51 @@ export const runDaemon = async () => {
     startedAt,
     sourceStamp: stamp,
     terminal: await runNode(cmuxOnPath),
+    zed: await runNode(zedOnPath),
   });
 
   /**
+   * A tracked worktree that is still there. One whose session has gone opens
+   * nothing and leaves the index at once, rather than send a path cmux or Zed
+   * cannot open, which Zed would read as a file and open in the window of
+   * another worktree.
+   */
+  const liveWorktree = async (path: string): Promise<Tracked | null> => {
+    const entry = tracked.get(resolve(path));
+    if (entry === undefined) return null;
+    if (await isTrackable(entry.path)) return entry;
+    await dropIfGone(entry.path);
+    return null;
+  };
+
+  /** A terminal in a tracked worktree; undefined for a path the daemon does not track or that is gone. */
+  const terminalAt = async (path: string) => {
+    const entry = await liveWorktree(path);
+    return entry === null
+      ? undefined
+      : await runNode(openTerminal({ path: entry.path, worktrees: [...tracked.keys()] }));
+  };
+
+  /** Zed on a tracked worktree; undefined for a path the daemon does not track or that is gone. */
+  const zedAt = async (path: string) => {
+    const entry = await liveWorktree(path);
+    return entry === null ? undefined : await runNode(openInZed(entry.path));
+  };
+
+  /**
    * Set a worktree's epic for the index's drags, as `session join` and
-   * `session leave` set it, by the worktree's path, as a terminal is asked
-   * for: every row the index lists has one of its own, served or not, so no
-   * key two rows share can send a write to the wrong worktree. The write is
-   * refused when the file names another epic than the one the index read. A
+   * `session leave` set it, by the worktree's path, as a terminal and Zed are
+   * asked for: every row the index lists has one of its own, served or not,
+   * so no key two rows share can send a write to the wrong worktree. The write
+   * is refused when the file names another epic than the one the index read. A
    * path the daemon does not track, or whose session has gone, is not written,
    * and a session is never brought back by it; one that is there is converged
    * first, as every command converges it. The watch on the session is what
    * tells the index.
    */
   const setEpicAt = async (input: EpicWrite): Promise<WorktreeEpic> => {
-    const entry = tracked.get(resolve(input.path));
-    if (entry === undefined || !(await isTrackable(entry.path))) {
+    const entry = await liveWorktree(input.path);
+    if (entry === null) {
       throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
     await runNode(Effect.gen(function*() {
@@ -1442,14 +1472,6 @@ export const runDaemon = async () => {
       yield* setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from });
     }));
     return { epic: input.epic === null ? null : input.epic.trim() };
-  };
-
-  /** A terminal in a tracked worktree; undefined for a path the daemon does not track. */
-  const terminalAt = async (path: string) => {
-    const entry = tracked.get(resolve(path));
-    return entry === undefined
-      ? undefined
-      : await runNode(openTerminal({ path: entry.path, worktrees: [...tracked.keys()] }));
   };
 
   /**
@@ -1491,9 +1513,12 @@ export const runDaemon = async () => {
       if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
         return await focusResponse({ request, focus: (pid) => runNode(focus(pid)) });
       }
-      // A board and the index both ask for a terminal by the worktree's path.
+      // A board and the index both ask for a terminal, and for Zed, by the worktree's path.
       if (request.method === 'POST' && url.pathname === '/api/terminal') {
-        return await terminalResponse({ request, open: terminalAt });
+        return await openResponse({ request, open: terminalAt });
+      }
+      if (request.method === 'POST' && url.pathname === '/api/zed') {
+        return await openResponse({ request, open: zedAt });
       }
       // The index's drags set a worktree's epic, by its path, as a terminal is asked for.
       if (request.method === 'POST' && url.pathname === '/api/worktrees/epic') {

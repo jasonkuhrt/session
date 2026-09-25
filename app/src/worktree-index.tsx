@@ -5,11 +5,11 @@ import type { WorktreeSummary } from '../contract'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
-import { useTerminalAvailable } from './components/terminal-action'
 import { Explained } from './components/tip'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
 import { TooltipProvider } from './components/ui/tooltip'
+import { useCapabilities } from './components/worktree-actions'
 import type { DragContext } from './components/worktree-cards'
 import { CardSpace, EpicCard, HeldPreview, LooseCard } from './components/worktree-cards'
 import { MainStrip } from './components/worktree-row'
@@ -73,7 +73,7 @@ export function WorktreeIndex() {
   const { rows: listed, notice, pullRequests, pullRequestsNotice, reload } = useTrackedWorktrees({ held: busy })
   const clock = useNow()
   const now = heldAt ?? clock
-  const terminal = useTerminalAvailable()
+  const capabilities = useCapabilities()
   const rows = listed === null ? null : withEpics({ rows: listed, epics: writes })
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
@@ -105,7 +105,7 @@ export function WorktreeIndex() {
   const context: DragContext = {
     pullRequests,
     now,
-    terminal,
+    capabilities,
     rows: rows ?? [],
     writing,
     landingOn: null,

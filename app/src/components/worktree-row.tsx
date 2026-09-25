@@ -1,6 +1,6 @@
 import { House } from 'lucide-react'
 
-import type { PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
+import type { DaemonCapabilities, PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
 import { landing } from '../lib/drag'
 import type { MainTile } from '../lib/epics'
 import { checkoutLabel } from '../lib/format'
@@ -9,19 +9,19 @@ import { AgentPills } from './agent-pills'
 import { Copyable } from './copyable'
 import { PullRequestChip } from './pull-request-chip'
 import { StageGlyph } from './stage-glyph'
-import { TerminalAction } from './terminal-action'
 import { Explained, useTip } from './tip'
 import { TrailerCount } from './trailer-problems'
 import { Badge } from './ui/badge'
 import { Card } from './ui/card'
+import { TerminalAction, ZedAction } from './worktree-actions'
 
 /** What a row needs beyond itself, the same for every row on the page. */
 export type RowContext = {
   /** gh's last report for each row's branch, by the worktree's path. */
   readonly pullRequests: PullRequestReports
   readonly now: number
-  /** Whether the daemon can open a terminal in cmux. */
-  readonly terminal: boolean
+  /** What the daemon can open a worktree in: a terminal in cmux, and Zed. */
+  readonly capabilities: DaemonCapabilities
 }
 
 const detachedMeaning = 'Git has a commit checked out in this worktree rather than a branch, so it has no branch and no pull request.'
@@ -55,7 +55,8 @@ export function WorktreeRow({ row, context }: { row: WorktreeSummary; context: R
         ) : null}
         <WorktreeName row={row} />
         <TrailerCount problems={row.trailerProblems} />
-        {context.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
+        {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
+        {context.capabilities.zed ? <ZedAction path={row.path} name={row.name} size="icon-xs" /> : null}
         <AgentPills agents={row.agents} now={context.now} />
       </div>
       {row.conflict === null ? (
