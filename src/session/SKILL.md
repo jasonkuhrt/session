@@ -65,10 +65,11 @@ the five stage directories, `meta/`, and the `.gitignore` when they are missing;
 nothing else, printing what it created, for handing the directory to an editor.
 
 The CLI never migrates an old session. A `.session` that is a symlink is refused
-by every command, and so is a stage kept under its name from before the stages
-were numbered, such as `TRIAGE/`, which is renamed to `1-Triage/` rather than
-scaffolded beside; a leftover `TRIAGE.md` is reported by `check`. Each names the
-fix. Convert an old session by hand, or its stage directories with the session
+by every command, and so is a session with a stage kept under another name,
+such as `TRIAGE/` from before the stages were numbered, even beside
+`1-Triage/`: nothing reads past it or scaffolds beside it until it is renamed
+or merged. A leftover `TRIAGE.md` is reported by `check`. Each names the fix.
+Convert an old session by hand, or its stage directories with the session
 repository's one-off `scripts/rename-stage-directories.ts`.
 
 ## Rules

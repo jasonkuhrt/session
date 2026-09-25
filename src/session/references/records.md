@@ -17,13 +17,13 @@ stage directories. `check` reports any other entry by name with its fix: move it
 under `context/` or delete it, or, when only its case differs from one of these,
 rename it. A directory that holds a stage under another name, bare as the stages
 were named before they were numbered (`TRIAGE/`), in another case, or behind a
-prefix that is not its place, is reported with its rename, `1-Triage/`, or, when
-the stage's own directory is there too, with what to move into it. Each entry
-must also be its own kind: the stages, `context/`, `ledger/`, `meta/`,
-`archive/` and `ignore/` directories, and `RULES.md` and `.gitignore` files.
-Existing supporting files should be migrated deliberately, preserving evidence
-and links rather than discarding them because their names differ from the new
-convention.
+prefix that is not its place, stops every command, not only `check`, with its
+rename, `1-Triage/`, or, when the stage's own directory is there too, with what
+to move into it. Each entry must also be its own kind: the stages, `context/`,
+`ledger/`, `meta/`, `archive/` and `ignore/` directories, and `RULES.md` and
+`.gitignore` files. Existing supporting files should be migrated deliberately,
+preserving evidence and links rather than discarding them because their names
+differ from the new convention.
 
 Each item is one file. Its first line is `## ID — Short title`, with an em dash,
 and the rest is the body: a short lead paragraph, then the stage's meaningful

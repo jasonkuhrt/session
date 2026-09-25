@@ -52,7 +52,7 @@ import {
   validateItemSections,
   validateUniqueIds,
 } from './model.ts';
-import { leftoverStageFile, metaEntryProblem, misnamedStage, misnamedStageProblem, rootEntryProblem } from './root.ts';
+import { leftoverStageFile, metaEntryProblem, misnamedStages, rootEntryProblem } from './root.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
@@ -244,10 +244,10 @@ const placeItem = (input: {
   }
 
   const index = items.findIndex((candidate) => candidate.id === beforeId);
-  const neighbour = items[index] ?? fail(`${stage}: cannot place ${item.id} before ${beforeId}, which is not in ${stage}.`);
+  const neighbour = items[index] ?? fail(`${stageDirectory(stage)}: cannot place ${item.id} before ${beforeId}, which is not in ${stage}.`);
   if (neighbour.group !== group) {
     fail(
-      `${stage}: cannot place ${item.id} before ${beforeId}; ${item.id} goes in ${placeName(stage, group)} and ${beforeId} is in ${placeName(stage, neighbour.group)}.`,
+      `${stageDirectory(stage)}: cannot place ${item.id} before ${beforeId}; ${item.id} goes in ${placeName(stage, group)} and ${beforeId} is in ${placeName(stage, neighbour.group)}.`,
     );
   }
   return insertAt(index);
@@ -495,43 +495,45 @@ export const makeRepository = (directory: string) =>
     });
 
     /**
-     * The first directory of the root that holds this stage under another
-     * name, such as `TRIAGE/` from before the stages were numbered, with what
-     * to do about it; null when there is none. A stage held so is renamed by
-     * hand, never scaffolded beside, because two directories would split it.
+     * A directory of the root that holds a stage under another name, such as
+     * `TRIAGE/` from before the stages were numbered, stops the session with
+     * the first one's fix, whether or not the stage's own directory is there
+     * too: a load would read past it and miss its items, and scaffolding the
+     * stage's directory beside it would split the stage in two.
      */
-    const misnamedStageIn = (names: ReadonlyArray<string>, stage: Stage) =>
-      Effect.gen(function*() {
-        for (const name of names) {
-          if (misnamedStage(name) !== stage || (yield* pathType(absolute(name))) !== 'Directory') continue;
-          return misnamedStageProblem(name, new Set(names));
-        }
-        return null;
-      });
-
-    /**
-     * Why a stage's directory is not there, with the fix: the stage is held
-     * under another name, or nothing holds it and scaffolding creates it, with
-     * a leftover `TRIAGE.md` from the single-file layout to fold in by hand.
-     */
-    const missingStage = (stage: Stage) =>
-      Effect.gen(function*() {
-        const misnamed = yield* misnamedStageIn(yield* rootNames, stage);
-        if (misnamed !== null) return yield* new RepositoryError({ kind: 'validation', message: misnamed });
-        const expected = stageDirectory(stage);
-        const leftover = leftoverStageFile(stage);
-        return yield* new RepositoryError({
-          kind: 'not-found',
-          message: (yield* pathType(absolute(leftover))) === null
-            ? `Session is missing ${expected}/. Run any session command to create it.`
-            : `Session is missing ${expected}/. Run any session command to create it, then fold ${leftover} into it by hand.`,
-        });
-      });
+    const refuseMisnamedStage = Effect.gen(function*() {
+      for (const { name, problem } of misnamedStages(yield* rootNames)) {
+        if ((yield* pathType(absolute(name))) !== 'Directory') continue;
+        return yield* new RepositoryError({ kind: 'validation', message: problem });
+      }
+    }).pipe(Effect.mapError(asRepositoryError));
 
     const readStageState = (stage: Stage) =>
       Effect.gen(function*() {
-        const directoryPath = absolute(stageDirectory(stage));
-        if ((yield* pathType(directoryPath)) !== 'Directory') return yield* missingStage(stage);
+        const expected = stageDirectory(stage);
+        const leftover = leftoverStageFile(stage);
+        const directoryPath = absolute(expected);
+        const [fileType, directoryType] = yield* Effect.all([
+          pathType(absolute(leftover)),
+          pathType(directoryPath),
+        ]);
+        // Anything else under the stage's name, a link to nothing included,
+        // breaks the root's kind rule, which scaffolding cannot mend.
+        if (directoryType !== 'Directory' && (directoryType !== null || (yield* isLink(directoryPath)))) {
+          const type = yield* entryType(directoryPath);
+          return yield* new RepositoryError({
+            kind: 'validation',
+            message: rootEntryProblem({ name: expected, type }, new Set([expected])) ?? `${expected} must be a directory.`,
+          });
+        }
+        if (directoryType !== 'Directory') {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: fileType === null
+              ? `Session is missing ${expected}/. Run any session command to create it.`
+              : `Session is missing ${expected}/. Run any session command to create it, then fold ${leftover} into it by hand.`,
+          });
+        }
         const tree = yield* readStageTree(directoryPath);
         const parsed = yield* attempt(() => parseStageDirectory(stage, tree));
         return {
@@ -610,6 +612,7 @@ export const makeRepository = (directory: string) =>
     }).pipe(Effect.orElseSucceed(() => false));
 
     const loadUnlocked = Effect.gen(function*() {
+      yield* refuseMisnamedStage;
       const stages = yield* Effect.all(stageNames.map((stage) => readStageState(stage)));
       yield* attempt(() => validateUniqueIds(stages));
       const revision = yield* revisionOf(stages);
@@ -842,7 +845,7 @@ export const makeRepository = (directory: string) =>
           if (input.to === 'Queue' && !staysInGroup) {
             return yield* new RepositoryError({
               kind: 'conflict',
-              message: `Queue: ${input.id} stays in the batch ${quote(found.item.group ?? '')}; a queued item moves only within its batch, or out of Queue.`,
+              message: `${stageDirectory('Queue')}: ${input.id} stays in the batch ${quote(found.item.group ?? '')}; a queued item moves only within its batch, or out of Queue.`,
             });
           }
           const target = stageOf(loaded, input.to);
@@ -856,13 +859,13 @@ export const makeRepository = (directory: string) =>
             if (input.beforeId !== undefined && input.beforeId !== null) {
               return yield* new RepositoryError({
                 kind: 'validation',
-                message: `${input.to}: ${input.id} goes in front of one neighbour, an item or a group; name one.`,
+                message: `${stageDirectory(input.to)}: ${input.id} goes in front of one neighbour, an item or a group; name one.`,
               });
             }
             if (group !== null) {
               return yield* new RepositoryError({
                 kind: 'validation',
-                message: `${input.to}: cannot place ${input.id} before the group ${quote(beforeGroup)}; ${input.id} goes in ${placeName(input.to, group)}, and groups do not nest.`,
+                message: `${stageDirectory(input.to)}: cannot place ${input.id} before the group ${quote(beforeGroup)}; ${input.id} goes in ${placeName(input.to, group)}, and groups do not nest.`,
               });
             }
             if (!target.items.some((candidate) => candidate.group === beforeGroup)) {
@@ -875,7 +878,7 @@ export const makeRepository = (directory: string) =>
           if (input.beforeId === input.id && !staysInGroup) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `${input.to}: cannot place ${input.id} before itself.`,
+              message: `${stageDirectory(input.to)}: cannot place ${input.id} before itself.`,
             });
           }
 
@@ -979,7 +982,7 @@ export const makeRepository = (directory: string) =>
             return yield* new RepositoryError({
               kind: 'conflict',
               message: batched.stage === 'Queue'
-                ? `Queue: ${batched.item.id} stays in the batch ${quote(batched.item.group ?? '')}; a queued item leaves its batch only by leaving Queue, with \`session mv\`.`
+                ? `${stageDirectory('Queue')}: ${batched.item.id} stays in the batch ${quote(batched.item.group ?? '')}; a queued item leaves its batch only by leaving Queue, with \`session mv\`.`
                 : 'Execute is frozen; its batch stays as it started.',
             });
           }
@@ -1250,9 +1253,8 @@ export const makeRepository = (directory: string) =>
 
     /**
      * Scaffolds what is missing. It never converts an older session: a stage
-     * held under another name, such as `TRIAGE/`, is refused with its rename
-     * before anything is written, because scaffolding the stage's directory
-     * beside it would split the stage in two.
+     * held under another name, such as `TRIAGE/`, is refused with its fix
+     * before anything is written, as a load refuses it.
      */
     const initialize = Effect.gen(function*() {
       const actions: string[] = [];
@@ -1263,27 +1265,31 @@ export const makeRepository = (directory: string) =>
         yield* fs.remove(root).pipe(Effect.mapError(asRepositoryError));
         actions.push(`Removed the dangling link ${root}`);
       }
-      const names = yield* rootNames.pipe(Effect.mapError(asRepositoryError));
+      yield* refuseMisnamedStage;
+      // Only a name nothing holds is scaffolded: a file or a link there, one to
+      // nothing included, is left for a load to name.
       const missing: Stage[] = [];
       for (const stage of stageNames) {
-        if ((yield* pathType(absolute(stageDirectory(stage))).pipe(Effect.mapError(asRepositoryError))) !== null) continue;
-        const misnamed = yield* misnamedStageIn(names, stage).pipe(Effect.mapError(asRepositoryError));
-        if (misnamed !== null) return yield* new RepositoryError({ kind: 'validation', message: misnamed });
-        missing.push(stage);
+        const stagePath = absolute(stageDirectory(stage));
+        if ((yield* pathType(stagePath).pipe(Effect.mapError(asRepositoryError))) === null && !(yield* isLink(stagePath))) {
+          missing.push(stage);
+        }
       }
       if ((yield* pathType(root).pipe(Effect.mapError(asRepositoryError))) === null) {
         actions.push(`Created ${root}`);
       }
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
-      for (const stage of stageNames) {
+      for (const stage of missing) {
         yield* fs.makeDirectory(absolute(stageDirectory(stage)), { recursive: true }).pipe(
           Effect.mapError(asRepositoryError),
         );
       }
       const created = missing.map((stage) => `${stageDirectory(stage)}/`);
-      // Facts are optional, so a `meta` that is something else is left for `check` to name.
-      if ((yield* pathType(absolute(metaDirectory)).pipe(Effect.mapError(asRepositoryError))) === null) {
-        yield* fs.makeDirectory(absolute(metaDirectory), { recursive: true }).pipe(Effect.mapError(asRepositoryError));
+      // Facts are optional, so a `meta` that is something else, a link to
+      // nothing included, is left for `check` to name.
+      const meta = absolute(metaDirectory);
+      if ((yield* pathType(meta).pipe(Effect.mapError(asRepositoryError))) === null && !(yield* isLink(meta))) {
+        yield* fs.makeDirectory(meta, { recursive: true }).pipe(Effect.mapError(asRepositoryError));
         created.push(`${metaDirectory}/`);
       }
       if (created.length > 0) actions.push(`Created ${created.join(' ')}`);

@@ -8,8 +8,11 @@ import { contextDirectory, entryName, metaDirectory, rootEntries } from './layou
  * `layout.ts` names the entries the root holds.
  */
 
-/** The facts `meta/` may hold, by file name. None is defined yet, so whatever it holds is reported. */
-const metaFacts: ReadonlySet<string> = new Set<string>();
+/**
+ * The facts `meta/` may hold, each by its name and kind, as the root's entries
+ * are. None is defined yet, so whatever it holds is reported.
+ */
+const metaFacts: ReadonlyMap<string, 'directory' | 'file'> = new Map();
 
 /** The one-file-per-stage layout's file for a stage, `TRIAGE.md`, from before stages were directories. */
 export const leftoverStageFile = (stage: Stage): string => `${stage.toUpperCase()}.md`;
@@ -21,27 +24,55 @@ export const leftoverStageFile = (stage: Stage): string => `${stage.toUpperCase(
  * at a place that is not its own (`1-triage`, `2-Triage`). Undefined for the
  * stage's own directory and for any other name.
  */
-export const misnamedStage = (name: string): Stage | undefined => {
+const misnamedStage = (name: string): Stage | undefined => {
   const bare = (entryName.exec(name)?.[2] ?? name).toLowerCase();
   return stageNames.find((stage) => stage.toLowerCase() === bare && stageDirectory(stage) !== name);
 };
 
 /**
- * What to do about a directory of the root that holds a stage under another
- * name: rename it to the stage's directory, or, when that directory is in
- * `names` already, move what it holds across. Null for any other name.
+ * What to do about a directory of the root that holds this stage under
+ * another name: rename it to the stage's directory, or, when that directory is
+ * in `names` already, move what it holds across.
  */
-export const misnamedStageProblem = (name: string, names: ReadonlySet<string>): string | null => {
-  const stage = misnamedStage(name);
-  if (stage === undefined) return null;
+const misnamedFix = (name: string, stage: Stage, names: ReadonlySet<string>): string => {
   const directory = stageDirectory(stage);
   return names.has(directory)
     ? `${name}/ does not belong in the session root beside ${directory}/; move what it holds into ${directory}/, then delete it.`
     : `${name}/ does not belong in the session root; rename it to ${directory}/.`;
 };
 
+/** The fix for a directory of the root that holds a stage under another name; null for any other name. */
+const misnamedStageProblem = (name: string, names: ReadonlySet<string>): string | null => {
+  const stage = misnamedStage(name);
+  return stage === undefined ? null : misnamedFix(name, stage, names);
+};
+
+/**
+ * Every name of the root that holds a stage under another name, with its fix,
+ * in the flow's order of the stages they hold, so an old session is told of
+ * `TRIAGE/` first. Whether each is a directory is the caller's to ask.
+ */
+export const misnamedStages = (
+  names: ReadonlyArray<string>,
+): ReadonlyArray<{ readonly name: string; readonly problem: string }> => {
+  const present = new Set(names);
+  return stageNames.flatMap((stage) =>
+    names.filter((name) => misnamedStage(name) === stage).map((name) => ({ name, problem: misnamedFix(name, stage, present) }))
+  );
+};
+
 const shownEntry = (entry: { readonly name: string; readonly type: string }): string =>
   entry.type === 'directory' ? `${entry.name}/` : entry.name;
+
+/** The fix for an entry that has a name the rules know and the wrong kind, named as `shown`. */
+const wrongKind = (
+  shown: string,
+  expected: 'directory' | 'file',
+  type: 'directory' | 'file' | 'other',
+): string =>
+  expected === 'directory'
+    ? `${shown} must be a directory; rename it, then move it under ${contextDirectory}/ or delete it.`
+    : `${shown} must be a file; move this ${type === 'directory' ? 'directory' : 'entry'} under ${contextDirectory}/ or delete it.`;
 
 /**
  * Why an entry of the session root does not belong there, with the fix, or
@@ -64,20 +95,21 @@ export const rootEntryProblem = (
       ? `${shownEntry(entry)} does not belong in the session root; move it under ${contextDirectory}/ or delete it.`
       : `${shownEntry(entry)} does not belong in the session root; rename it to ${shownEntry({ name: meant[0], type: meant[1] })}.`;
   }
-  if (entry.type === expected) return null;
-  return expected === 'directory'
-    ? `${entry.name} must be a directory; rename it, then move it under ${contextDirectory}/ or delete it.`
-    : `${entry.name} must be a file; move this ${entry.type === 'directory' ? 'directory' : 'entry'} under ${contextDirectory}/ or delete it.`;
+  return entry.type === expected ? null : wrongKind(entry.name, expected, entry.type);
 };
 
 /**
  * Why an entry of `meta/` does not belong there, or null when it does: it
- * holds the facts the session defines, a file each, and names starting with a
- * dot are outside the rule, as everywhere else in the session.
+ * holds the facts the session defines, each as its own kind, and names
+ * starting with a dot are outside the rule, as everywhere else in the session.
  */
 export const metaEntryProblem = (
   entry: { readonly name: string; readonly type: 'directory' | 'file' | 'other' },
-): string | null =>
-  entry.name.startsWith('.') || metaFacts.has(entry.name)
-    ? null
-    : `${metaDirectory}/${shownEntry(entry)} is not a fact the session defines; move it under ${contextDirectory}/ or delete it.`;
+): string | null => {
+  if (entry.name.startsWith('.')) return null;
+  const expected = metaFacts.get(entry.name);
+  if (expected === undefined) {
+    return `${metaDirectory}/${shownEntry(entry)} is not a fact the session defines; move it under ${contextDirectory}/ or delete it.`;
+  }
+  return entry.type === expected ? null : wrongKind(`${metaDirectory}/${entry.name}`, expected, entry.type);
+};

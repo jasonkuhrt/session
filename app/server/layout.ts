@@ -213,7 +213,7 @@ const topLevelEntries = (stage: Stage, items: ReadonlyArray<ItemDraft>): TopLeve
     if (item.group === null) entries.push({ kind: 'item', item });
     else if (last?.kind === 'group' && last.name === item.group) last.items.push(item);
     else if (entries.some((entry) => entry.kind === 'group' && entry.name === item.group)) {
-      fail(`${stage}: ${groupNoun(stage)} ${quote(item.group)} is split apart; keep its items together.`);
+      fail(`${stageDirectory(stage)}: ${groupNoun(stage)} ${quote(item.group)} is split apart; keep its items together.`);
     } else entries.push({ kind: 'group', name: item.group, items: [item] });
   }
   return entries;

@@ -20,7 +20,7 @@ import { useNow } from './lib/clock'
 import { checkoutLabel } from './lib/format'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
 import { cn } from './lib/utils'
-import { stageMeta } from './lib/workflow'
+import { stageHint } from './lib/workflow'
 
 const skeletonRows = [1, 2, 3, 4, 5]
 
@@ -43,7 +43,7 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 /** A stage column says what the stage is for and what an empty cell means. */
 const stageMeaning = (stage: Stage) =>
-  `${stageMeta[stage].hint} An empty cell means there is nothing in it.`
+  `${stageHint[stage]} An empty cell means there is nothing in it.`
 
 export function WorktreeIndex() {
   const { rows, notice, pullRequests, pullRequestsNotice } = useTrackedWorktrees()
@@ -83,7 +83,7 @@ export function WorktreeIndex() {
                   {stageNames.map(stage => (
                     <TableHead key={stage} className="text-right">
                       <Explained meaning={stageMeaning(stage)} className="inline-flex">
-                        {stageMeta[stage].label}
+                        {stage}
                       </Explained>
                     </TableHead>
                   ))}

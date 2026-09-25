@@ -62,7 +62,9 @@ const plan = (session: string, names: ReadonlyArray<string>) =>
       if (first === undefined) continue;
       const taken = names.find((name) => name.toLowerCase() === target.toLowerCase());
       if (taken !== undefined) {
-        return Result.fail(`both ${first}/ and ${taken}/ are there; move what ${first}/ holds into ${taken}/ by hand, then run this again`);
+        // The fix lands in the stage's own directory, which `check` asks for even when the one there is another case of it.
+        const fix = taken === target ? `move what ${first}/ holds into ${target}/` : `merge them into ${target}/`;
+        return Result.fail(`both ${first}/ and ${taken}/ are there; ${fix} by hand, then run this again`);
       }
       if (old.length > 1) {
         return Result.fail(`${old.map((name) => `${name}/`).join(' and ')} each name ${stage}; merge them by hand, then run this again`);
@@ -76,9 +78,10 @@ const renameIn = (session: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    // A linked `.session` is somebody else's store, which every command refuses to work in.
+    // A link is no session directory of its own: one that leads somewhere is somebody else's store, and one
+    // that leads nowhere holds nothing to rename, which the CLI replaces with a real session.
     if (Option.isSome(yield* fs.readLink(session).pipe(Effect.option))) {
-      return { kind: 'skipped', reason: 'it is a symlink, which the CLI refuses as a session' } satisfies Outcome;
+      return { kind: 'skipped', reason: 'it is a link, not a session directory of its own' } satisfies Outcome;
     }
     const info = yield* fs.stat(session).pipe(Effect.option);
     if (Option.isNone(info) || info.value.type !== 'Directory') {

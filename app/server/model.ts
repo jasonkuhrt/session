@@ -89,7 +89,7 @@ export const groupNoun = (stage: Stage): 'batch' | 'group' => (isBatchedStage(st
  * being one: non-empty, without surrounding spaces, and without `/`. `where`
  * is what a refusal names, the directory itself when one is being read.
  */
-export const validateGroupName = (stage: Stage, name: string, where: string = stage): string => {
+export const validateGroupName = (stage: Stage, name: string, where: string = stageDirectory(stage)): string => {
   const noun = groupNoun(stage);
   if (name.trim() !== name || name === '') {
     fail(`${where}: ${noun} names must be non-empty and free of surrounding spaces.`);
@@ -103,7 +103,7 @@ export const validateGroupName = (stage: Stage, name: string, where: string = st
 /** Structure: what every reader of the files must be able to rely on. */
 export const validateItem = (stage: Stage, item: ItemDraft): void => {
   if (!itemIdExactly.test(item.id)) {
-    fail(`${stage}: invalid item ID ${quote(item.id)}.`);
+    fail(`${stageDirectory(stage)}: invalid item ID ${quote(item.id)}.`);
   }
   if (item.title.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: title is empty.`);
   if (item.body.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: body is empty.`);
@@ -201,7 +201,7 @@ export const validateUniqueIds = (
   for (const stage of stages) {
     for (const item of stage.items) {
       const owner = owners.get(item.id);
-      if (owner === stage.stage) fail(`${stage.stage}: duplicate item ID ${item.id}.`);
+      if (owner === stage.stage) fail(`${stageDirectory(stage.stage)}: duplicate item ID ${item.id}.`);
       if (owner !== undefined) {
         fail(`Item ID ${item.id} appears in both ${owner} and ${stage.stage}.`);
       }

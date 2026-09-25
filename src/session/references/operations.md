@@ -213,17 +213,22 @@ straight to an editor. Nothing depends on it having been run.
 The CLI never migrates. A `.session` that is a symlink to something that exists
 is refused by every command, with the fix in the message: replace the link with
 a real directory, then retry. A dangling link points at nothing, so scaffolding
-replaces it with the real directory. A stage kept under the name it had before
-the stages were numbered, such as `TRIAGE/`, is refused the same way while its
-own directory is missing, with the rename to `1-Triage/` as the fix: scaffolding
-`1-Triage/` beside it would split the stage in two, so nothing is created, and
-the daemon answers that worktree's board and index row with the same sentence
-until it is renamed. A leftover `TRIAGE.md` from the single-file layout is
-reported by `check`, which names the file and says to fold it into `1-Triage/`
-by hand. Old sessions are converted by hand, the existing ones by one-off
-sweeps; the session repository's `scripts/rename-stage-directories.ts` renames
-the five stage directories of every session named on its command line, a
-worktree or its `.session`, and leaves everything else as it is:
+replaces it with the real directory. A stage kept under another name, such as
+`TRIAGE/` from before the stages were numbered, is refused the same way, with
+its rename to `1-Triage/` as the fix, and so is one found beside `1-Triage/`,
+with the fix to move what it holds into it and delete it: a load never reads
+past it, since its items would be missing from every reader, and scaffolding
+never writes beside it, since that would split the stage in two. Nothing is
+written, and the daemon answers that worktree's board and index row with the
+same sentence until it is fixed. Scaffolding creates only what nothing holds: a
+file, or a link that leads nowhere, under a stage's name or `meta` is named by
+the next load or `check`, such as `3-Batch must be a directory; …`, rather than
+written over. A leftover `TRIAGE.md` from the single-file layout is reported by
+`check`, which names the file and says to fold it into `1-Triage/` by hand. Old
+sessions are converted by hand, the existing ones by one-off sweeps; the session
+repository's `scripts/rename-stage-directories.ts` renames the five stage
+directories of every session named on its command line, a worktree or its
+`.session`, and leaves everything else as it is:
 
 ```sh
 bun scripts/rename-stage-directories.ts <worktree or .session> ...
