@@ -55,10 +55,10 @@ marked Git directory. A folder outside Git is a project of its own, headed by
 its name, marked Outside Git. An epic whose worktrees belong to more than one
 project is drawn once, in a section of its own, Across projects. A project
 whose main worktree has a session is dragged by its head to place it in the
-stack, and a worktree within its epic's card to place it there; what was placed
-stands first, in the order it was placed, and keeps its place when it goes
-quiet. The rest, sections and the cards in each alike, stand in one order: the
-ones with a live agent first, then by their latest activity, and one with
+stack, and a worktree within its epic's card to place it there; the ones placed
+stand first, in the order they were placed in, and keep their places when they
+go quiet. The rest, sections and the cards in each alike, stand in one order:
+the ones with a live agent first, then by their latest activity, and one with
 nothing live and nothing in five days dim and last, a project counting every
 worktree of it wherever it is drawn.
 A worktree is two lines, marked as the worktree picker marks them: a folder and

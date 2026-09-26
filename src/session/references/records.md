@@ -262,10 +262,11 @@ non-negative integer, ending in a newline, and nothing else.
   number halfway between the ranks of the two it goes between, counting 0
   before the first, or 10 past the last when it goes last, and a worktree
   already between the two keeps its own. Only when no whole number is left
-  between them, or two siblings share a rank, or one holds 0, does it number
-  the ranked siblings again from 10, in steps of 10, and it writes only the
-  ranks that change. The digits may lead with zeros, as a prefix's may, and
-  the number must be small enough to be counted exactly.
+  between them, or two siblings share a rank, or one holds 0, or a rank is too
+  large to add 10 to and still be counted exactly, does it number the ranked
+  siblings again from 10, in steps of 10, and it writes only the ranks that
+  change. The digits may lead with zeros, as a prefix's may, and the number
+  must be small enough to be counted exactly.
 - A worktree dropped among the unranked siblings on the index lands where it
   was dropped: the siblings drawn above that place are ranked first, in their
   drawn order, after the ranked ones, and it right after them, and the ones
@@ -291,8 +292,8 @@ non-negative integer, ending in a newline, and nothing else.
   the same sentence on the worktree's row, which it draws unranked and serves
   as ever. A directory under that name is named with `meta/rank must be a
   file; move this directory under context/ or delete it.`
-- `check`, the index and `session order` read it, and `join` and `leave`
-  remove it. A command about the items does not read it: nothing about them
+- `check`, the index and `session order` read it, and a change of epic
+  removes it. A command about the items does not read it: nothing about them
   depends on it.
 
 ## Archive

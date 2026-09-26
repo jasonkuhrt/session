@@ -14,7 +14,7 @@ const cardOrder = 'The cards with a live agent come first, then the newest activ
 
 /** The order the sections stand in, said by every head and by the heading of the epics across projects. */
 const sectionOrder =
-  'The repositories placed by hand stand first, in the order they were placed. The rest, folders outside Git and the epics across projects among them, follow alike: one with a live agent first, then the newest activity, and one with nothing live and nothing in five days dim and last. A repository counts every worktree of it, wherever it is drawn.'
+  'The repositories placed by hand stand first, in the order they were placed in. The rest, folders outside Git and the epics across projects among them, follow alike: one with a live agent first, then the newest activity, and one with nothing live and nothing in five days dim and last. A repository counts every worktree of it, wherever it is drawn.'
 
 /** Why a head that is no main worktree's row cannot be dragged into place. */
 const unplaced = 'It has no session of its own to keep a place in, so it stands after the repositories placed by hand.'
