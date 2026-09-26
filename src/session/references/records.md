@@ -268,9 +268,13 @@ non-negative integer, ending in a newline, and nothing else.
   the number must be small enough to be counted exactly.
 - A change of epic removes the rank: a worktree that leaves one keeps no place,
   and one that joins another joins it unranked, after the worktrees placed
-  there. A rename is a join in each of the epic's worktrees, so it leaves them
-  all unranked. A main worktree's rank orders its project, not a place in an
-  epic, so `join` and `leave` never touch it.
+  there. A rename is the exception. The index's rename to a name no other epic
+  has is the same epic under another name, so every worktree keeps its rank;
+  one to a name another epic has merges them into it, and they arrive unranked,
+  after its ranked worktrees, whose ranks it leaves alone. A rename from a
+  terminal is a `join` in each worktree, so it takes each rank away. A main
+  worktree's rank orders its project, not a place in an epic, so `join` and
+  `leave` never touch it.
 - `meta/rank` is a regular file, not a link or a directory. `check` names a
   file or a link that breaks any of these rules with its fix, to place the
   worktree again with `session order` or delete the file, and the index shows
