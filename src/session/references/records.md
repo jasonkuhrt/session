@@ -205,10 +205,10 @@ anything in `ledger/` that breaks one of these rules.
 
 `meta/` holds facts about this worktree's session, one file each, named for the
 fact it holds. It is a directory of its own, never a link, since a worktree's
-facts are its own. The session defines one fact, `epic`; `check` reports
-anything else in it by name with its fix, to move it under `context/` or delete
-it, and names starting with `.` are outside the rule. Scaffolding creates it
-empty; a session without it is sound and sets no fact.
+facts are its own. The session defines two facts, `epic` and `rank`; `check`
+reports anything else in it by name with its fix, to move it under `context/`
+or delete it, and names starting with `.` are outside the rule. Scaffolding
+creates it empty; a session without it is sound and sets no fact.
 
 `meta/epic` names the epic this worktree is in: one line, the epic's name,
 ending in a newline, and nothing else.
@@ -239,6 +239,47 @@ Back burner
   head of its repository's section whatever its file says.
 - It is ignored with the rest of `.session/`, so it never enters a repository,
   and it goes with the worktree when the worktree is removed.
+
+`meta/rank` places this worktree among its siblings on the index: one line, a
+non-negative integer, ending in a newline, and nothing else.
+
+```
+20
+```
+
+- A main worktree's siblings are the other main worktrees the daemon tracks,
+  and its rank orders its project's section among the projects. Any other
+  worktree's siblings are the other worktrees of its epic, and its rank orders
+  it in the epic's card; one in no epic has no siblings, and its rank orders
+  nothing. A folder outside Git has no main worktree, so its rank orders it
+  within its epic, and its project's section is ordered as an unranked one.
+  No file means unranked.
+- Ranked siblings stand first, in the order of their ranks, a path settling a
+  tie, and the unranked ones after them in the order the index gives them by
+  what is happening in them. A rank is compared only with its siblings', so a
+  number means nothing between two epics, or between an epic and the projects.
+- Ranks are numbered like item prefixes. `session order` gives a worktree the
+  number halfway between the ranks of the two it goes between, counting 0
+  before the first, or 10 past the last when it goes last, and a worktree
+  already between the two keeps its own. Only when no whole number is left
+  between them, or two siblings share a rank, or one holds 0, does it number
+  the ranked siblings again from 10, in steps of 10, and it writes only the
+  ranks that change. The digits may lead with zeros, as a prefix's may, and
+  the number must be small enough to be counted exactly.
+- A change of epic removes the rank: a worktree that leaves one keeps no place,
+  and one that joins another joins it unranked, after the worktrees placed
+  there. A rename is a join in each of the epic's worktrees, so it leaves them
+  all unranked. A main worktree's rank orders its project, not a place in an
+  epic, so `join` and `leave` never touch it.
+- `meta/rank` is a regular file, not a link or a directory. `check` names a
+  file or a link that breaks any of these rules with its fix, to place the
+  worktree again with `session order` or delete the file, and the index shows
+  the same sentence on the worktree's row, which it draws unranked and serves
+  as ever. A directory under that name is named with `meta/rank must be a
+  file; move this directory under context/ or delete it.`
+- `check`, the index and `session order` read it, and `join` and `leave`
+  remove it. A command about the items does not read it: nothing about them
+  depends on it.
 
 ## Archive
 

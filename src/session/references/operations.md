@@ -23,6 +23,7 @@ archive <ID>               archive an item from any stage into archive/, recordi
 log "<by>" "<title>"       write a ledger entry, body on stdin; prints "Logged <date> — <title>"
 join "<epic>"              put this worktree in the named epic, out of any other; refuses a main worktree
 leave                      take this worktree out of its epic
+order [--before <worktree>]  place this worktree among its siblings, before that one or last among the ranked
 open                       ensure the daemon and this worktree, then open its board
 daemon status              whether the daemon runs and was started from the sources on disk; its pid, port, start and log
 daemon restart             stop the daemon and start one from the sources on disk, current or not; prints the pids
@@ -238,6 +239,49 @@ path it does not track or whose session has gone, which it never brings back.
 The watch on the session is what tells the index, as it is for a `join` in a
 terminal.
 
+## Order
+
+`session order` places the worktree among its siblings by writing its
+`meta/rank`, which [records.md](records.md#meta) describes. A main worktree's
+siblings are the other main worktrees the daemon tracks, so its rank orders its
+project among the projects on the index; any other worktree's are the other
+worktrees of its epic, so its rank orders it in the epic's card. Ranked
+siblings stand first, in the order of their ranks, and the unranked ones after
+them by what is happening in them. `--before <worktree>` names the sibling it
+goes before, by any path inside that worktree, which Git resolves as it resolves
+`-C`; left out, the worktree goes last among the ranked ones. A sibling that is
+not ranked stands after every ranked one, so naming one puts the worktree last
+among the ranked ones too, which is still before it. It takes no other option,
+and like every command it converges the session first, so a main worktree
+without one gets one and is placed. The siblings are the worktrees the daemon
+tracks, as its state file lists them, so the command reads that file whether or
+not the daemon runs, and one tracking nothing gives a worktree no siblings.
+
+The rank is the number halfway between those of the two siblings it goes
+between, or 10 past the last one's, and a worktree already between them keeps
+the rank it has and nothing is written; only when there is no room are the
+ranked siblings numbered again from 10, and only the ranks that change are
+written, the siblings first and the worktree last. Success prints one line:
+`Ranked alpha-one 15 in "Back burner", before alpha-two`, `Ranked session 30
+among the projects, after Heartbeat`, `Ranked session 10 among the projects, the
+only one ranked`, or `Already ranked …` when nothing had to change. It refuses a
+worktree in no epic that is not a main one, since that stands by what happens in
+it and is ranked among nothing, with the fix, to join an epic first; a
+`--before` that names no sibling, naming the siblings there are; and a path that
+does not exist. `join` and `leave` take the rank away with a change of epic, as
+records.md has it.
+
+The index places a worktree through `POST /api/worktrees/order {path, before}`,
+both by their paths, as the epic route takes them, `before` being `null` for
+last among the ranked ones. It is the same write, and the daemon makes one
+placement at a time, answered with the rank the worktree holds now. It refuses,
+with 404, a path the daemon does not track or whose session has gone, and so a
+main worktree with no session, which is never tracked; and with 409 a `before`
+that is not a sibling, the worktree itself and one the daemon does not track
+included, and a worktree in no epic that is not a main one. Like the epic route
+it converges nothing, and the watch on each session it writes is what tells the
+index.
+
 ## Set up
 
 Nothing has to be set up. A command that touches the records creates the session
@@ -287,7 +331,8 @@ everything is done. No command creates `RULES.md`; standing rules are written
 from the user's words when the user states them, and the inventory reports the
 file like any other. `ledger/` appears with its first entry, and `context/`
 when an agent first writes there. `meta/` is scaffolded empty; `session join`
-writes its one fact, and a session without it is sound.
+and `session order` write its two facts, and a session without either is
+sound.
 
 ## Refresh context
 
@@ -405,10 +450,11 @@ change there, since on macOS a watch on a directory that is removed hears
 nothing at all, and every read of the index re-asks it for all of them; the
 first `no` drops the row, rewrites the state file and pushes a `worktrees` event
 to every open index. A change under a tracked worktree's `.session` that a row
-shows, an item file or `meta/epic`, pushes `worktrees` as well, once the writes
-of every worktree have settled for half a second, and at least every two
-seconds while they keep coming, so a `join` in a terminal or an agent moving
-items reaches an open index at once; a change under `context/`,
+shows, an item file, `meta/epic` or `meta/rank`, pushes `worktrees` as well,
+once the writes of every worktree have settled for half a second, and at least
+every two seconds while they keep coming, so a `join` or an `order` in a
+terminal, or an agent moving items, reaches an open index at once; a change
+under `context/`,
 `ledger/`, `archive/` or `ignore/` pushes nothing, since the index shows nothing
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through.
@@ -430,7 +476,9 @@ their section, named by the main worktree Git listed when each was taken on,
 which the daemon holds for as long as it tracks the row.
 
 A section is headed by what heads its project, drawn as the constant it is and
-never dragged. A repository's main worktree with a session is its row, a
+never dragged over the project's cards; a main worktree's head, while it has a
+session, is what places its section among the others, as below. A repository's
+main worktree with a session is its row, a
 worktree's two lines with a house before its name, since a main worktree is
 never in an epic. A main worktree with no session heads its repository all the
 same, so that its worktrees have a home: by its name and branch as Git lists
@@ -454,17 +502,22 @@ than a project, and a project whose worktrees are all in such epics is its head
 alone. So every worktree the index lists is drawn once: as a head, in an epic's
 card, or as a card of its own.
 
-The sections are ordered as the cards in them are, by what is happening in them,
-the one across projects among the rest: a section with a live agent first, live
-as a pill counts it, then the newest activity first, and a section with nothing
-live and nothing in five days is drawn dim and last, its head or heading saying
-so in its tip. A project is as busy as every worktree of it, wherever that
+The sections whose main worktree was placed by hand come first, in the order of
+their ranks, and keep their places when they go quiet, dim but not last. The
+rest are ordered as the cards in them are, by what is happening in them, the
+one across projects among them: a section with a live agent first, live as a
+pill counts it, then the newest activity first, and a section with nothing live
+and nothing in five days is drawn dim and last, its head or heading saying so
+in its tip. A project is as busy as every worktree of it, wherever that
 worktree is drawn, in an epic across projects included, and the section across
 projects as busy as the worktrees in its epics. The cards in a section follow
 the same order: a card with a live agent first, then the newest activity, and a
-card with nothing live and nothing in five days dim and last; the worktrees in
-an epic's card follow it as well, and a name settles a tie. Nothing stores a
-section, an order or a fold, since every read draws them again. Each section's
+card with nothing live and nothing in five days dim and last. The worktrees in
+an epic's card stand the same way as the sections: the ones placed by hand
+first, in the order of their ranks, then the rest by what is happening in each,
+and a name settles a tie. Nothing stores a section or a fold, and the one order
+stored is each worktree's rank, in its own `meta/rank`; every read draws the
+rest again. Each section's
 cards stand in columns as wide as a card needs, the same columns in every
 section, and where the browser lays grid items out as masonry, with `display:
 grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
@@ -509,45 +562,70 @@ epic's card while its file names one. A `meta/epic` the rules reject puts its
 worktree in no epic and says why on the second line, in the sentence `check`
 gives, and the row is served as ever: the file is about the index, not the work.
 
-The cards change their epics by drag. A worktree is held by its row, and a whole
-epic by its heading; the pointer carries a copy of what is held while the card
+The cards change their epics by drag, and the heads and the worktrees in an epic
+their order. A worktree is held by its row, a whole epic by its heading, and a
+project by its head; the pointer carries a copy of what is held while the card
 itself stays in place, faint, and the copy says above it what dropping it there
 would do, `Join "Back burner"`, `Merge into "Back burner"`, `New epic with
 alpha-two` or `Leave "Back burner"`, and nothing when the drop would change
-nothing; the card it would land in is outlined. Where the pointer is decides the
-drop. A worktree dropped onto an epic's card joins it, and so do all of a whole
-epic's worktrees. A worktree dropped onto another worktree's card in no epic
-makes an epic of the two, named in the dialog groups and batches are named in,
-which starts empty and makes nothing without a name. While a worktree is held,
-from a card of its own or out of an epic, a `+` is drawn after its project's
-cards, and only then, since it can do nothing otherwise, and there, since an
-epic of one worktree stands with its project; its tip is `New epic of
-<name>`, and so are the words over the held copy. A worktree dropped on it opens
-the same dialog and makes an epic of that one worktree, or puts it in the epic
-that already has the name given, and no name makes nothing. A worktree dragged
-out of its epic onto the space between and below the cards, the heads included,
-leaves it and becomes a card of its own in its project's section, whichever
-section it was dropped in. Escape puts it back. Every drop works across
-projects as it does within one, and where the epic stands follows from whose
-worktrees it holds: a worktree dropped onto a card or an epic of another
-project makes or joins an epic that moves to the section across projects; a
-worktree that leaves such an epic goes back to its project, and the epic, once
-what it holds belongs to one project, goes into that project's section. The rename icon opens the same dialog with the
-epic's name in it and moves every worktree in the epic to the new name, so a
-name another epic already has merges the two. A drop is written with the epic
-route, one request per worktree, which is drawn where it lands at once and read
-again once it is written; a refusal, such as a file changed since the index read
-it, shows above the cards in the daemon's words. While a card is held, the index
-draws what it drew when the card was picked up, its rows, pull requests and
-clock alike, so no card moves under the pointer: a change it is told of
-meanwhile is read once the card is let go, and a read already under way at
-pickup lands unseen until then. While a drop is being written it holds its reads
-the same way, and then reads once. Every worktree the index lists can be dragged
-but a main one, a worktree it does not serve included, since the epic route
-takes a path. Each drop is written against the epic drawn for every worktree
-when it was dropped, a new epic's worktrees through the dialog as well, so one
-whose file was changed in the meantime is refused as changed on disk, and the
-index reads again.
+nothing; the card it would land in is outlined. A place among siblings is drawn
+as a dashed line where the held thing would go instead, and its words say where
+it would stand, `Before alpha-two`, `After Heartbeat` or `First`. Where the
+pointer is decides the drop. A worktree dropped onto an epic's card joins it,
+and so do all of a whole epic's worktrees. A worktree dropped onto another
+worktree's card in no epic makes an epic of the two, named in the dialog groups
+and batches are named in, which starts empty and makes nothing without a name.
+While a worktree is held, from a card of its own or out of an epic, a `+` is
+drawn after its project's cards, and only then, since it can do nothing
+otherwise, and there, since an epic of one worktree stands with its project; its
+tip is `New epic of <name>`, and so are the words over the held copy. A worktree
+dropped on it opens the same dialog and makes an epic of that one worktree, or
+puts it in the epic that already has the name given, and no name makes nothing.
+A worktree dragged out of its epic onto the space between and below the cards,
+the heads included, leaves it and becomes a card of its own in its project's
+section, whichever section it was dropped in. Escape puts it back. Every drop
+works across projects as it does within one, and where the epic stands follows
+from whose worktrees it holds: a worktree dropped onto a card or an epic of
+another project makes or joins an epic that moves to the section across
+projects; a worktree that leaves such an epic goes back to its project, and the
+epic, once what it holds belongs to one project, goes into that project's
+section. The rename icon opens the same dialog with the epic's name in it and
+moves every worktree in the epic to the new name, so a name another epic already
+has merges the two. A drop is written with the epic route, one request per
+worktree, which is drawn where it lands at once and read again once it is
+written; a refusal, such as a file changed since the index read it, shows above
+the cards in the daemon's words. While a card is held, the index draws what it
+drew when the card was picked up, its rows, pull requests and clock alike, so no
+card moves under the pointer: a change it is told of meanwhile is read once the
+card is let go, and a read already under way at pickup lands unseen until then.
+While a drop is being written it holds its reads the same way, and then reads
+once. Every worktree the index lists can be dragged into and out of epics but a
+main one, a worktree it does not serve included, since the epic route takes a
+path; a main one is held by its head, to place its project, served or not, since
+the order route takes a path too. Each drop is written against the epic drawn
+for every worktree when it was dropped, a new epic's worktrees through the
+dialog as well, so one whose file was changed in the meantime is refused as
+changed on disk, and the index reads again.
+
+A project is held by its head only while a main worktree with a session heads
+it, since no other head has a file of its own to keep a place in: a main
+worktree with no session, a Git directory, a folder outside Git and the epics
+across projects are never held, and stand after the projects placed by hand.
+Held, a project goes before or after the section nearest the pointer, the gaps
+between the sections included, by which half of it the pointer is in. A
+worktree held within its own epic's card goes before or after the worktree of
+that epic it is over, the same way, and first over the card's heading; over a
+row of another epic's card it joins that epic, as over the card. The placement
+names the sibling it goes before when that one is ranked, and none, for last
+among the ranked, when it is not, since an unranked sibling stands after every
+ranked one: so the line and the words show where it will stand, and over the
+unranked ones they stay after the last ranked one. Over the place it already
+has, nothing is drawn and nothing written. A placement is written with the
+order route, one request, since the engine renumbers whatever it needs, and is
+drawn where it lands at once and read again once it is written, as a drop into
+an epic is. A drop that puts a worktree in another epic, or takes it out of
+one, removes its rank, as `join` and `leave` do, and a rename leaves every
+worktree it moves unranked.
 
 ## Use the board
 
@@ -1085,20 +1163,21 @@ not its place (`2-Triage/`), is named with its rename to the stage's directory,
 or, when that directory is there too, with the fix to move what it holds into it
 and delete it. The directories must be directories, and `RULES.md` and
 `.gitignore` files. It rejects a `meta` that is a link, and in `meta/` every
-entry but the one fact the session defines, `epic`, which must be a regular
-file of one line holding an epic's name, as [records.md](records.md#meta) has
-it; names starting with a dot are outside the rule. In `ledger/` it rejects a directory, a link, and a `ledger` that is itself
-a link, and an entry whose frontmatter is missing `date`, `title` or `by`,
-carries any other key, holds anything but one line of text per key or a value
-YAML reads differently from how it is written, or has a `date` that is not a UTC
-instant to the second; whose name is not the one its date and title give; or
-whose body, read the way the board renders it, has a heading. It does not look
-inside `context/`. It does not judge acceptance criteria or user approval. An
-empty stage is an empty directory. A directory in a stage that holds nothing, or
-nothing but names starting with a dot, is no group to `check` or to any other
-reader, whatever its name, and the next write removes it; so one that an
-interrupted write leaves beside the entry that took its prefix or its name fails
-nothing.
+entry but the two facts the session defines, `epic`, which must be a regular
+file of one line holding an epic's name, and `rank`, a regular file of one line
+holding a non-negative integer, as [records.md](records.md#meta) has them; names
+starting with a dot are outside the rule. In `ledger/` it rejects a directory, a
+link, and a `ledger` that is itself a link, and an entry whose frontmatter is
+missing `date`, `title` or `by`, carries any other key, holds anything but one
+line of text per key or a value YAML reads differently from how it is written,
+or has a `date` that is not a UTC instant to the second; whose name is not the
+one its date and title give; or whose body, read the way the board renders it,
+has a heading. It does not look inside `context/`. It does not judge acceptance
+criteria or user approval. An empty stage is an empty directory. A directory in
+a stage that holds nothing, or nothing but names starting with a dot, is no
+group to `check` or to any other reader, whatever its name, and the next write
+removes it; so one that an interrupted write leaves beside the entry that took
+its prefix or its name fails nothing.
 
 ## App development
 
