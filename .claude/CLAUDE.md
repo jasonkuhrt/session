@@ -132,6 +132,23 @@ text format ends in a decode of the record it produced, and no `JSON.parse` or
 `.json()` result is used undecoded. A hand-written type beside a schema is a
 second truth and is removed.
 
+The board is TanStack Start in SPA mode: `bun run build` runs Vite on Bun and
+prerenders one shell into `app/dist/client`, beside the one script and the one
+stylesheet it names, and the daemon serves that shell, `no-store`, at every
+page's address, while an unknown API path answers JSON 404 at the root as it
+does under a board; no Start server code runs in the daemon, and nothing a route
+module or the root route imports reads a browser global when it loads, since the
+prerender loads them all. A page is a file route whose worktree key the router's
+rewrite folds into one segment; its params decode through Effect Schemas, and
+params a schema rejects are no route, so the address draws the not-found page;
+moving between pages loads a document. Every read is a TanStack Query query,
+read when its page mounts and, where its answer can change, again on the event
+that names it, one read per event since the stream carries no payload; the
+daemon's capabilities and a board's picker list are read once. On the board and
+the index a drag or a write holds the events it names until it ends, and the
+item page's writes hold nothing; a write's answer lands only over reads that
+predate it.
+
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
 nothing in them reaches the daemon. A new setting is a field of the schema with
