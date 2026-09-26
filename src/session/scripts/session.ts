@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { NodeRuntime, NodeServices } from '@effect/platform-node';
+import * as Cause from 'effect/Cause';
 import * as Clock from 'effect/Clock';
 import * as Console from 'effect/Console';
 import * as Data from 'effect/Data';
@@ -7,8 +8,9 @@ import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
+import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
-import type { Session, Stage } from '../../../app/contract.ts';
+import type { Session, SessionSchema, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import {
   daemonOnPort,
@@ -56,6 +58,7 @@ type CommandSpec = {
 const commands = {
   init: { operands: '', least: 0, most: 0, options: {} },
   check: { operands: '', least: 0, most: 0, options: {} },
+  brief: { operands: '', least: 0, most: 0, options: {} },
   refresh: { operands: '', least: 0, most: 0, options: { '--previous': '[--previous <inventory.json>]' } },
   ls: { operands: '[STAGE]', least: 0, most: 1, options: {} },
   add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3, options: {} },
@@ -92,6 +95,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
 
   init                                  create what the session is missing and say what that was
   check                                 validate the session and print its revision
+  brief                                 print what an agent reads first; exits 0 whatever it finds
   refresh [--previous <inventory.json>] print the file inventory as JSON
   ls [STAGE]                            list items as ID, file, title
   add <STAGE> <ID> "<title>"            add an item, body on stdin
@@ -300,6 +304,25 @@ const counted = (total: number, noun: string): string =>
 const stageIn = (session: Session, stage: Stage) =>
   session.stages.find((entry) => entry.stage === stage)!;
 
+/** What `check` prints for a sound session: its revision, and how many items it holds, or that it holds none. */
+const checkLine = (session: typeof SessionSchema.Type): string => {
+  const total = itemCount(session);
+  return `OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`;
+};
+
+/** What `ls` prints: a line per item in listing order, its ID, path and title in columns, of one stage alone when one is named. */
+const itemLines = (session: typeof SessionSchema.Type, only?: Stage): ReadonlyArray<string> => {
+  const items = session.stages
+    .filter((entry) => only === undefined || entry.stage === only)
+    .flatMap((entry) => entry.items);
+  const idWidth = Math.max(2, ...items.map((item) => item.id.length));
+  const pathWidth = Math.max(4, ...items.map((item) => item.path.length));
+  return items.map((item) => `${item.id.padEnd(idWidth)}  ${item.path.padEnd(pathWidth)}  ${item.title}`);
+};
+
+/** What a failure says to the user: its message, never a stack. */
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 const changesFrom = (previous: FileInventory, current: FileInventory) => ({
   added: Object.keys(current).filter((path) => previous[path] === undefined),
   changed: Object.keys(current).filter(
@@ -397,18 +420,7 @@ const list = (options: Options, repository: SessionRepository) =>
       ? undefined
       : yield* cliTry(() => asStage(options.operands[0]!));
     const session = yield* repository.load;
-    const rows: Array<{ id: string; path: string; title: string }> = [];
-    for (const stage of session.stages) {
-      if (only !== undefined && stage.stage !== only) continue;
-      for (const item of stage.items) {
-        rows.push({ id: item.id, path: item.path, title: item.title });
-      }
-    }
-    const idWidth = Math.max(2, ...rows.map((row) => row.id.length));
-    const pathWidth = Math.max(4, ...rows.map((row) => row.path.length));
-    for (const row of rows) {
-      yield* Console.log(`${row.id.padEnd(idWidth)}  ${row.path.padEnd(pathWidth)}  ${row.title}`);
-    }
+    for (const line of itemLines(session, only)) yield* Console.log(line);
   });
 
 const add = (options: Options, repository: SessionRepository) =>
@@ -608,10 +620,100 @@ const order = (options: Options, repository: SessionRepository, resolved: Worktr
 
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
-    const session = yield* repository.check;
-    const total = itemCount(session);
-    yield* Console.log(`OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`);
+    yield* Console.log(checkLine(yield* repository.check));
   });
+
+/** How many of the ledger's newest entries the brief names. */
+const briefEntries = 10;
+
+/** The brief's `RULES.md`: the file as written, why it could not be read, or nothing for a session without one. */
+const rulesSection = (repository: SessionRepository) =>
+  Effect.result(repository.rules).pipe(
+    Effect.map((rules): ReadonlyArray<string> => {
+      if (Result.isFailure(rules)) return [`RULES.md could not be read: ${messageOf(rules.failure)}`];
+      return rules.success === null ? [] : ['RULES.md:', rules.success.trimEnd()];
+    }),
+  );
+
+/**
+ * The brief's ledger: its newest entries, each by the name of its file without
+ * `.md`, as `log` names the one it writes, then how many older ones there are,
+ * and the listing's notice for each file it leaves out; nothing while the
+ * ledger holds nothing.
+ */
+const ledgerSection = (repository: SessionRepository) =>
+  Effect.result(repository.ledgerListing).pipe(
+    Effect.map((ledger): ReadonlyArray<string> => {
+      if (Result.isFailure(ledger)) return [`The ledger could not be read: ${messageOf(ledger.failure)}`];
+      const { entries, notices } = ledger.success;
+      if (entries.length === 0 && notices.length === 0) return [];
+      const older = entries.length - briefEntries;
+      return [
+        'Ledger, newest first:',
+        ...entries.slice(0, briefEntries).map((entry) => entry.name.slice(0, -'.md'.length)),
+        ...(older > 0 ? [`and ${older} older in ledger/`] : []),
+        ...notices,
+      ];
+    }),
+  );
+
+/**
+ * The brief's items, as `ls` lists them: from what `check` read when the
+ * session is sound, and otherwise from a load, which lists them whenever the
+ * stages still load and adds nothing when it fails as `check` did.
+ */
+const itemsSection = (
+  repository: SessionRepository,
+  checked: Result.Result<typeof SessionSchema.Type, unknown>,
+  first: string,
+) =>
+  Effect.gen(function*() {
+    const loaded = Result.isSuccess(checked) ? checked : yield* Effect.result(repository.load);
+    if (Result.isFailure(loaded)) {
+      const message = messageOf(loaded.failure);
+      return message === first ? [] : [`The items could not be listed: ${message}`];
+    }
+    const lines = itemLines(loaded.success);
+    return lines.length === 0 ? [] : ['Items:', ...lines];
+  });
+
+/**
+ * `brief`: what an agent reads before it acts, in the order it reads it, and
+ * nothing it would have to open an item for. The first line is `check`'s, or
+ * `check`'s first error in its place; then `RULES.md` as written, the newest
+ * ledger entries, and the items as `ls` lists them. It only reads, so a skill
+ * loaded where there is no session leaves none behind and no daemon hears of
+ * it. It says what it could not read instead of failing, because the skill
+ * runs it as it loads and a command that fails stops the skill, so it exits 0
+ * whatever it finds. A linked `.session` is refused whole, as every command
+ * refuses it, and nothing is read through the link.
+ */
+const brief = (directory: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const isLink = (path: string) => fs.readLink(path).pipe(Effect.option, Effect.map((link) => Option.isSome(link)));
+    // Git is asked from inside the directory, so one that is not there, and is
+    // no link either, is said to hold no session before Git is asked anything.
+    if (!(yield* fs.exists(directory)) && !(yield* isLink(directory))) return [`No session: ${directory} does not exist.`];
+    const resolved = yield* resolveWorktreeSession(directory);
+    const linked = yield* isLink(resolved.directory);
+    if (!linked && !(yield* fs.exists(resolved.directory))) return [`No session: ${resolved.directory} does not exist.`];
+    const repository = yield* makeRepository(resolved.directory);
+    const checked = yield* Effect.result(repository.check);
+    const first = Result.isSuccess(checked) ? checkLine(checked.success) : messageOf(checked.failure);
+    if (linked) return [first];
+    const sections = [
+      [first],
+      yield* rulesSection(repository),
+      yield* ledgerSection(repository),
+      yield* itemsSection(repository, checked, first),
+    ];
+    return sections.filter((lines) => lines.length > 0).map((lines) => lines.join('\n'));
+  }).pipe(
+    // Whatever stopped it is said where the brief would be, and it still exits 0.
+    Effect.catchCause((cause) => Effect.succeed([cause.pipe(Cause.squash, messageOf)])),
+    Effect.flatMap((sections) => Console.log(sections.join('\n\n'))),
+  );
 
 /**
  * A command that just scaffolded a session tells a daemon that is already
@@ -632,6 +734,12 @@ const runCommand = (options: Options) =>
     if (options.command === 'daemon') {
       const action = yield* cliTry(() => asDaemonAction(options.operands[0]!));
       yield* action === 'status' ? showDaemon : relaunchDaemon;
+      return;
+    }
+    // The brief only reads, and says what it finds rather than failing, so it
+    // resolves the worktree itself and neither scaffolds nor registers it.
+    if (options.command === 'brief') {
+      yield* brief(options.directory);
       return;
     }
     const resolved = yield* resolveWorktreeSession(options.directory);
@@ -662,7 +770,7 @@ const runCommand = (options: Options) =>
 
 /** Every failure reaches the user as one line on stderr, never as a stack. */
 const reportFailure = (error: unknown) =>
-  Console.error(error instanceof Error ? error.message : String(error)).pipe(
+  Console.error(messageOf(error)).pipe(
     Effect.flatMap(() => Effect.sync(() => process.exit(1))),
   );
 
