@@ -226,23 +226,35 @@ Deleting a worktree takes its membership with it, and nothing else has to be
 done.
 
 The index writes the same file through `POST /api/worktrees/epic {path, epic,
-from, rename}`: the worktree by its path, as `POST /api/terminal` takes it, so a
-row the index lists but does not serve is reached as well and a key two rows
-share can never send a write to the wrong one; the epic's name, or `null` for
-none; `from`, the epic the index had read for that worktree when the change was
-asked for; and `rename`, true when the write is the worktree's part of renaming
-its epic to a name no other epic has, the same epic under another name, which
-keeps its rank, and false for a join, a merge or a leave, which take a linked
-worktree's rank away as `join` and `leave` do. When the file names anything else
-by then, a file the rules reject reading as none, the write is refused with 409,
-changed on disk, as a stale revision refuses a move. The route answers with the
-epic the worktree is in now. It converges nothing else: `meta/epic` depends on
-no stage, so a session from before the stages were numbered, which every command
-refuses, can still be dragged into an epic and out of one, and `meta/` is made
-when nothing holds its name. It refuses a main worktree, a name the rules
-reject, and, with 404, a path it does not track or whose session has gone, which
-it never brings back. The watch on the session is what tells the index, as it is
-for a `join` in a terminal.
+from}`: the worktree by its path, as `POST /api/terminal` takes it, so a row the
+index lists but does not serve is reached as well and a key two rows share can
+never send a write to the wrong one; the epic's name, or `null` for none; and
+`from`, the epic the index had read for that worktree when the change was asked
+for. A linked worktree's rank goes with the change, as with `join` and `leave`.
+When the file names anything else by then, a file the rules reject reading as
+none, the write is refused with 409, changed on disk, as a stale revision
+refuses a move. The route answers with the epic the worktree is in now. It
+converges nothing else: `meta/epic` depends on no stage, so a session from
+before the stages were numbered, which every command refuses, can still be
+dragged into an epic and out of one, and `meta/` is made when nothing holds its
+name. It refuses a main worktree, a name the rules reject, and, with 404, a path
+it does not track or whose session has gone, which it never brings back. The
+watch on the session is what tells the index, as it is for a `join` in a
+terminal.
+
+The index renames an epic through `POST /api/worktrees/epic/rename {from, to}`,
+one request, since a rename is one act on the epic: under the lock its other
+writes take, the daemon moves every tracked worktree whose file names `from` to
+`to`, and tells from the worktrees it tracks which kind of rename it is. When no
+other tracked worktree names `to`, it is the same epic under another name, and
+every worktree keeps its rank. When one does, the two merge, and the worktrees
+that arrive join `to` unranked, after its ranked ones, whose ranks stay as they
+are. The worktrees naming `to` are read again just before the first write, so
+one that joined it meanwhile refuses the rename with 409, and each worktree is
+written against `from`, so one whose file changed since refuses its write with
+409 as well. A name the rules reject is refused with 400, and an epic no tracked
+worktree is in now with 409. It answers with the epic's name now and whether it
+merged.
 
 ## Order
 
@@ -255,8 +267,9 @@ siblings stand first, in the order of their ranks, and the unranked ones after
 them by what is happening in them. `--before <worktree>` names the sibling it
 goes before, by any path inside that worktree, which Git resolves as it resolves
 `-C`; left out, the worktree goes last among the ranked ones. A sibling that is
-not ranked stands after every ranked one, so naming one puts the worktree last
-among the ranked ones too, which is still before it. It takes no other option,
+not ranked stands after every ranked one, and a command has no drawn order to
+follow, so naming one puts the worktree last among the ranked ones too, which
+is still before it. It takes no other option,
 and like every command it converges the session first, so a main worktree
 without one gets one and is placed. The siblings are the worktrees the daemon
 tracks, as its state file lists them, so the command reads that file whether or
@@ -266,26 +279,44 @@ The rank is the number halfway between those of the two siblings it goes
 between, or 10 past the last one's, and a worktree already between them keeps
 the rank it has and nothing is written; only when there is no room are the
 ranked siblings numbered again from 10, and only the ranks that change are
-written, the siblings first and the worktree last. Success prints one line:
-`Ranked alpha-one 15 in "Back burner", before alpha-two`, `Ranked session 30
-among the projects, after Heartbeat`, `Ranked session 10 among the projects, the
-only one ranked`, or `Already ranked …` when nothing had to change. It refuses a
-worktree in no epic that is not a main one, since that stands by what happens in
-it and is ranked among nothing, with the fix, to join an epic first; a
-`--before` that names no sibling, naming the siblings there are; and a path that
-does not exist. `join` and `leave` take the rank away with a change of epic, as
-records.md has it.
+written, the siblings first and the worktree last. Just before it writes, it
+reads every sibling's rank again, each under its session's lock, and each file
+is written against the rank read for it, so a placement whose ranks changed in
+the meantime, by another command or a drag on the index, is refused: `Not
+ordered: a rank among these worktrees changed on disk since it was read; try
+again.` Success prints one line: `Ranked alpha-one 15 in "Back burner", before
+alpha-two`, `Ranked session 30 among the projects, after Heartbeat`, `Ranked
+session 10 among the projects, the only one ranked`, or `Already ranked …` when
+nothing had to change. It refuses a worktree in no epic that is not a main one,
+since that stands by what happens in it and is ranked among nothing, with the
+fix, to join an epic first; a `--before` that names no sibling, naming the
+siblings there are; and a path that does not exist.
 
-The index places a worktree through `POST /api/worktrees/order {path, before}`,
-both by their paths, as the epic route takes them, `before` being `null` for
-last among the ranked ones. It is the same write, and the daemon makes one
-placement at a time, answered with the rank the worktree holds now. It refuses,
-with 404, a path the daemon does not track or whose session has gone, and so a
-main worktree with no session, which is never tracked; and with 409 a `before`
-that is not a sibling, the worktree itself and one the daemon does not track
-included, and a worktree in no epic that is not a main one. Like the epic route
-it converges nothing, and the watch on each session it writes is what tells the
-index.
+The engine's one write of order, `setRank`, which `session order` and the
+index's drags reach, is the only thing that gives a worktree a rank. The one
+write of membership, `setEpic`, takes the rank away with any change of epic, a
+`join`, a `leave` or a drop into or out of an epic, but for a rename on the
+index to a name no other epic has, which is the same epic under another name.
+That holds for every worktree but a main one, a folder outside Git included; a
+main worktree's rank orders its project, and no epic write touches it.
+
+The index places a worktree through `POST /api/worktrees/order {path, before,
+after}`, every worktree by its path, as the epic route takes them. `before`
+names the ranked sibling it goes in front of, or is `null`. `after` names the
+unranked siblings drawn above the place it was dropped, in their drawn order:
+they are ranked first, at the end of the ranked ones, and the worktree right
+after them, so it lands where it was dropped, and only those ranks and the
+renumbering they need are written. A placement names one or the other; with
+neither, the worktree goes last among the ranked ones. It is the same write,
+and the daemon makes one write of an epic or a rank at a time, answered with the
+rank the worktree holds now. It refuses, with 404, a path the daemon does not
+track or whose session has gone, and so a main worktree with no session, which
+is never tracked; with 409 a `before` or an `after` that is not a sibling, the
+worktree itself and one the daemon does not track included, an `after` sibling
+that is ranked by now, ranks that changed since they were read, and a worktree
+in no epic that is not a main one; and with 400 a placement naming both. Like
+the epic route it converges nothing, and the watch on each session it writes is
+what tells the index.
 
 ## Set up
 
@@ -598,42 +629,46 @@ section. The rename icon opens the same dialog with the epic's name in it and
 moves every worktree in the epic to the new name. A name no epic has is the same
 epic under another name, so every worktree keeps its rank and the card its
 order; a name another epic already has merges the two, and the worktrees that
-arrive join it unranked, after its ranked ones, whose ranks are untouched. A
-drop is written with the epic route, one request per worktree, which is drawn
-where it lands at once and read again once it is written; a refusal, such as a
-file changed since the index read it, shows above the cards in the daemon's
-words. While a card is held, the index draws what it drew when the card was
-picked up, its rows, pull requests and clock alike, so no card moves under the
-pointer: a change it is told of meanwhile is read once the card is let go, and a
-read already under way at pickup lands unseen until then. While a drop is being
-written it holds its reads the same way, and then reads once. Every worktree the
-index lists can be dragged into and out of epics but a main one, a worktree it
-does not serve included, since the epic route takes a path; a main one is held
-by its head, to place its project, served or not, since the order route takes a
-path too. Each drop is written against the epic drawn for every worktree when it
-was dropped, a new epic's worktrees through the dialog as well, so one whose
-file was changed in the meantime is refused as changed on disk, and the index
-reads again.
+arrive join it unranked, after its ranked ones, whose ranks are untouched. The
+daemon tells which it is from the worktrees it tracks, through the rename route,
+one request for the epic. A drop is written with the epic route, one request per
+worktree, which is drawn where it lands at once and read again once it is
+written; a refusal, such as a file changed since the index read it, shows above
+the cards in the daemon's words. While a card is held, the index draws what it
+drew when the card was picked up, its rows, pull requests and clock alike, so no
+card moves under the pointer: a change it is told of meanwhile is read once the
+card is let go, and a read already under way at pickup lands unseen until then.
+While a drop is being written it holds its reads the same way, and then reads
+once. Every worktree the index lists can be dragged into and out of epics but a
+main one, a worktree it does not serve included, since the epic route takes a
+path; a main one is held by its head, to place its project, served or not, since
+the order route takes a path too. Each drop is written against the epic drawn
+for every worktree when it was dropped, a new epic's worktrees through the
+dialog as well, so one whose file was changed in the meantime is refused as
+changed on disk, and the index reads again.
 
 A project is held by its head only while a main worktree with a session heads
 it, since no other head has a file of its own to keep a place in: a main
 worktree with no session, a Git directory, a folder outside Git and the epics
 across projects are never held, and stand after the projects placed by hand.
 Held, a project goes before or after the section nearest the pointer, the gaps
-between the sections included, by which half of it the pointer is in. A
-worktree held within its own epic's card goes before or after the worktree of
-that epic it is over, the same way, and first over the card's heading; over a
-row of another epic's card it joins that epic, as over the card. The placement
-names the sibling it goes before when that one is ranked, and none, for last
-among the ranked, when it is not, since an unranked sibling stands after every
-ranked one: so the line and the words show where it will stand, and over the
-unranked ones they stay after the last ranked one. Over the place it already
-has, nothing is drawn and nothing written. A placement is written with the
-order route, one request, since the engine renumbers whatever it needs, and is
-drawn where it lands at once and read again once it is written, as a drop into
-an epic is. A drop that puts a worktree in another epic, or takes it out of
-one, removes its rank, as `join` and `leave` do; a rename keeps every rank
-unless it merges, as above.
+between the sections included, by which half of it the pointer is in. A worktree
+held within its own epic's card goes before or after the worktree of that epic
+it is over, the same way, and first over the card's heading; over a row of
+another epic's card it joins that epic, as over the card. It lands where it was
+dropped. Over the ranked siblings it goes in front of the one it would be drawn
+before; among the unranked ones, the siblings drawn above the place it was
+dropped are ranked first, in their drawn order, and it right after them, so what
+stood above it still does, and the siblings below it stay unranked. A section
+that cannot hold a rank, one that no main worktree with a session heads, stands
+after every ranked one, so a project dropped below one lands right after the
+last section ranked before it; the line and the words show that place. Over the
+place it already has, nothing is drawn and nothing written. A placement is
+written with the order route, one request, since the engine ranks and renumbers
+whatever it needs, and is drawn where it lands at once and read again once it is
+written, as a drop into an epic is. A drop that puts a worktree in another epic,
+or takes it out of one, removes its rank, as `join` and `leave` do; a rename
+keeps every rank unless it merges, as above.
 
 ## Use the board
 

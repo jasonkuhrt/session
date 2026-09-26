@@ -266,15 +266,25 @@ non-negative integer, ending in a newline, and nothing else.
   the ranked siblings again from 10, in steps of 10, and it writes only the
   ranks that change. The digits may lead with zeros, as a prefix's may, and
   the number must be small enough to be counted exactly.
-- A change of epic removes the rank: a worktree that leaves one keeps no place,
-  and one that joins another joins it unranked, after the worktrees placed
-  there. A rename is the exception. The index's rename to a name no other epic
-  has is the same epic under another name, so every worktree keeps its rank;
-  one to a name another epic has merges them into it, and they arrive unranked,
-  after its ranked worktrees, whose ranks it leaves alone. A rename from a
-  terminal is a `join` in each worktree, so it takes each rank away. A main
-  worktree's rank orders its project, not a place in an epic, so `join` and
-  `leave` never touch it.
+- A worktree dropped among the unranked siblings on the index lands where it
+  was dropped: the siblings drawn above that place are ranked first, in their
+  drawn order, after the ranked ones, and it right after them, and the ones
+  below stay unranked. A command has no drawn order, so `--before` naming an
+  unranked sibling puts the worktree last among the ranked ones.
+- Only the engine's one write of order, `setRank`, which `session order` and
+  the index's drags reach, gives a rank, and it reads every rank again just
+  before it writes, refusing a placement whose ranks changed since it read
+  them. The one write of membership, `setEpic`, removes the rank with any
+  change of epic: a worktree that leaves one keeps no place, and one that
+  joins another joins it unranked, after the worktrees placed there. A rename
+  is the exception. The index's rename to a name no other epic has is the same
+  epic under another name, so every worktree keeps its rank; one to a name
+  another epic has merges them into it, and they arrive unranked, after its
+  ranked worktrees, whose ranks it leaves alone; the daemon tells the two apart
+  from the worktrees it tracks. A rename from a terminal is a `join` in each
+  worktree, so it takes each rank away. This holds for every worktree but a
+  main one, a folder outside Git included: a main worktree's rank orders its
+  project, not a place in an epic, so no epic write touches it.
 - `meta/rank` is a regular file, not a link or a directory. `check` names a
   file or a link that breaks any of these rules with its fix, to place the
   worktree again with `session order` or delete the file, and the index shows

@@ -226,17 +226,19 @@ deleting a worktree takes its membership with it, nothing is pruned, no path is
 stored, and nothing stores a fold. The one order stored is a worktree's rank
 among its siblings, a number in its `meta/rank`: a main worktree's orders its
 project among the projects, any other worktree's orders it among the worktrees
-of its epic, and a change of epic removes it, but for a rename on the index to
-a name no other epic has, which is the same epic under another name and keeps
+of its epic, and a change of epic removes it, but for a rename on the index to a
+name no other epic has, which is the same epic under another name and keeps
 every rank. Ranked siblings stand first, by rank, and the rest after them by
-what is happening in them, so a placement, by a drag on the index or by
-`session order`, ranks only the worktree placed and renumbers its siblings only
-where there is no room between two. Everything else about a worktree is read
-where it is kept: its session, `.session/`, which it has at most one of and
-which puts it on the index; its branch, from `git worktree list`, and none when
-detached; that branch's pull request, from `gh pr view`, taken as the one while
-one is open; and the agents in it, by the working directory their harness
-reports. An agent reaches an epic only through the
+what is happening in them. A placement, by a drag on the index or by `session
+order`, ranks the worktree placed, and on the index the unranked siblings drawn
+above where it was dropped, so it lands there, and renumbers the others only
+where there is no room between two; only that write gives a rank, and every epic
+write but a rename to a new name takes a linked worktree's away. Everything else
+about a worktree is read where it is kept: its session, `.session/`, which it
+has at most one of and which puts it on the index; its branch, from `git
+worktree list`, and none when detached; that branch's pull request, from `gh pr
+view`, taken as the one while one is open; and the agents in it, by the working
+directory their harness reports. An agent reaches an epic only through the
 worktree it works in, and no fact ties an agent to an epic, because none could
 be derived or verified. Linear issues are what the branch and the pull request
 name, and are not modeled.
