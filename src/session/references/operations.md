@@ -378,8 +378,9 @@ and nothing it would have to open an item for:
 
 - the line `check` prints, such as `OK <revision>, <n> items`, or `check`'s
   first error in its place;
-- `RULES.md` as it is written, under `RULES.md:`, when the session has one the
-  board would link to;
+- `RULES.md` as it is written, under `RULES.md:`, when the session's root lists
+  one, or in its place the sentence saying why it could not be read, such as a
+  link that leads out of the session;
 - the ten newest ledger entries under `Ledger, newest first:`, each the name of
   its file without `.md`, as `log` names the entry it writes, then how many
   older ones `ledger/` holds, such as `and 4 older in ledger/`, and the
@@ -437,15 +438,21 @@ wherever the skill says `${CLAUDE_SESSION_ID}` the same way. A command there
 that fails stops the skill with `Shell command failed for pattern …`, and
 nothing of the skill reaches the model. A brief past the Bash tool's inline
 ceiling, roughly 30,000 characters by default, reaches the model as its first
-2,000 characters and the path of a file holding the rest; with no item body in
-it, only a long `RULES.md` makes one that long.
+2,000 characters and the path of a file holding the rest, which the skill says
+to read whole. Nothing in the brief is capped, so a long `RULES.md` or a few
+hundred items make one that long.
 
 Claude Code never asks about a command in a skill. It checks the line against
 the permission rules, and outside auto mode anything short of an allow stops
 the skill with `Shell command permission check failed for pattern …`, a rule
-that would ask included. So `session` must be allowed for the brief to load,
-as `"Bash(session *)"` in `permissions.allow` of `~/.claude/settings.json`
-allows it, or a rule that allows all of `Bash`.
+that would ask included. The skill's frontmatter declares
+`allowed-tools: Bash(session *)`, which Claude Code applies whenever the skill
+is invoked, so the line passes that check with no rule in any settings. The
+grant lasts for the turn that invoked the skill, in which any `session` command
+runs without asking, and clears with the next message. A settings rule is
+needed only where a harness ignores the frontmatter: there, `session` must be
+allowed for the brief to load, as `"Bash(session *)"` in `permissions.allow`
+of `~/.claude/settings.json` allows it, or a rule that allows all of `Bash`.
 
 Codex reads `SKILL.md` as it is written and runs nothing in it, so a Codex
 agent sees the line as a command, and the sentence above it says to run
@@ -459,9 +466,11 @@ paths. It does not return file contents. The brief is what an agent reads
 first, and a refresh is how it follows what changes after: the first refresh is
 the inventory later ones are compared with, and on each later turn the agent
 reads only the changed relevant files; a new ledger entry arrives as an added
-path, which is how agents in one session hear from each other. Preserve the
-inventory in conversation context. For a deterministic comparison, pass a
-previous refresh output saved outside the session directory:
+path, which is how agents in one session hear from each other. A refresh
+without `--previous` lists every path as added, so in the first one only the
+ledger entries newer than the brief's newest are new. Preserve the inventory in
+conversation context. For a deterministic comparison, pass a previous refresh
+output saved outside the session directory:
 
 ```sh
 session refresh --previous /tmp/session-previous.json
