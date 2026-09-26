@@ -11,6 +11,7 @@ import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import {
+  boardKey,
   daemonOnPort,
   daemonStatus,
   ensureDaemon,
@@ -25,13 +26,8 @@ import { publicOrigin } from '../../../app/server/portless.ts';
 import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
-import {
-  encodeWorktreeKey,
-  ensureSession,
-  headCommit,
-  resolveWorktreeSession,
-  type WorktreeSession,
-} from '../../../app/server/worktree.ts';
+import { headCommit } from '../../../app/server/git.ts';
+import { ensureSession, resolveWorktreeSession, type WorktreeSession } from '../../../app/server/worktree.ts';
 
 /**
  * Argument parsing in front of the engine. Layout, numbering and validation
@@ -318,12 +314,18 @@ const report = (actions: ReadonlyArray<string>) =>
     for (const action of actions) yield* Console.log(action);
   });
 
+/**
+ * `open`: the board the daemon serves for this worktree, at the key the
+ * daemon's own row for it names. A worktree it serves no board for, because
+ * another took the name first or Git could not answer for it, fails with the
+ * daemon's reason rather than opening a board that is another worktree's.
+ */
 const openBoard = (resolved: WorktreeSession) =>
   Effect.gen(function*() {
     const settings = yield* ensureDaemon;
-    yield* trackWorktree({ settings, path: resolved.worktree.path });
+    const key = yield* boardKey({ settings, path: resolved.worktree.path });
     const address = yield* publicOrigin(settings.port);
-    const url = `${address.origin}/w/${encodeWorktreeKey(resolved.worktree.name)}/`;
+    const url = `${address.origin}/w/${key}/`;
     yield* Console.log(url);
     // The URL is the whole of this command's answer, so it keeps stdout to
     // itself; why it is this address and not the nicer one is a remark beside

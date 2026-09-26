@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
@@ -45,7 +45,7 @@ import type {
   WorktreeRank,
   WorktreeSummary,
 } from '../contract.ts';
-import { DaemonInfoSchema, daemonPort } from '../contract.ts';
+import { DaemonInfoSchema, daemonPort, WorktreeSummarySchema } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { renameEpic, setWorktreeEpic } from './epic.ts';
@@ -73,6 +73,7 @@ import { aliasHostnames } from './portless.ts';
 import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
+import { gitRepositoryVariables } from './git.ts';
 import {
   checkoutIn,
   encodeWorktreeKey,
@@ -142,6 +143,8 @@ const DaemonStateSchema = Schema.Struct({
 });
 const DaemonStateJson = Schema.fromJsonString(DaemonStateSchema);
 const DaemonInfoJson = Schema.fromJsonString(DaemonInfoSchema);
+const WorktreeRowsJson = WorktreeSummarySchema.pipe(Schema.Array, Schema.fromJsonString);
+const DaemonRefusalJson = Schema.fromJsonString(Schema.Struct({ error: Schema.String }));
 type DaemonState = typeof DaemonStateSchema.Type;
 
 export const sourceStamp = Effect.gen(function*() {
@@ -262,21 +265,7 @@ const dropped = {
     'CODEX_THREAD_ID',
     'CODEX_VERSION',
     'CODEX_PERMISSION_PROFILE',
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_CONFIG',
-    'GIT_CONFIG_PARAMETERS',
-    'GIT_CONFIG_COUNT',
-    'GIT_OBJECT_DIRECTORY',
-    'GIT_DIR',
-    'GIT_WORK_TREE',
-    'GIT_IMPLICIT_WORK_TREE',
-    'GIT_GRAFT_FILE',
-    'GIT_INDEX_FILE',
-    'GIT_NO_REPLACE_OBJECTS',
-    'GIT_REPLACE_REF_BASE',
-    'GIT_PREFIX',
-    'GIT_SHALLOW_FILE',
-    'GIT_COMMON_DIR',
+    ...gitRepositoryVariables,
   ]),
   prefixes: ['CLAUDE', 'ANTHROPIC', 'CMUX_', 'CODEX_APPLY_PATCH_', 'CODEX_SANDBOX', 'CODEX_NETWORK_', 'CODEX_MANAGED_'],
   except: new Set(['CLAUDE_CONFIG_DIR', 'CMUX_SOCKET_PASSWORD', 'CMUX_SOCKET_CAPABILITY']),
@@ -490,6 +479,39 @@ export const trackWorktree = (input: { readonly settings: DaemonSettings; readon
     Effect.provide(FetchHttpClient.layer),
     Effect.mapError((cause) => new DaemonError({ message: 'The daemon refused the worktree.', cause })),
   );
+
+/**
+ * Take a worktree on and answer the key its board is served under, read from
+ * the worktree's own row in the rows the daemon answers with. A worktree the
+ * daemon serves no board for, as when another took its name first, fails with
+ * the daemon's reason, so `open` never prints the address of a board that is
+ * another worktree's.
+ */
+export const boardKey = (input: { readonly settings: DaemonSettings; readonly path: string }) =>
+  Effect.gen(function*() {
+    const response = yield* trackWorktree(input);
+    const text = yield* response.text.pipe(
+      Effect.mapError((cause) => new DaemonError({ message: 'The daemon’s answer to the take-on could not be read.', cause })),
+    );
+    if (response.status !== 200) {
+      const refused = yield* Schema.decodeEffect(DaemonRefusalJson)(text).pipe(Effect.option);
+      return yield* new DaemonError({
+        message: Option.isSome(refused) ? refused.value.error : `The daemon refused the take-on with ${response.status}.`,
+      });
+    }
+    const rows = yield* Schema.decodeEffect(WorktreeRowsJson)(text).pipe(
+      Effect.mapError((cause) => new DaemonError({ message: 'The daemon answered the take-on with something other than its rows.', cause })),
+    );
+    const row = rows.find((candidate) => candidate.path === input.path);
+    if (row === undefined) {
+      return yield* new DaemonError({
+        message: `The daemon did not take ${input.path} on: its .session is a link rather than a directory of its own, ` +
+          `or Git refused it, which ${input.settings.logPath} says.`,
+      });
+    }
+    if (row.conflict !== null) return yield* new DaemonError({ message: row.conflict });
+    return row.key;
+  });
 
 /** macOS opens the board; everywhere else the printed URL is the whole story. */
 export const openInBrowser = (url: string) =>
@@ -941,6 +963,14 @@ export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
   const startedAt = DateTime.formatIso(await Effect.runPromise(DateTime.now));
   const tracked = new Map<string, Tracked>();
+  /**
+   * The paths held until Git answers, each with Git's line: ones the state
+   * file or a take-on named that Git could not be asked about, or would not
+   * answer for, as when it cannot run. They stay in the state file, are served
+   * as rows no repository holds, and are asked about again at every take-on
+   * and rescan. A path Git refuses is not held, nor one whose session is gone.
+   */
+  const unresolved = new Map<string, string>();
 
   // The agents overlay is derived, never owned: one listing for every tracked
   // worktree, kept only so a board and the index can read the same answer.
@@ -1022,7 +1052,9 @@ export const runDaemon = async () => {
    */
   const persistence = Semaphore.makeUnsafe(1);
   const persist = () =>
-    runNode(persistence.withPermit(Effect.suspend(() => writeState(settings, { worktrees: [...tracked.keys()] }))));
+    runNode(persistence.withPermit(Effect.suspend(() =>
+      writeState(settings, { worktrees: [...tracked.keys(), ...unresolved.keys()] })
+    )));
 
   /**
    * One trailer pass for a tracked worktree. It announces on the worktree's own
@@ -1340,18 +1372,22 @@ export const runDaemon = async () => {
   };
 
   /**
-   * Every tracked worktree, re-asked at once. The watchers above push the
-   * common case; this is what makes the answer right whatever happened, and
-   * the index is the one read that would otherwise show a row that is gone.
+   * Every tracked worktree, and every path held until Git answers, re-asked
+   * at once. The watchers above push the common case; this is what makes the
+   * answer right whatever happened, and the index is the one read that would
+   * otherwise show a row that is gone.
    */
   const sweepTracked = async () => {
-    const checked = await mapWorktrees([...tracked.keys()], async (path) => ({
+    const checked = await mapWorktrees([...tracked.keys(), ...unresolved.keys()], async (path) => ({
       path,
       gone: !(await isTrackable(path)),
     }));
     const gone = checked.filter((entry) => entry.gone);
     if (gone.length === 0) return;
-    for (const entry of gone) untrack(entry.path);
+    for (const entry of gone) {
+      untrack(entry.path);
+      unresolved.delete(entry.path);
+    }
     await persist();
     worktreeEvents.changed();
   };
@@ -1359,38 +1395,51 @@ export const runDaemon = async () => {
   /**
    * Resolve every new path at once, then take them in order. A path arrives
    * from a local client, the state file or Git's listing, so the daemon only
-   * ever tracks what it can serve: a path Git cannot place, such as a linked
-   * worktree moved by hand, is left out with the reason on the log, and never
-   * keeps the others out or the daemon from starting.
+   * ever tracks what it can serve. A path Git refuses, such as a linked
+   * worktree moved by hand, is let go, with the reason on the log. A path Git
+   * could not answer for is held with Git's line, which keeps it in the state
+   * file, and is asked about again at the next take-on or rescan. Neither
+   * keeps the other paths out, or the daemon from starting.
    */
   const track = async (paths: ReadonlyArray<string>) => {
     const fresh: string[] = [];
     for (const path of new Set(paths.map((entry) => resolve(entry)))) {
       if (!tracked.has(path)) fresh.push(path);
     }
-    const checked = await mapWorktrees(fresh, async (path) => ({
-      path,
-      usable: await isTrackable(path),
-    }));
+    const checked = await mapWorktrees(fresh, async (path) => ({ path, usable: await isTrackable(path) }));
     const usable: string[] = [];
-    for (const entry of checked) if (entry.usable) usable.push(entry.path);
+    for (const entry of checked) {
+      if (entry.usable) usable.push(entry.path);
+      else unresolved.delete(entry.path);
+    }
     const described = await mapWorktrees(usable, async (path) => {
       const resolved = await runNode(resolveWorktreeSession(path).pipe(Effect.result));
-      if (Result.isFailure(resolved)) {
-        console.error(`${path}: not tracked: ${resolved.failure.message}`);
-        return [];
+      if (Result.isSuccess(resolved)) {
+        const session = resolved.success;
+        return [{ path, session, repository: await runNode(makeRepository(session.directory)) }];
       }
-      const session = resolved.success;
-      return [{ path, session, repository: await runNode(makeRepository(session.directory)) }];
+      const { failure } = resolved;
+      if (failure.kind === 'refused') {
+        unresolved.delete(path);
+        console.error(`${path}: not tracked: ${failure.message}`);
+      } else {
+        unresolved.set(path, failure.message);
+        console.error(`${path}: held until Git answers: ${failure.message}`);
+      }
+      return [];
     });
-    for (const entry of described.flat()) insert(entry.path, entry.session, entry.repository);
+    for (const entry of described.flat()) {
+      unresolved.delete(entry.path);
+      insert(entry.path, entry.session, entry.repository);
+    }
     syncParentWatchers();
   };
 
   /**
-   * Git knows the siblings, but for a main worktree it lists by its Git
-   * directory, which only a command run in it takes on; a worktree joins the
-   * index once it has a session.
+   * Git knows the siblings, all but the main worktree of a submodule or a
+   * separate Git directory, which Git lists by that directory, so only a
+   * command run in it takes it on. A worktree joins the index once it has a
+   * session, and every path held until Git answers is asked about again.
    */
   const discover = async () => {
     const known = [...tracked.values()];
@@ -1410,7 +1459,7 @@ export const runDaemon = async () => {
     }));
     const ready: string[] = [];
     for (const candidate of sessions) if (candidate.ready) ready.push(candidate.path);
-    await track(ready);
+    await track([...unresolved.keys(), ...ready]);
     await persist();
   };
 
@@ -1439,6 +1488,7 @@ export const runDaemon = async () => {
       trailerProblems: entry.trailerProblems,
       ...facts,
       main: entry.session.worktree.main,
+      resolved: true,
       repository: repositoryIn({ listings, session: entry.session }),
     };
     try {
@@ -1473,13 +1523,48 @@ export const runDaemon = async () => {
     }
   };
 
-  /** Every row of the index, from one `git worktree list` per repository rather than one per row. */
+  /**
+   * The row of a path held until Git answers: Git's line as why it is not
+   * served, and the agents in it, but nothing only Git could say, so it names
+   * no repository, and it is no folder outside Git either.
+   */
+  const unresolvedRow = async ([path, line]: readonly [string, string]): Promise<WorktreeSummary> => {
+    const overlay = agents.byPath.get(path) ?? await runNode(notListed);
+    const name = basename(path);
+    return {
+      key: encodeWorktreeKey(name),
+      name,
+      path,
+      branch: null,
+      detached: false,
+      executing: null,
+      counts: { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 },
+      lastChange: null,
+      activity: activityOf(overlay, null),
+      conflict: line,
+      agents: overlay,
+      trailerProblems: [],
+      epic: null,
+      epicProblem: null,
+      rank: null,
+      rankProblem: null,
+      main: false,
+      resolved: false,
+      repository: null,
+    };
+  };
+
+  /**
+   * Every row of the index, from one `git worktree list` per repository rather
+   * than one per row, and a row for every path held until Git answers.
+   */
   const summaries = async () => {
     const rows = [...tracked.values()];
     const listings = await runNode(
       listRepositories({ sessions: rows.map((entry) => entry.session), concurrency: worktreeConcurrency }),
     );
-    return await mapWorktrees(rows, (entry) => summarize(entry, listings));
+    const served = await mapWorktrees(rows, (entry) => summarize(entry, listings));
+    return [...served, ...(await mapWorktrees([...unresolved], unresolvedRow))];
   };
 
   const handlerFor = async (entry: Tracked) => {

@@ -1,19 +1,10 @@
 import { basename, dirname, join, resolve } from 'node:path';
-import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { Repository } from '../contract.ts';
-import { capture } from './command.ts';
+import { type Checkout, type GitWorktree, listGitWorktrees, locateGit, WorktreeError } from './git.ts';
 import { makeRepository } from './repository.ts';
-
-/** What a worktree has checked out, as Git lists it. */
-export type Checkout = {
-  /** The branch; null on a detached HEAD, and outside Git. */
-  readonly branch: string | null;
-  /** True when Git has a commit checked out rather than a branch. */
-  readonly detached: boolean;
-};
 
 /** Outside Git nothing is checked out. */
 const outsideGit: Checkout = { branch: null, detached: false };
@@ -49,58 +40,6 @@ export type WorktreeSession = {
   readonly git: { readonly directory: string; readonly common: string } | null;
 };
 
-export class WorktreeError extends Data.TaggedError('WorktreeError')<{
-  readonly message: string;
-  readonly cause?: unknown;
-}> {}
-
-type GitWorktree = Checkout & {
-  readonly path: string;
-  /** Git marks the entry bare: a bare repository's own directory, which it lists first and which is no worktree. */
-  readonly bare: boolean;
-};
-
-const runGit = (workingDirectory: string, args: ReadonlyArray<string>) =>
-  capture({ command: 'git', args, cwd: workingDirectory }).pipe(
-    Effect.mapError(
-      (cause) => new WorktreeError({ message: 'Could not inspect the Git worktree.', cause }),
-    ),
-  );
-
-/**
- * Every worktree Git knows about, as seen from one of them, or from the Git
- * directory they share.
- */
-export const listGitWorktrees = (workingDirectory: string) =>
-  Effect.gen(function*() {
-    const result = yield* runGit(workingDirectory, ['worktree', 'list', '--porcelain', '-z']);
-    if (result.exitCode !== 0) {
-      return yield* new WorktreeError({
-        message: result.stderr || 'Could not list Git worktrees.',
-      });
-    }
-    return yield* Effect.try({
-      try: () =>
-        result.stdout
-          .split('\0\0')
-          .filter((record) => record !== '')
-          .map((record): GitWorktree => {
-            const fields = record.split('\0');
-            const worktree = fields.find((field) => field.startsWith('worktree '));
-            const branch = fields.find((field) => field.startsWith('branch refs/heads/'));
-            if (worktree === undefined) throw new Error('Missing worktree field.');
-            return {
-              path: resolve(worktree.slice('worktree '.length)),
-              branch: branch?.slice('branch refs/heads/'.length) ?? null,
-              detached: fields.includes('detached'),
-              bare: fields.includes('bare'),
-            };
-          }),
-      catch: (cause) =>
-        new WorktreeError({ message: 'Git returned a malformed worktree list.', cause }),
-    });
-  });
-
 /** A repository's worktrees as Git lists them, or why it could not. */
 export type RepositoryListing = Result.Result<ReadonlyArray<GitWorktree>, WorktreeError>;
 
@@ -125,16 +64,22 @@ export const listRepositories = (input: {
 
 /**
  * A worktree's own entry in its repository's listing. Git lists the main
- * worktree first, by its own path or by its Git directory's, so the main's
- * entry is the first whatever path it carries. Any other is found by its path,
- * and is missing when the repository's record of it names another, as it does
- * once the worktree is moved by hand.
+ * worktree first, by its own path, or by its Git directory's when the two are
+ * kept apart, so the main's entry is the first when it carries one of those
+ * two paths, and there is none when it carries another. Any other worktree is
+ * found by its path, and is missing when the repository's record of it names
+ * another, as it does once the worktree is moved by hand.
  */
-const entryIn = (
-  worktrees: ReadonlyArray<GitWorktree>,
-  worktree: { readonly main: boolean; readonly path: string },
-): GitWorktree | undefined =>
-  worktree.main ? worktrees[0] : worktrees.find((candidate) => candidate.path === worktree.path);
+const entryIn = (input: {
+  readonly worktrees: ReadonlyArray<GitWorktree>;
+  readonly worktree: { readonly main: boolean; readonly path: string };
+  readonly common: string;
+}): GitWorktree | undefined => {
+  const { worktrees, worktree } = input;
+  if (!worktree.main) return worktrees.find((candidate) => candidate.path === worktree.path);
+  const [first] = worktrees;
+  return first !== undefined && (first.path === worktree.path || first.path === resolve(input.common)) ? first : undefined;
+};
 
 /**
  * What a session's worktree has checked out, as its repository's listing
@@ -148,11 +93,11 @@ export const checkoutIn = (input: {
   const { git, worktree } = input.session;
   if (git === null) return Result.succeed(outsideGit);
   const listing = input.listings.get(git.common) ??
-    Result.fail(new WorktreeError({ message: 'Git was not asked about this worktree’s repository.' }));
+    Result.fail(new WorktreeError({ kind: 'unanswered', message: 'Git was not asked about this worktree’s repository.' }));
   return listing.pipe(Result.flatMap((worktrees) => {
-    const current = entryIn(worktrees, worktree);
+    const current = entryIn({ worktrees, worktree, common: git.common });
     return current === undefined
-      ? Result.fail(new WorktreeError({ message: 'The served path is no longer a registered Git worktree.' }))
+      ? Result.fail(new WorktreeError({ kind: 'refused', message: 'The served path is no longer a registered Git worktree.' }))
       : Result.succeed({ branch: current.branch, detached: current.detached });
   }));
 };
@@ -190,28 +135,32 @@ export const checkoutOf = (session: WorktreeSession) =>
   );
 
 /**
- * The commit a worktree's HEAD names, abbreviated the way Git abbreviates it,
- * or null when there is none to name: outside Git, or before the first commit.
+ * A worktree's name: its folder's, and for a linked worktree whose folder has
+ * the name of what Git lists first, its parent folder's before it.
  */
-export const headCommit = (worktreePath: string) =>
-  runGit(worktreePath, ['rev-parse', '--short', '--verify', '--quiet', 'HEAD']).pipe(
-    Effect.map((result) => (result.exitCode === 0 && result.stdout !== '' ? result.stdout : null)),
-  );
+const nameOf = (input: { readonly main: boolean; readonly path: string; readonly first: string }) => {
+  const leaf = basename(input.path);
+  return !input.main && leaf === basename(input.first) ? `${basename(dirname(input.path))}/${leaf}` : leaf;
+};
 
 /**
- * Where Git puts a path: the worktree it belongs to, that worktree's own Git
- * state, and the state it shares with the repository's other worktrees. One
- * question, three answers, one per line, all absolute; null outside Git.
+ * Why a worktree is not in its repository's listing, in words that say what
+ * mends it: a linked worktree whose record names another path, or a main
+ * worktree whose Git directory Git lists at a third path, which only a
+ * `core.worktree` that names somewhere else leaves.
  */
-const locateGit = (start: string) =>
-  runGit(start, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-dir', '--git-common-dir']).pipe(
-    Effect.map((located) => {
-      const [topLevel, directory, common] = located.stdout.split('\n');
-      return located.exitCode !== 0 || topLevel === undefined || directory === undefined || common === undefined
-        ? null
-        : { topLevel, git: { directory, common } };
-    }),
-  );
+const notListed = (input: {
+  readonly main: boolean;
+  readonly path: string;
+  readonly first: GitWorktree | undefined;
+  readonly common: string;
+}) =>
+  new WorktreeError({
+    kind: 'refused',
+    message: input.main && input.first !== undefined
+      ? `Git lists no worktree at ${input.path}: its Git directory, ${input.common}, is the one Git lists at ${input.first.path}.`
+      : `Git lists no worktree at ${input.path}; \`git worktree repair\` run there mends one that was moved by hand.`,
+  });
 
 /**
  * The worktree a path belongs to, its session, and the name the daemon keys
@@ -221,7 +170,10 @@ const locateGit = (start: string) =>
  * its own when the directory is kept apart from it, as a submodule's or a
  * separate one is. The main keeps its folder's name and is the one never in
  * an epic. What Git lists first names the repository, and a linked worktree
- * whose folder shares that name takes its parent's before it.
+ * whose folder shares that name takes its parent's before it. It fails as
+ * `refused` where Git lists no worktree at the path or the path is inside a
+ * Git directory, and as `unanswered` where Git could not be asked or would
+ * not answer.
  */
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
@@ -240,22 +192,15 @@ export const resolveWorktreeSession = (input: string) =>
     }
 
     const worktreePath = resolve(located.topLevel);
-    const main = resolve(located.git.directory) === resolve(located.git.common);
+    const { common } = located.git;
+    const main = resolve(located.git.directory) === resolve(common);
     const worktrees = yield* listGitWorktrees(worktreePath);
-    const mainWorktree = worktrees[0];
-    const current = entryIn(worktrees, { main, path: worktreePath });
+    const [mainWorktree] = worktrees;
+    const current = entryIn({ worktrees, worktree: { main, path: worktreePath }, common });
     if (mainWorktree === undefined || current === undefined) {
-      return yield* new WorktreeError({
-        message: `Git lists no worktree at ${worktreePath}; \`git worktree repair\` run there mends one that was moved by hand.`,
-      });
+      return yield* notListed({ main, path: worktreePath, first: mainWorktree, common });
     }
-    const leaf = basename(worktreePath);
-    const name =
-      main
-        ? leaf
-        : leaf === basename(mainWorktree.path)
-          ? `${basename(dirname(worktreePath))}/${leaf}`
-          : leaf;
+    const name = nameOf({ main, path: worktreePath, first: mainWorktree.path });
 
     return {
       // Join only after Git identifies the lexical worktree. `.session` must not

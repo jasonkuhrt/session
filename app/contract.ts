@@ -623,9 +623,10 @@ export type Repository = {
    * worktree would be: a bare repository's, which Git marks bare, and the Git
    * directory of a submodule or a separate one, which it lists in the main
    * worktree's place unmarked. That directory is no worktree and holds no
-   * session, so the index heads the repository with its name alone, until
-   * the main worktree of a submodule or a separate Git directory has a
-   * session: that worktree's row heads it then, under the same name.
+   * session, so the index heads the repository with its name alone: always
+   * for a bare repository, and for a submodule or a separate Git directory
+   * until the daemon tracks its main worktree, which `session open` there
+   * does. That worktree's row heads it then, under its own name.
    */
   bare: boolean;
   /**
@@ -698,6 +699,15 @@ export type WorktreeSummary = {
   rankProblem: string | null;
   /** Whether this is its repository's main worktree, the one whose Git directory is the repository's own: the index draws it at the head of the repository's section. */
   main: boolean;
+  /**
+   * Whether Git answered where the worktree is. False for a path the daemon
+   * holds but Git could not be asked about, or would not answer for, as when
+   * it cannot run: its `conflict` is Git's line, and nothing only Git could
+   * say is known of it, so it is not `main`, names no repository and is no
+   * folder outside Git either. The index names it in a notice rather than
+   * drawing it in a section, until a take-on or a rescan asks again.
+   */
+  resolved: boolean;
   /** The repository the worktree belongs to, named by what Git lists first for it; null for a folder outside Git, which the index gives a section of its own. */
   repository: Repository | null;
 };
@@ -793,6 +803,7 @@ export const WorktreeSummarySchema = Schema.Struct({
   rank: Schema.NullOr(Schema.Int),
   rankProblem: Schema.NullOr(Schema.String),
   main: Schema.Boolean,
+  resolved: Schema.Boolean,
   repository: Schema.NullOr(RepositorySchema),
 });
 
