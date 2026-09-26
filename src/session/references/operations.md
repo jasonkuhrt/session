@@ -413,7 +413,9 @@ user asks for the board, not as a matter of course.
 
 One daemon serves every worktree, one process per user, on `127.0.0.1:53045`. Its
 state is `~/.local/state/session/daemon.json`, the worktrees it tracks, which
-the next daemon tracks again. It logs beside that file, in `daemon.log`. `open`
+the next daemon tracks again, all but one Git can no longer place, such as a
+linked worktree moved by hand, which it leaves out and names in its log. It logs
+beside that file, in `daemon.log`. `open`
 reuses a daemon that answers with a stamp matching the sources on disk. It
 replaces one started from other sources, stopping the old process first, and
 starts one when nothing answers, so a rebuilt board reaches every worktree at

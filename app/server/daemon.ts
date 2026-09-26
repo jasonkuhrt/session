@@ -1358,7 +1358,10 @@ export const runDaemon = async () => {
 
   /**
    * Resolve every new path at once, then take them in order. A path arrives
-   * from a local client, so the daemon only ever tracks what it can serve.
+   * from a local client, the state file or Git's listing, so the daemon only
+   * ever tracks what it can serve: a path Git cannot place, such as a linked
+   * worktree moved by hand, is left out with the reason on the log, and never
+   * keeps the others out or the daemon from starting.
    */
   const track = async (paths: ReadonlyArray<string>) => {
     const fresh: string[] = [];
@@ -1372,10 +1375,15 @@ export const runDaemon = async () => {
     const usable: string[] = [];
     for (const entry of checked) if (entry.usable) usable.push(entry.path);
     const described = await mapWorktrees(usable, async (path) => {
-      const session = await runNode(resolveWorktreeSession(path));
-      return { path, session, repository: await runNode(makeRepository(session.directory)) };
+      const resolved = await runNode(resolveWorktreeSession(path).pipe(Effect.result));
+      if (Result.isFailure(resolved)) {
+        console.error(`${path}: not tracked: ${resolved.failure.message}`);
+        return [];
+      }
+      const session = resolved.success;
+      return [{ path, session, repository: await runNode(makeRepository(session.directory)) }];
     });
-    for (const entry of described) insert(entry.path, entry.session, entry.repository);
+    for (const entry of described.flat()) insert(entry.path, entry.session, entry.repository);
     syncParentWatchers();
   };
 
