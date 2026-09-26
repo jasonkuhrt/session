@@ -715,7 +715,7 @@ export const EpicWriteSchema = Schema.Struct({
 });
 
 /**
- * What `POST /api/worktrees/epic/rename` takes: the epic by its name, and the
+ * What `POST /api/worktrees/rename` takes: the epic by its name, and the
  * name it takes. The daemon moves every tracked worktree in it, and tells from
  * the worktrees it tracks whether the name is new, when each keeps its rank,
  * or another epic's, when they merge and arrive unranked.

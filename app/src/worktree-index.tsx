@@ -149,20 +149,13 @@ export function WorktreeIndex() {
     commit({ epics: new Map(), placing: placement }, () => IndexApi.setOrder(placement).then(() => [], refused))
 
   /**
-   * Rename an epic, one request, since the daemon moves whoever is in it and
-   * tells from the worktrees it tracks whether the name is another epic's. It
-   * is drawn as the rows say, keeping every rank for a new name and merging
-   * unranked into an epic that has it, until the daemon's answer replaces it.
+   * Rename an epic, one request: the daemon moves whoever is in it and tells
+   * from the worktrees it tracks whether the name was another epic's, which
+   * the page does not guess at, so nothing moves until the rows read after it
+   * land.
    */
-  const rename = (from: string, to: string) => {
-    const shown = rows ?? []
-    const merging = shown.some((row) => !row.main && row.epic === to)
-    const members = shown.filter((row) => !row.main && row.epic === from)
-    return commit(
-      { epics: new Map(members.map((row) => [row.path, { epic: to, keepsRank: !merging }])), placing: null },
-      () => IndexApi.renameEpic({ from, to }).then(() => [], refused),
-    )
-  }
+  const rename = (from: string, to: string) =>
+    commit({ epics: new Map(), placing: null }, () => IndexApi.renameEpic({ from, to }).then(() => [], refused))
 
   const context: DragContext = {
     pullRequests,

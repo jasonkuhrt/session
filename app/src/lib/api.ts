@@ -219,7 +219,7 @@ export const IndexApi = {
    */
   renameEpic: (write: EpicRename) =>
     run(send(
-      HttpClientRequest.post('/api/worktrees/epic/rename').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+      HttpClientRequest.post('/api/worktrees/rename').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
       decodeRenamed,
     )),
 

@@ -1659,7 +1659,7 @@ export const runDaemon = async () => {
     ['/api/terminal', (request) => openResponse({ request, open: terminalAt })],
     ['/api/zed', (request) => openResponse({ request, open: zedAt })],
     ['/api/worktrees/epic', (request) => epicResponse({ request, write: setEpicAt })],
-    ['/api/worktrees/epic/rename', (request) => renameResponse({ request, write: renameAt })],
+    ['/api/worktrees/rename', (request) => renameResponse({ request, write: renameAt })],
     ['/api/worktrees/order', (request) => orderResponse({ request, write: setRankAt })],
   ]);
 

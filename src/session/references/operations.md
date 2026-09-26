@@ -242,15 +242,15 @@ it does not track or whose session has gone, which it never brings back. The
 watch on the session is what tells the index, as it is for a `join` in a
 terminal.
 
-The index renames an epic through `POST /api/worktrees/epic/rename {from, to}`,
-one request, since a rename is one act on the epic: under the lock its other
-writes take, the daemon moves every tracked worktree whose file names `from` to
-`to`, and tells from the worktrees it tracks which kind of rename it is. When no
-other tracked worktree names `to`, it is the same epic under another name, and
-every worktree keeps its rank. When one does, the two merge, and the worktrees
-that arrive join `to` unranked, after its ranked ones, whose ranks stay as they
-are. The worktrees naming `to` are read again just before the first write, so
-one that joined it meanwhile refuses the rename with 409, and each worktree is
+The index renames an epic through `POST /api/worktrees/rename {from, to}`, one
+request, since a rename is one act on the epic: under the lock its other writes
+take, the daemon moves every tracked worktree whose file names `from` to `to`,
+and tells from the worktrees it tracks which kind of rename it is. When no other
+tracked worktree names `to`, it is the same epic under another name, and every
+worktree keeps its rank. When one does, the two merge, and the worktrees that
+arrive join `to` unranked, after its ranked ones, whose ranks stay as they are.
+The worktrees naming `to` are read again just before the first write, so one
+that joined it meanwhile refuses the rename with 409, and each worktree is
 written against `from`, so one whose file changed since refuses its write with
 409 as well. A name the rules reject is refused with 400, and an epic no tracked
 worktree is in now with 409. It answers with the epic's name now and whether it
