@@ -10,6 +10,7 @@ session [-C <worktree-or-.session>] <command>
 
 init                       create whatever the session is missing and print it; for handing off to your editor
 check                      validate; prints "OK <revision>, <n> items" or "OK <revision>, empty", or the first error and exits 1
+brief                      what an agent reads first: check's line or its error, RULES.md, the newest ledger titles, ls; exits 0
 refresh [--previous F]     JSON path/hash inventory, and what it skipped
 ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, group, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
@@ -370,16 +371,96 @@ when an agent first writes there. `meta/` is scaffolded empty; `session join`
 and `session order` write its two facts, and a session without either is
 sound.
 
+## Read the brief
+
+`brief` prints what an agent reads before it acts, in the order it reads it,
+and nothing it would have to open an item for:
+
+- the line `check` prints, such as `OK <revision>, <n> items`, or `check`'s
+  first error in its place;
+- `RULES.md` as it is written, under `RULES.md:`, when the session has one the
+  board would link to;
+- the ten newest ledger entries under `Ledger, newest first:`, each the name of
+  its file without `.md`, as `log` names the entry it writes, then how many
+  older ones `ledger/` holds, such as `and 4 older in ledger/`, and the
+  listing's notice for any file it leaves out;
+- the items under `Items:`, as `ls` lists them.
+
+A part with nothing to show is left out, and a blank line comes between the
+others:
+
+```
+OK 49741b205065c15f6e603cd2519c8b6940408090402891d348318a00ed6b1689, 3 items
+
+RULES.md:
+# Rules
+
+- Jason stages and commits.
+
+Ledger, newest first:
+2026-09-26 16-17-30Z — The index is a stack of projects
+2026-09-26 15-02-11Z — Pivot to per-item evidence
+
+Items:
+SES-1  1-Triage/010-SES-1.md                   Candidate one
+SES-4  3-Batch/010-SES-4.md                    Waiting work
+SES-3  5-Execute/010-First batch/010-SES-3.md  Settled work
+```
+
+It only reads, as `check` does: nothing is scaffolded and no daemon hears of
+it, so loading the skill where there is no session leaves none behind. It exits
+0 whatever it finds, because the skill runs it as it loads, and a command that
+fails there stops the skill from loading. In a broken session the first line is
+`check`'s error and the rest is what can still be read: `RULES.md` and the
+ledger, which no stage holds, and the items whenever the stages load, as they
+do when what `check` refuses lies outside them, such as a stray file at the
+root. Where there is no session it prints one line,
+`No session: <path> does not exist.` A `.session` that is a link is refused
+with the sentence every command gives, and nothing is read through it. A
+mistake in the command itself, such as an operand, is a usage error like any
+other and exits 1.
+
+The first line's revision is the one `check` prints and every write checks, so
+a later `check` whose revision differs means an item file changed since. It is
+not what `refresh --previous` takes, which is an earlier refresh's output saved
+to a file: the brief is where an agent starts, and a refresh is how it follows
+what changes after.
+
+The skill loads the brief itself, with the line
+`` !`session -C "${CLAUDE_PROJECT_DIR}" brief` `` in `SKILL.md`. Whenever the
+skill is invoked, typed as a command or chosen by the model, Claude Code writes
+the project's directory in place of `${CLAUDE_PROJECT_DIR}`, runs the line
+there, and puts what it prints where the line was before the model reads the
+skill; it writes the session's own id wherever the skill says
+`${CLAUDE_SESSION_ID}` the same way. A command there that fails stops the skill
+with `Shell command failed for pattern …`, and nothing of the skill reaches the
+model. Output past the limit Claude Code puts on a command's output, which a
+29 KB brief stays under and a 40 KB one does not, reaches the model as its
+first 2 KB and the path of a file holding the rest; with no item body in it,
+only a long `RULES.md` makes a brief that long.
+
+Claude Code runs the line only as its permission rules allow, so `session` must
+be allowed for the brief to load without a prompt, as `"Bash(session *)"` in
+`permissions.allow` of `~/.claude/settings.json` allows it, or a rule that
+allows all of `Bash`. Where nothing allows it, a session that cannot ask, such
+as `claude -p`, refuses the line with `This command requires approval` and
+loads none of the skill.
+
+Codex reads `SKILL.md` as it is written and runs nothing in it, so a Codex
+agent sees the line as a command, and the sentence above it says to run
+`session brief` itself. The `$CODEX_THREAD_ID` the skill names a Codex agent by
+is the variable Codex sets in its shell to the thread's id.
+
 ## Refresh context
 
 `refresh` returns a JSON path/hash inventory and added, changed, and deleted
-paths. It does not return file contents. On the first refresh, read `RULES.md`
-when it exists, then the ledger, then the five stage records, and relevant
-supporting context. On later turns, compare inventories and read only changed
-relevant files; a new ledger entry arrives as an added path, which is how
-agents in one session hear from each other. Preserve the inventory in
-conversation context. For a deterministic comparison, pass a previous refresh
-output saved outside the session directory:
+paths. It does not return file contents. The brief is what an agent reads
+first, and a refresh is how it follows what changes after: the first refresh is
+the inventory later ones are compared with, and on each later turn the agent
+reads only the changed relevant files; a new ledger entry arrives as an added
+path, which is how agents in one session hear from each other. Preserve the
+inventory in conversation context. For a deterministic comparison, pass a
+previous refresh output saved outside the session directory:
 
 ```sh
 session refresh --previous /tmp/session-previous.json

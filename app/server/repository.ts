@@ -1425,6 +1425,18 @@ export const makeRepository = (directory: string) =>
     );
 
     /**
+     * What `RULES.md` says, read as the board would serve it, or null when the
+     * session holds none the board would link to. It reads no stage, so a
+     * session whose items do not load still has its rules read.
+     */
+    const rules = semaphore.withPermit(
+      Effect.gen(function*() {
+        if (!(yield* hasRules)) return null;
+        return yield* fs.readFileString(yield* servedFile(rulesFile));
+      }).pipe(Effect.mapError(asRepositoryError)),
+    );
+
+    /**
      * `context/` for the board, depth first, each directory right before what
      * it holds, and the same entries refresh reads there: a directory named
      * `archive` or `ignore` is an ordinary one, and only a link into the root's
@@ -1852,6 +1864,7 @@ export const makeRepository = (directory: string) =>
       lastChange,
       servedFile,
       ledgerListing,
+      rules,
       contextListing,
       archiveListing,
       appendLedger,
