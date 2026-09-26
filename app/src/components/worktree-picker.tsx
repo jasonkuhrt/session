@@ -1,8 +1,8 @@
-import * as React from 'react'
+import { useQuery } from '@tanstack/react-query'
 
-import type { Session, WorktreeSummary } from '../../contract'
-import { IndexApi } from '../lib/api'
+import type { Session } from '../../contract'
 import { checkoutLabel } from '../lib/format'
+import { reads } from '../lib/reads'
 import { cn } from '../lib/utils'
 import { useTip } from './tip'
 import { Button } from './ui/button'
@@ -64,24 +64,12 @@ const matches = (option: Option, query: string) => {
  * own read, which is newer than the index's whenever the two differ.
  */
 export function WorktreePicker({ current }: { current: NonNullable<Session['worktree']> }) {
-  const [worktrees, setWorktrees] = React.useState<readonly WorktreeSummary[] | null>(null)
-  const tip = useTip()
-
   // The registry of served worktrees lives at the root whichever page is open.
-  // It is the picker's own concern, so no surface has to fetch it to have one.
-  React.useEffect(() => {
-    const controller = new AbortController()
-    const load = async () => {
-      try {
-        const next = await IndexApi.read(controller.signal)
-        if (!controller.signal.aborted) setWorktrees(next)
-      } catch {
-        // Nothing to say: the header falls back to the plain name and branch.
-      }
-    }
-    void load()
-    return () => controller.abort()
-  }, [])
+  // It is the picker's own concern, so no surface has to fetch it to have one,
+  // and it is read once: a failed read says nothing, and the header falls back
+  // to the plain name and branch.
+  const worktrees = useQuery(reads.worktrees()).data
+  const tip = useTip()
 
   const options: Option[] = (worktrees ?? [])
     .filter((row) => row.conflict === null)

@@ -2,7 +2,7 @@ import { Archive, FolderTree, Gavel, type LucideIcon, ScrollText } from 'lucide-
 
 import { rulesFile } from '../../contract'
 import type { Listing } from '../lib/base'
-import { filePageHref, listingHref } from '../lib/base'
+import { filePageHref, listingHref, useBoardPath } from '../lib/base'
 import { listingMeta } from '../lib/listings'
 import { Tip } from './tip'
 import { Button } from './ui/button'
@@ -23,16 +23,17 @@ const rulesMeaning =
  * place that says what needs you.
  */
 export function PageLinks({ rules }: { rules: boolean }) {
+  const board = useBoardPath()
   return (
     <nav aria-label="The session’s pages" className="flex items-center gap-1">
-      {rules ? <PageLink icon={Gavel} label="Rules" meaning={rulesMeaning} href={filePageHref(rulesFile)} /> : null}
+      {rules ? <PageLink icon={Gavel} label="Rules" meaning={rulesMeaning} href={filePageHref({ board, path: rulesFile })} /> : null}
       {listings.map((listing) => (
         <PageLink
           key={listing}
           icon={icons[listing]}
           label={listingMeta[listing].label}
           meaning={listingMeta[listing].meaning}
-          href={listingHref(listing)}
+          href={listingHref({ board, listing })}
         />
       ))}
     </nav>

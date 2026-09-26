@@ -1,4 +1,4 @@
-import { basename, extname, join, resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -87,6 +87,49 @@ const json = (value: unknown, init?: ResponseInit) =>
     ...init,
     headers: { 'cache-control': 'no-store', ...init?.headers },
   });
+
+/**
+ * The shell the build prerendered, which is every page of the app: the index
+ * and each page of a board are this one document, and its script draws the
+ * page the address names. It goes out `no-store`, as every API answer does,
+ * because it names the build's hashed assets, which the next build deletes.
+ */
+const shellResponse = async ({ shell, method }: {
+  /** The shell's path on disk. */
+  readonly shell: string;
+  readonly method: string;
+}): Promise<Response> => {
+  const page = file(shell);
+  if (!(await page.exists())) return json({ error: 'Not found.' }, { status: 404 });
+  return new Response(method === 'HEAD' ? null : page, {
+    headers: { 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' },
+  });
+};
+
+/**
+ * What the root serves outside its API: a file of the build, and the shell
+ * for a path without a dot, which is one of the app's pages. An API the root
+ * does not have is an error, never the app's page, as it is under a board, so
+ * the two answer an unknown API path alike. Nothing outside the build is served.
+ */
+export const staticResponse = async ({ directory, shell, url, method }: {
+  /** Where the build's files are, which is everything the root serves from disk. */
+  readonly directory: string;
+  /** The shell's path on disk. */
+  readonly shell: string;
+  readonly url: URL;
+  readonly method: string;
+}): Promise<Response> => {
+  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, { status: 405 });
+  if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
+  const requested = url.pathname.slice(1);
+  if (!requested.includes('.')) return await shellResponse({ shell, method });
+  const path = resolve(directory, requested);
+  if (path !== directory && !path.startsWith(`${directory}/`)) return json({ error: 'Not found.' }, { status: 404 });
+  const candidate = file(path);
+  if (!(await candidate.exists())) return json({ error: 'Not found.' }, { status: 404 });
+  return method === 'HEAD' ? new Response(null) : new Response(candidate);
+};
 
 const errorResponse = (error: unknown): Response => {
   if (error instanceof RepositoryError || error instanceof SessionError) {
@@ -293,7 +336,8 @@ export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => 
  */
 export const makeRequestHandler = (options: {
   readonly repository: SessionRepository;
-  readonly distDirectory: string;
+  /** The shell the build prerendered, which every page of the board is. */
+  readonly shell: string;
   /** The worktree the board belongs to, as the daemon resolved it when it began tracking it. */
   readonly session: WorktreeSession;
   /** Pushed on every write under the worktree's `.session`. */
@@ -329,7 +373,6 @@ export const makeRequestHandler = (options: {
   Effect.gen(function*() {
     const run = Effect.runPromiseWith(yield* Effect.context<ChildProcessSpawner>());
     const { repository } = options;
-    const distDirectory = resolve(options.distDirectory);
     // The name and path are fixed while the worktree is tracked; what it has
     // checked out is read again with every session read.
     const attachWorktree = async (session: Session): Promise<Session> => {
@@ -440,24 +483,11 @@ export const makeRequestHandler = (options: {
         // An API a board does not have is an error, never the app's page.
         if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
 
-        const requestedPath = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-        const staticPath = resolve(distDirectory, requestedPath);
-        if (staticPath !== distDirectory && !staticPath.startsWith(`${distDirectory}/`)) {
-          return json({ error: 'Not found.' }, { status: 404 });
-        }
-        let staticFile = file(staticPath);
-        // A page nested under the board (`item/<ID>`, `file/<path>`) resolves
-        // `./app.js` against its own directory. The bundle is one flat set of
-        // files at the root of dist, so a nested asset is that same file;
-        // `basename` is what keeps this from reaching anywhere else.
-        if (!(await staticFile.exists()) && requestedPath.includes('/')) {
-          staticFile = file(join(distDirectory, basename(requestedPath)));
-        }
-        // Every other path is one of the app's pages, whatever it holds: an item
-        // id or a file's path can carry a dot, and gets the page all the same.
-        if (!(await staticFile.exists())) staticFile = file(join(distDirectory, 'index.html'));
-        if (!(await staticFile.exists())) return json({ error: 'Not found.' }, { status: 404 });
-        return request.method === 'HEAD' ? new Response(null) : new Response(staticFile);
+        // Every other path is one of the board's pages, whatever it holds: an
+        // item id or a file's path can carry a dot, and gets the page all the
+        // same. The page's assets are absolute, under the root's `/assets/`,
+        // so nothing is served from under a board but its API and its files.
+        return await shellResponse({ shell: options.shell, method: request.method });
       } catch (error) {
         return errorResponse(error);
       }

@@ -3,14 +3,13 @@ import { BoardPageFrame, ListingEmpty, ListingNotices, PageLoading } from './com
 import { Markdown } from './components/markdown'
 import { useTip } from './components/tip'
 import { Card, CardContent } from './components/ui/card'
-import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
+import { problemOf, worktreeOf } from './lib/api'
+import { useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
 import { listingMeta } from './lib/listings'
-
-/** The page reads where it stands and the ledger's entries together, so the two never disagree. */
-const readLedger = (signal: AbortSignal) => Promise.all([readPlace(signal), SessionApi.ledger(signal)])
+import { reads } from './lib/reads'
 
 /** What each key of an entry says, beside its value. */
 const keyMeaning = {
@@ -38,7 +37,9 @@ const keysOf = (entry: LedgerEntry) =>
  */
 export function LedgerPage() {
   const now = useNow()
-  const { value, error } = useFollowed(readLedger)
+  const board = useBoardPath()
+  // Where the page stands and the ledger's entries are read together, so the two never disagree.
+  const { value, error } = useFollowed({ board, read: reads.ledger(board) })
   const [place, ledger] = value ?? [null, null]
   return (
     <BoardPageFrame

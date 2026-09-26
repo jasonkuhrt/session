@@ -60,8 +60,18 @@ const write = (settings: Settings): string | null =>
     onFailure: (cause) => `The change could not be saved, so it lasts until this page reloads: ${reasonOf(cause)}`,
   })
 
-let current = read()
+/**
+ * The settings as this page has them, read from storage when they are first
+ * asked for. Nothing is read when the module loads: the build's prerender
+ * loads it where there is no browser.
+ */
+let current: SettingsState | null = null
 const listeners = new Set<() => void>()
+
+const snapshot = () => {
+  current ??= read()
+  return current
+}
 
 const publish = (next: SettingsState) => {
   current = next
@@ -70,24 +80,35 @@ const publish = (next: SettingsState) => {
 
 // Another tab's change arrives as a storage event, and so does storage being
 // cleared, which names no key.
-window.addEventListener('storage', (event) => {
+const onStorage = (event: StorageEvent) => {
   if (event.key === storageKey || event.key === null) publish(read())
-})
+}
 
+let listening = false
+
+/**
+ * The first subscriber starts listening for other tabs, for as long as the
+ * page lives, and reads the settings again, since a tab may have changed them
+ * between the first draw and this. Listening starts here rather than when the
+ * module loads, which the build's prerender does where there is no window.
+ */
 const subscribe = (listener: () => void) => {
+  if (!listening) {
+    listening = true
+    window.addEventListener('storage', onStorage)
+    current = read()
+  }
   listeners.add(listener)
   return () => {
     listeners.delete(listener)
   }
 }
 
-const snapshot = () => current
-
 /** The settings as this page has them, kept current with every tab of this address. */
 export const useSettings = (): SettingsState => React.useSyncExternalStore(subscribe, snapshot)
 
 /** Change settings, on this page and in every other page of this address. */
 export const changeSettings = (change: Partial<Settings>) => {
-  const settings = { ...current.settings, ...change }
+  const settings = { ...snapshot().settings, ...change }
   publish({ settings, problem: write(settings) })
 }

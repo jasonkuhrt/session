@@ -1,7 +1,8 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
-import { eventsUrl, IndexApi } from './api'
-import { useNewestRead } from './newest-read'
+import { reads, reread } from './reads'
+import { useStream } from './stream'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : null)
 
@@ -9,6 +10,9 @@ const rowsProblem = (error: unknown) => reasonOf(error) ?? 'Could not load the w
 
 const pullRequestsProblem = (error: unknown) =>
   `The pull requests could not be read: ${reasonOf(error) ?? 'the read failed'}`
+
+/** The events the index listens for, which are the ones a drag holds. */
+const events = ['agents', 'worktrees', 'pull-requests'] as const
 
 /**
  * What the index shows, as the daemon last reported it: a row for every
@@ -33,69 +37,28 @@ const pullRequestsProblem = (error: unknown) =>
  * at pickup for as long as a card is held.
  */
 export function useTrackedWorktrees({ held }: { readonly held: boolean }) {
-  const rows = useNewestRead({ read: IndexApi.read, describe: rowsProblem })
-  const pullRequests = useNewestRead({ read: IndexApi.pullRequests, describe: pullRequestsProblem })
-  const loadRows = rows.load
-  const loadPullRequests = pullRequests.load
+  const client = useQueryClient()
+  const rows = useQuery(reads.worktrees())
+  const pullRequests = useQuery(reads.pullRequests())
 
-  React.useEffect(() => {
-    const controller = new AbortController()
-    void loadRows(controller.signal)
-    void loadPullRequests(controller.signal)
-    return () => controller.abort()
-  }, [loadRows, loadPullRequests])
+  const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
+  const readPullRequests = React.useCallback(
+    () => reread({ client, queryKey: reads.pullRequests().queryKey }),
+    [client],
+  )
 
-  usePushedReads({ held, loadRows, loadPullRequests })
+  useStream({
+    board: '',
+    on: { agents: readRows, worktrees: readRows, 'pull-requests': readPullRequests },
+    hold: { held, events, release: () => Promise.all([readRows(), readPullRequests()]) },
+  })
 
   return {
-    rows: rows.answer,
-    notice: rows.problem,
-    pullRequests: pullRequests.answer ?? {},
-    pullRequestsNotice: pullRequests.problem,
+    rows: rows.data ?? null,
+    notice: rows.error === null ? null : rowsProblem(rows.error),
+    pullRequests: pullRequests.data ?? {},
+    pullRequestsNotice: pullRequests.error === null ? null : pullRequestsProblem(pullRequests.error),
     /** Reads the rows now, whether or not reads are held: what a write does once it has landed. */
-    reload: loadRows,
+    reload: readRows,
   }
-}
-
-/**
- * The reads the daemon's pushes ask for, each when it is pushed, or, while
- * `held`, remembered and made once when it is not.
- */
-function usePushedReads({ held, loadRows, loadPullRequests }: {
-  readonly held: boolean
-  readonly loadRows: () => Promise<void>
-  readonly loadPullRequests: () => Promise<void>
-}) {
-  const heldRef = React.useRef(held)
-  const missedRef = React.useRef(false)
-
-  React.useEffect(() => {
-    const source = new EventSource(eventsUrl(['agents', 'worktrees', 'pull-requests']))
-    const dropped = { value: false }
-    const unlessHeld = (read: () => void) => () => {
-      if (heldRef.current) missedRef.current = true
-      else read()
-    }
-    const refetchRows = unlessHeld(() => void loadRows())
-    const refetchPullRequests = unlessHeld(() => void loadPullRequests())
-    source.addEventListener('agents', refetchRows)
-    source.addEventListener('worktrees', refetchRows)
-    source.addEventListener('pull-requests', refetchPullRequests)
-    source.addEventListener('error', () => { dropped.value = true })
-    source.addEventListener('open', () => {
-      if (!dropped.value) return
-      dropped.value = false
-      refetchRows()
-      refetchPullRequests()
-    })
-    return () => source.close()
-  }, [loadRows, loadPullRequests])
-
-  React.useEffect(() => {
-    heldRef.current = held
-    if (held || !missedRef.current) return
-    missedRef.current = false
-    void loadRows()
-    void loadPullRequests()
-  }, [held, loadRows, loadPullRequests])
 }

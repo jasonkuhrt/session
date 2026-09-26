@@ -1,70 +1,91 @@
+import { useParams } from '@tanstack/react-router'
+import { Option, Schema } from 'effect'
+
+import { encodeWorktreeKey } from '../../contract'
+
 /**
  * The daemon serves the index at `/`, each board at `/w/<key>/`, and the
  * board's pages under it: one item at `item/<ID>`, the session's ledger,
  * context and archive at `ledger`, `context` and `archive`, and one file of
- * the session at `file/<path>`. The key is a worktree name and may hold more
- * than one segment. One bundle serves all of them, so requests, Markdown links
- * and the event stream hang off the board's prefix whichever page is open.
+ * the session at `file/<path>`. The key is a worktree's name, encoded segment
+ * by segment, and may hold more than one segment. A board's requests, its
+ * Markdown links and its event stream hang off its prefix whichever of its
+ * pages is open.
  */
-const pathname = window.location.pathname
 
 /** The three listings a board serves beside its lanes, by the name of their page. */
 export type Listing = 'ledger' | 'context' | 'archive'
 
-/** Which page of a board is open. */
-export type BoardPage =
-  | { readonly kind: 'board' }
-  | { readonly kind: 'item'; readonly id: string }
-  | { readonly kind: Listing }
-  | { readonly kind: 'file'; readonly path: string }
+/**
+ * A board's address and the page under it. The key is everything before the
+ * first segment that names a page, which is what the daemon's own longest-key
+ * match resolves in every real name. A listing's page has no trailing slash,
+ * because a board always has one: the daemon sends `/w/<key>` on to
+ * `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of a worktree whose
+ * name ends in a segment called `ledger`.
+ */
+const boardPage = /^\/w\/(.+?)\/(item\/[^/]+\/*|ledger|context|archive|file\/.+)$/u
 
 /**
- * The board prefix and the page under it. The key is taken as everything
- * before the first segment that names a page, which is what the daemon's own
- * longest-key match resolves in every real name. A listing's page has no
- * trailing slash, because a board always has one: the daemon sends `/w/<key>`
- * on to `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of a
- * worktree whose name ends in a segment called `ledger`.
+ * The address the browser shows, as the router matches it: a board's key
+ * folded into one segment, each slash in it written `%2F`, because a route's
+ * parameter is one segment. The router decodes the parameter to the
+ * worktree's name. Any other address is matched as it is.
  */
-const route = /^(\/w\/.+?)\/(?:item\/([^/]+)\/*|(ledger|context|archive)|file\/(.+))$/u.exec(pathname)
-
-/** A path segment as it was written, or as it came when it does not decode, which the daemon then refuses. */
-const decoded = (text: string) => {
-  try {
-    return decodeURIComponent(text)
-  } catch {
-    return text
-  }
+export const foldBoardKey = (pathname: string): string => {
+  if (!pathname.startsWith('/w/')) return pathname
+  const page = boardPage.exec(pathname)
+  if (page !== null) return `/w/${page[1]!.replaceAll('/', '%2F')}/${page[2]!}`
+  const key = pathname.slice('/w/'.length).replace(/\/+$/u, '')
+  return key === '' ? pathname : `/w/${key.replaceAll('/', '%2F')}/`
 }
 
-export const basePath = route === null
-  ? (pathname.startsWith('/w/') ? pathname.replace(/\/+$/u, '') : '')
-  : route[1]!
+/** The address the router writes, as the browser shows it: the key's slashes unfolded again. */
+export const unfoldBoardKey = (pathname: string): string =>
+  pathname.replace(/^\/w\/([^/]+)/u, (_, key: string) => `/w/${key.replaceAll('%2F', '/')}`)
 
-const pageOf = (match: RegExpExecArray): BoardPage => {
-  const [, , id, listing, path] = match
-  if (id !== undefined) return { kind: 'item', id: decoded(id) }
-  if (listing === 'ledger' || listing === 'context' || listing === 'archive') return { kind: listing }
-  return { kind: 'file', path: decoded(path ?? '') }
+/**
+ * A route's params as its schema decodes them, or false when they are not the
+ * schema's. The address is a boundary, so every page's params pass through a
+ * schema, and a decode that fails answers false, which the router takes for no
+ * route here: the address draws the root's not-found page, as one no route
+ * matches does, never an error.
+ */
+export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) => {
+  const decode = Schema.decodeUnknownOption(schema)
+  return (raw: unknown): S['Type'] | false => Option.getOrElse(decode(raw), () => false as const)
 }
 
-/** The page of this board that is open, or null on the index of every board. */
-export const page: BoardPage | null = basePath === '' ? null : route === null ? { kind: 'board' } : pageOf(route)
+/** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */
+export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`
+
+/**
+ * The prefix of the board whose page is open, from the worktree's name the
+ * address carries, or nothing on the index, which belongs to no board.
+ */
+export function useBoardPath() {
+  const { key } = useParams({ strict: false })
+  return key === undefined ? '' : boardPath(key)
+}
 
 /** A path under the session as a URL path: every segment encoded, the slashes kept. */
 const encodedPath = (path: string) => path.split('/').map((segment) => encodeURIComponent(segment)).join('/')
 
-/** The page for one item of this board. The one place the route is spelled. */
-export const itemHref = (id: string) => `${basePath}/item/${encodeURIComponent(id)}`
+/** The page for one item of a board. The one place the route is spelled. */
+export const itemHref = ({ board, id }: { readonly board: string; readonly id: string }) =>
+  `${board}/item/${encodeURIComponent(id)}`
 
-/** The page of one of this board's listings. */
-export const listingHref = (listing: Listing) => `${basePath}/${listing}`
+/** The page of one of a board's listings. */
+export const listingHref = ({ board, listing }: { readonly board: string; readonly listing: Listing }) =>
+  `${board}/${listing}`
 
-/** The page that renders one Markdown file of this session, by its path under the session. */
-export const filePageHref = (path: string) => `${basePath}/file/${encodedPath(path)}`
+/** The page that renders one Markdown file of a board's session, by its path under the session. */
+export const filePageHref = ({ board, path }: { readonly board: string; readonly path: string }) =>
+  `${board}/file/${encodedPath(path)}`
 
-/** One file of this session as it is on disk, served by the board's files route. */
-export const rawFileHref = (path: string) => `${basePath}/files/${encodedPath(path)}`
+/** One file of a board's session as it is on disk, served by the board's files route. */
+export const rawFileHref = ({ board, path }: { readonly board: string; readonly path: string }) =>
+  `${board}/files/${encodedPath(path)}`
 
 /**
  * An address on this page as the absolute URL a tab is named for, or null when

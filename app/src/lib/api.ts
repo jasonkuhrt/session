@@ -21,7 +21,7 @@ import {
   WorktreeRankSchema,
   WorktreeSummarySchema,
 } from '../../contract'
-import { basePath, rawFileHref } from './base'
+import { rawFileHref } from './base'
 
 export class ApiError extends Data.TaggedError('ApiError')<{
   readonly status: number
@@ -103,53 +103,57 @@ async function run<A, E>(program: Effect.Effect<A, E, HttpClient.HttpClient>, si
 export type SessionMutation = '/api/move' | '/api/group' | '/api/ungroup' | '/api/batch' | '/api/start' | '/api/complete'
 
 /**
- * The stream this page listens to: a board's under its own prefix, the index's
- * at the root, so where the bundle is served decides which one it opens. It
- * carries only the events the page names, because the daemon re-reads some
- * sources only while a page is listening for them.
+ * The stream a page listens to: a board's under the board's prefix, the
+ * index's at the root, whose prefix is empty. It carries only the events the
+ * page names, because the daemon re-reads some sources only while a page is
+ * listening for them.
  */
-export const eventsUrl = (events: ReadonlyArray<StreamEvent>) => `${basePath}/api/events?events=${events.join(',')}`
+export const eventsUrl = ({ board, events }: { readonly board: string; readonly events: ReadonlyArray<StreamEvent> }) =>
+  `${board}/api/events?events=${events.join(',')}`
 
+/** What a board answers, under the board's prefix, `/w/<key>`. */
 export const SessionApi = {
-  read: (signal?: AbortSignal) => run(send(HttpClientRequest.get(`${basePath}/api/session`), decodeSession), signal),
+  read: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/session`), decodeSession), signal),
 
   /** The agents overlay for this board's worktree, recomputed by the daemon. */
-  agents: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/agents`), decodeAgents), signal),
+  agents: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/agents`), decodeAgents), signal),
 
   /** The `Session-Done` trailers on this worktree's unpushed commits that could not be acted on. */
-  trailers: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/trailers`), decodeTrailers), signal),
+  trailers: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/trailers`), decodeTrailers), signal),
 
   /** Where this worktree's work lives outside its files: its pull request and the Linear issues it names, as gh and linear last reported them. */
-  links: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/links`), decodeLinks), signal),
+  links: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/links`), decodeLinks), signal),
 
   /** The session's ledger: its entries newest first, and a notice for each file left out. */
-  ledger: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/ledger`), decodeLedger), signal),
+  ledger: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/ledger`), decodeLedger), signal),
 
   /** Every file and directory under the session's `context/`, depth first. */
-  context: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/context`), decodeContext), signal),
+  context: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/context`), decodeContext), signal),
 
   /** The session's archived records as their names give them, newest first. */
-  archive: (signal?: AbortSignal) =>
-    run(send(HttpClientRequest.get(`${basePath}/api/archive`), decodeArchive), signal),
+  archive: (board: string, signal?: AbortSignal) =>
+    run(send(HttpClientRequest.get(`${board}/api/archive`), decodeArchive), signal),
 
   /** One file of the session, by its path under the session, as the text on disk. */
-  file: (path: string, signal?: AbortSignal) => run(sendText(HttpClientRequest.get(rawFileHref(path))), signal),
+  file: (board: string, path: string, signal?: AbortSignal) =>
+    run(sendText(HttpClientRequest.get(rawFileHref({ board, path }))), signal),
 
   /** Asks the daemon to bring this session's terminal forward. */
-  focus: (pid: number) =>
+  focus: (board: string, pid: number) =>
     run(send(
-      HttpClientRequest.post(`${basePath}/api/agents/focus`).pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
+      HttpClientRequest.post(`${board}/api/agents/focus`).pipe(HttpClientRequest.bodyJsonUnsafe({ pid })),
       decodeFocus,
     )),
 
-  mutate: (path: SessionMutation, body: Record<string, unknown>) =>
+  mutate: (board: string, path: SessionMutation, body: Record<string, unknown>) =>
     run(send(
-      HttpClientRequest.post(`${basePath}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+      HttpClientRequest.post(`${board}${path}`).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
       decodeSession,
     )),
 }
@@ -167,9 +171,12 @@ export type Place =
   | { readonly kind: 'unread'; readonly problem: string }
 
 /** Where this page stands, read from the session; a session the daemon answered for but could not load is a place with its reason. */
-export async function readPlace(signal?: AbortSignal): Promise<Place> {
+export async function readPlace({ board, signal }: {
+  readonly board: string
+  readonly signal?: AbortSignal | undefined
+}): Promise<Place> {
   try {
-    const session = await SessionApi.read(signal)
+    const session = await SessionApi.read(board, signal)
     return { kind: 'read', worktree: session.worktree?.name ?? null, directory: session.directory }
   } catch (error) {
     if (error instanceof ApiError) return { kind: 'unread', problem: error.message }
@@ -186,7 +193,7 @@ export const problemOf = (place: Place | null) => (place?.kind === 'unread' ? pl
 /**
  * The registry of tracked worktrees, which lives at the root whichever page is
  * asking: the index reads it as its own contents, and a board reads it for the
- * other boards it can switch to. Absolute on purpose, never under `basePath`.
+ * other boards it can switch to. Absolute on purpose, never under a board.
  */
 export const IndexApi = {
   read: (signal?: AbortSignal) => run(send(HttpClientRequest.get('/api/worktrees'), decodeWorktrees), signal),
