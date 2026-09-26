@@ -5,7 +5,7 @@ import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { Repository } from '../contract.ts';
 import { capture } from './command.ts';
-import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
+import { makeRepository } from './repository.ts';
 
 /** What a worktree has checked out, as Git lists it. */
 export type Checkout = {
@@ -251,35 +251,6 @@ export const resolveWorktreeSession = (input: string) =>
       git: located.git,
     } satisfies WorktreeSession;
   });
-
-/**
- * Why a main worktree cannot join an epic, naming the rule and the way round
- * it: Git keeps the repository in it and lists it first, so the index draws it
- * at the head of its repository's section instead.
- */
-const mainWorktreeRefusal = (name: string) =>
-  `Not joined: ${name} is its repository’s main worktree, and a main worktree is never in an epic; ` +
-  'join from one of its linked worktrees instead.';
-
-/**
- * Put a worktree in the epic of that name, or in none with null, through the
- * one rule both the CLI and the daemon join by: a main worktree is never in an
- * epic. Leaving is always allowed, so a hand-made file in a main worktree can
- * be taken out the same way. `from` is the epic the writer last read, which
- * the index sends and a command does not. Any other worktree's rank orders it
- * within its epic, so a change of epic takes its rank away: it joins the next
- * one unranked, and leaves with no place kept. A main worktree's rank orders
- * its project, which no epic touches. Answers the epic its file named before.
- */
-export const setWorktreeEpic = (input: {
-  readonly session: WorktreeSession;
-  readonly repository: SessionRepository;
-  readonly epic: string | null;
-  readonly from?: string | null | undefined;
-}) =>
-  input.epic !== null && input.session.worktree.main
-    ? Effect.fail(new RepositoryError({ kind: 'conflict', message: mainWorktreeRefusal(input.session.worktree.name) }))
-    : input.repository.setEpic({ epic: input.epic, from: input.from, dropsRank: !input.session.worktree.main });
 
 /**
  * Route key for a worktree: its name, encoded segment by segment so a nested

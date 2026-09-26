@@ -44,6 +44,7 @@ import type {
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
+import { setWorktreeEpic } from './epic.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import {
   epicResponse,
@@ -75,7 +76,6 @@ import {
   type RepositoryListing,
   repositoryIn,
   resolveWorktreeSession,
-  setWorktreeEpic,
   type WorktreeSession,
 } from './worktree.ts';
 import { openInZed, zedOnPath } from './zed.ts';
@@ -1509,10 +1509,12 @@ export const runDaemon = async () => {
   };
 
   /**
-   * Set a worktree's epic for the index's drags, as `session join` and
-   * `session leave` set it, by the worktree's path, as a terminal and Zed are
-   * asked for: every row the index lists has one of its own, served or not,
-   * so no key two rows share can send a write to the wrong worktree. The write
+   * Set a worktree's epic for the index's drags and renames, as `session
+   * join` and `session leave` set it, by the worktree's path, as a terminal
+   * and Zed are asked for: every row the index lists has one of its own,
+   * served or not, so no key two rows share can send a write to the wrong
+   * worktree. A rename to a name no other epic has keeps the worktree's rank,
+   * which only the index can say. The write
    * is refused when the file names another epic than the one the index read. A
    * path the daemon does not track, or whose session has gone, is not written,
    * and a session is never brought back by it. Nothing else is converged:
@@ -1525,7 +1527,13 @@ export const runDaemon = async () => {
     if (entry === null) {
       throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
-    await runNode(setWorktreeEpic({ session: entry.session, repository: entry.repository, epic: input.epic, from: input.from }));
+    await runNode(setWorktreeEpic({
+      session: entry.session,
+      repository: entry.repository,
+      epic: input.epic,
+      from: input.from,
+      rename: input.rename,
+    }));
     return { epic: input.epic === null ? null : input.epic.trim() };
   };
 

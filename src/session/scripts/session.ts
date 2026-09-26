@@ -19,6 +19,7 @@ import {
   trackedPaths,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
+import { setWorktreeEpic } from '../../../app/server/epic.ts';
 import { type Rankable, setRank } from '../../../app/server/order.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
 import { quote } from '../../../app/server/model.ts';
@@ -29,7 +30,6 @@ import {
   ensureSession,
   headCommit,
   resolveWorktreeSession,
-  setWorktreeEpic,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
 

@@ -704,13 +704,19 @@ export type WorktreeSummary = {
  * by two rows can route a write to the wrong one; the epic to put it in, or
  * null for none; and the epic the index last read for it. A file that names
  * anything else by then refuses the write, as a stale revision refuses a move.
+ * `rename` is true when the write is the worktree's part of renaming its epic
+ * to a name no other epic has: that is the same epic under another name, so
+ * the worktree keeps its rank among the others. A join, a merge into an epic
+ * that exists and a leave send false, and take the rank of a worktree that is
+ * not a main one away, so it arrives unranked.
  */
-export type EpicWrite = { path: string; epic: string | null; from: string | null };
+export type EpicWrite = { path: string; epic: string | null; from: string | null; rename: boolean };
 
 export const EpicWriteSchema = Schema.Struct({
   path: Schema.String,
   epic: Schema.NullOr(Schema.String),
   from: Schema.NullOr(Schema.String),
+  rename: Schema.Boolean,
 });
 
 /** What the epic route answers: the epic the worktree is in now. */

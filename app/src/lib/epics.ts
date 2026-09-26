@@ -14,19 +14,29 @@ import { epicList, landingAt, sectionsList } from './order'
  */
 
 /**
+ * A write under way: the epic a worktree is to be in, null for none, and
+ * whether it keeps its rank there, which only a rename to a name no other
+ * epic has does.
+ */
+export type EpicWriting = { readonly epic: string | null; readonly keepsRank: boolean }
+
+/**
  * The rows with the epics a write is putting them in, drawn while it is
  * written, as a board draws a move until it lands, so nothing jumps back
- * before the daemon's answer does.
+ * before the daemon's answer does. A worktree that is not a main one loses
+ * its rank with the move unless it keeps it, as the engine takes it away.
  */
 export function withEpics({ rows, epics }: {
   readonly rows: readonly WorktreeSummary[]
-  /** The epic each worktree being written is to be in, by its path; null for none. */
-  readonly epics: ReadonlyMap<string, string | null>
+  /** Each worktree being written, by its path. */
+  readonly epics: ReadonlyMap<string, EpicWriting>
 }): readonly WorktreeSummary[] {
   if (epics.size === 0) return rows
-  const drawn: WorktreeSummary[] = []
-  for (const row of rows) drawn.push(epics.has(row.path) ? { ...row, epic: epics.get(row.path) ?? null } : row)
-  return drawn
+  return rows.map((row) => {
+    const write = epics.get(row.path)
+    if (write === undefined) return row
+    return { ...row, epic: write.epic, rank: row.main || write.keepsRank ? row.rank : null }
+  })
 }
 
 /**

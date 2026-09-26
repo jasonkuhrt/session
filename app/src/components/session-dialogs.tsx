@@ -67,7 +67,7 @@ function epicCopyOf(request: EpicNameRequest) {
   return {
     ...common,
     title: 'Rename the epic',
-    description: `${count === 1 ? 'The worktree' : `The ${count} worktrees`} in “${request.epic}” will be in the epic of the new name. A name another epic already has merges the two.`,
+    description: `${count === 1 ? 'The worktree' : `The ${count} worktrees`} in “${request.epic}” will be in the epic of the new name, in the order they stand. A name another epic already has merges the two, and they join it after the worktrees placed there.`,
     submit: 'Rename',
     submitting: 'Renaming…',
   }

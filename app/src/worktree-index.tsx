@@ -16,7 +16,7 @@ import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
 import { dashboardOf, stageRangeOf } from './lib/dashboard'
 import { dragSensors, pointerOf } from './lib/drag'
-import type { DropOutcome, Holding } from './lib/epics'
+import type { DropOutcome, EpicWriting, Holding } from './lib/epics'
 import { draggedId, draggedOf, dropOutcome, targetId, targetOf, withEpics } from './lib/epics'
 import type { Placement } from './lib/order'
 import { withPlacement } from './lib/order'
@@ -30,10 +30,17 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /**
  * One worktree's new epic, as a write sends it: the worktree by its path, the
- * epic to put it in, and the epic the page had read for it when the change was
- * asked for, which the daemon refuses the write against if the file has moved.
+ * epic to put it in, the epic the page had read for it when the change was
+ * asked for, which the daemon refuses the write against if the file has moved,
+ * and whether it is the worktree's part of renaming its epic to a new name,
+ * which keeps its rank.
  */
-type EpicChange = { readonly path: string; readonly epic: string | null; readonly from: string | null }
+type EpicChange = {
+  readonly path: string
+  readonly epic: string | null
+  readonly from: string | null
+  readonly rename: boolean
+}
 
 /**
  * What the page draws while a card is held: the rows, the pull requests and the
@@ -55,8 +62,8 @@ const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
 /** What a drop writes: every worktree it names, put in its epic or in none, against the epic drawn for it when it was dropped. */
 const changesOf = (outcome: Extract<DropOutcome, { kind: 'join' | 'leave' }>, rows: readonly WorktreeSummary[]): EpicChange[] =>
   outcome.kind === 'join'
-    ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
-    : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
+    ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic, rename: false }))
+    : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic, rename: false }))
 
 /**
  * The dialog a new epic opens, for one worktree dropped on the `+` or two, one
@@ -100,7 +107,7 @@ const sameHolding = (left: Holding | null, right: Holding | null) =>
 export function WorktreeIndex() {
   const [writing, setWriting] = React.useState(false)
   /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
-  const [writes, setWrites] = React.useState<ReadonlyMap<string, string | null>>(new Map())
+  const [writes, setWrites] = React.useState<ReadonlyMap<string, EpicWriting>>(new Map())
   /** The place a worktree being placed is to take, drawn until the daemon's answer replaces it. */
   const [placing, setPlacing] = React.useState<Placement | null>(null)
   // What is held and where, drawn as it changes: a move that changes neither
@@ -142,7 +149,7 @@ export function WorktreeIndex() {
     if (changes.length === 0) return
     setWriting(true)
     setFailure(null)
-    setWrites(new Map(changes.map((change) => [change.path, change.epic])))
+    setWrites(new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: change.rename }])))
     const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
     const refusals = [...new Set(results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : [])))]
     await reload()
@@ -243,14 +250,22 @@ export function WorktreeIndex() {
             // the drop, so a join that lands while the dialog is open is
             // refused rather than overwritten.
             if (request.kind === 'epic') {
-              void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
+              void write(
+                request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null, rename: false })),
+              )
               return
             }
             // A rename moves whoever is in the epic now, since the files may
-            // have changed while the dialog was open.
+            // have changed while the dialog was open. To a name no other epic
+            // has, it is the same epic under another name, and every worktree
+            // keeps its rank; to a name another epic has, it merges into that
+            // one, and they arrive unranked, after its ranked worktrees.
             if (name === request.epic) return
+            const renaming = !rows.some((row) => !row.main && row.epic === name)
             void write(
-              rows.filter((row) => !row.main && row.epic === request.epic).map((row) => ({ path: row.path, epic: name, from: row.epic })),
+              rows
+                .filter((row) => !row.main && row.epic === request.epic)
+                .map((row) => ({ path: row.path, epic: name, from: row.epic, rename: renaming })),
             )
           }}
         />
