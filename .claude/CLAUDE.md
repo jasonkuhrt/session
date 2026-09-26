@@ -42,13 +42,14 @@ feeds the index's `worktrees` event, settled, for every change a row shows.
 The index is a stack of projects, each a repository, which is Git's rather than
 the tool's, the worktrees sharing one Git directory, or a folder outside Git: a
 section headed by the repository's main worktree whether or not that has a
-session, by the Git directory's name when Git lists that in its place and the daemon
-does not track the main, or by the folder's name, and holding the project's
-epic cards and its worktrees in no epic; an epic whose worktrees span projects is drawn once, in the section
-"Across projects". Every served row carries its repository from the same `git
-worktree list` as its branch, nothing stores a section, and every section, the
-one across projects included, is ordered and dimmed as cards are, a project
-counting every worktree of it wherever it is drawn.
+session, by the Git directory's name when Git lists that in its place and the
+daemon does not track the main, or by the folder's name, and holding the
+project's epic cards and its worktrees in no epic; an epic whose worktrees span
+projects is drawn once, in the section "Across projects". Every served row
+carries its repository from the same `git worktree list` as its branch, nothing
+stores a section, and every section, the one across projects included, is
+ordered and dimmed as cards are, a project counting every worktree of it
+wherever it is drawn.
 
 A main worktree is the one whose Git directory is its repository's own, as `git
 rev-parse` says when asked without the variables that aim Git at another
