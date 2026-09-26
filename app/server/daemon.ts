@@ -8,10 +8,12 @@ import { file, serve, spawn } from 'bun';
 import * as Cause from 'effect/Cause';
 import * as Clock from 'effect/Clock';
 import * as Config from 'effect/Config';
+import * as Crypto from 'effect/Crypto';
 import * as Data from 'effect/Data';
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as Equal from 'effect/Equal';
+import * as Exit from 'effect/Exit';
 import * as Fiber from 'effect/Fiber';
 import * as FileSystem from 'effect/FileSystem';
 import * as Layer from 'effect/Layer';
@@ -168,15 +170,19 @@ const readState = (settings: DaemonSettings) =>
 /**
  * Written whole, through a neighbour renamed into place, so a reader, the next
  * daemon or a command asking which worktrees are tracked, never reads half a
- * file, which it would take for none.
+ * file, which it would take for none. Every write has a neighbour of its own,
+ * removed when the write fails, so two writes never rename one file.
  */
 const writeState = (settings: DaemonSettings, state: DaemonState) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
+    const crypto = yield* Crypto.Crypto;
     yield* fs.makeDirectory(settings.directory, { recursive: true });
-    const temp = join(settings.directory, `.daemon.json.${process.pid}.tmp`);
-    yield* fs.writeFileString(temp, yield* Schema.encodeEffect(DaemonStateJson)(state));
-    yield* fs.rename(temp, settings.statePath);
+    const temp = join(settings.directory, `.daemon.json.${yield* crypto.randomUUIDv4}.tmp`);
+    yield* fs.writeFileString(temp, yield* Schema.encodeEffect(DaemonStateJson)(state)).pipe(
+      Effect.andThen(fs.rename(temp, settings.statePath)),
+      Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)),
+    );
   });
 
 /**
@@ -616,15 +622,41 @@ const indexSettleMilliseconds = 500;
 /** Writes that never let the index's settle go quiet still reach it this often. */
 const indexCeilingMilliseconds = 2_000;
 
-/** What the agent sources fire: any change in the directories they keep. */
-const watchDirectory = (directory: string, events: SessionEventSource) =>
+/** How long a watch that stopped waits before it watches its directory again. */
+const watchRestart = '2 seconds';
+
+/**
+ * A watch the daemon keeps for as long as its directory is there. When it
+ * stops, on a failure of the platform's watch or of what a change set off, it
+ * says why in the log and watches again a moment later, so one failure never
+ * leaves a directory unwatched for the rest of the daemon's life. A directory
+ * that has gone ends it quietly, and so does an interruption, which is how the
+ * daemon lets a watch go.
+ */
+const keepWatching = <E, R>(
+  directory: string,
+  watch: Effect.Effect<void, E, R>,
+): Effect.Effect<void, never, R | FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
-    yield* fs.watch(directory, { recursive: true }).pipe(
-      Stream.runForEach(() => Effect.sync(() => events.changed())),
-    );
-  }).pipe(
-    Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
+    const exit = yield* Effect.exit(watch);
+    if (Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)) return;
+    if (!(yield* fs.exists(directory).pipe(Effect.orElseSucceed(() => false)))) return;
+    if (Exit.isFailure(exit)) yield* Effect.logError(`Watch stopped for ${directory}; watching it again`, exit.cause);
+    yield* Effect.sleep(watchRestart);
+    yield* keepWatching(directory, watch);
+  });
+
+/** What the agent sources fire: any change in the directories they keep. */
+const watchDirectory = (directory: string, events: SessionEventSource) =>
+  keepWatching(
+    directory,
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.watch(directory, { recursive: true }).pipe(
+        Stream.runForEach(() => Effect.sync(() => events.changed())),
+      );
+    }),
   );
 
 /**
@@ -650,18 +682,19 @@ const watchSession = (directory: string, readers: {
   readonly boards: SessionEventSource;
   readonly index: SessionEventSource;
 }) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem;
-    yield* fs.watch(directory, { recursive: true }).pipe(
-      Stream.runForEach((event) =>
-        Effect.sync(() => {
-          readers.boards.changed();
-          if (showsOnIndex(event)) readers.index.changed();
-        })
-      ),
-    );
-  }).pipe(
-    Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${directory}`, cause)),
+  keepWatching(
+    directory,
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.watch(directory, { recursive: true }).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            readers.boards.changed();
+            if (showsOnIndex(event)) readers.index.changed();
+          })
+        ),
+      );
+    }),
   );
 
 /** A commit, an amend, a rebase or a push writes Git's logs in a burst. */
@@ -796,31 +829,31 @@ const linksLoop = (changes: Stream.Stream<Change, PlatformError>, loops: {
   );
 
 /**
- * A tracked worktree's two loops over its one set of watches. Interrupting it
- * stops both and closes the watches; a loop that fails is logged, and the
- * other goes on.
+ * A tracked worktree's two loops over its one set of watches, kept as one: a
+ * loop's own work catches what it can fail at, so what stops one is its
+ * watches, and then both stop, the watches close, and the pair starts again
+ * as `keepWatching` has it. Interrupting it stops both and closes the watches.
  */
 const worktreeLoops = (session: WorktreeSession, loops: {
   readonly pass: Effect.Effect<void>;
   readonly answeredRef: (ref: string) => boolean;
   readonly onLinksTrigger: (trigger: LinksTrigger) => Effect.Effect<void>;
 }) =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const changes = yield* worktreeChanges(session);
-      yield* Effect.all(
-        [
-          reconcileLoop(changes, loops.pass).pipe(
-            Effect.catchCause((cause) => Effect.logError(`Trailer passes stopped for ${session.directory}`, cause)),
-          ),
-          linksLoop(changes, { answeredRef: loops.answeredRef, onTrigger: loops.onLinksTrigger }).pipe(
-            Effect.catchCause((cause) => Effect.logError(`Link re-reads stopped for ${session.directory}`, cause)),
-          ),
-        ],
-        { concurrency: 'unbounded', discard: true },
-      );
-    }),
-  ).pipe(Effect.catchCause((cause) => Effect.logError(`Watches stopped for ${session.directory}`, cause)));
+  keepWatching(
+    session.directory,
+    Effect.scoped(
+      Effect.gen(function*() {
+        const changes = yield* worktreeChanges(session);
+        yield* Effect.all(
+          [
+            reconcileLoop(changes, loops.pass),
+            linksLoop(changes, { answeredRef: loops.answeredRef, onTrigger: loops.onLinksTrigger }),
+          ],
+          { concurrency: 'unbounded', discard: true },
+        );
+      }),
+    ),
+  );
 
 /**
  * gh's answer for a worktree, when it can be served as it is: asked within the
@@ -980,7 +1013,13 @@ export const runDaemon = async () => {
     for (const directory of directories) forkNode(watchDirectory(directory, changes));
   };
 
-  const persist = () => runNode(writeState(settings, { worktrees: [...tracked.keys()] }));
+  /**
+   * The tracked set as it is when the write starts, one write at a time, so
+   * worktrees dropped together each write the file whole, the last standing.
+   */
+  const persistence = Semaphore.makeUnsafe(1);
+  const persist = () =>
+    runNode(persistence.withPermit(Effect.suspend(() => writeState(settings, { worktrees: [...tracked.keys()] }))));
 
   /**
    * One trailer pass for a tracked worktree. It announces on the worktree's own
@@ -1252,25 +1291,36 @@ export const runDaemon = async () => {
    */
   const parentWatchers = new Map<string, Fiber.Fiber<void, never>>();
 
+  /**
+   * A failed drop is logged rather than thrown into the watch that asked for
+   * it: the watch goes on, and the next change there, or the next read of the
+   * index, asks again.
+   */
   const dropGoneUnder = async (parent: string) => {
     const under = [...tracked.keys()].filter((path) => dirname(path) === parent);
-    await Promise.all(under.map((path) => dropIfGone(path)));
+    try {
+      await Promise.all(under.map((path) => dropIfGone(path)));
+    } catch (error) {
+      console.error(`${parent}: a worktree that has gone was not dropped: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const watchParent = (parent: string) =>
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem;
-      yield* fs.watch(parent, { recursive: false }).pipe(
-        Stream.runForEach(() => Effect.promise(() => dropGoneUnder(parent))),
-      );
-    }).pipe(
-      Effect.catchCause((cause) => Effect.logError(`Watch stopped for ${parent}`, cause)),
+    keepWatching(
+      parent,
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem;
+        yield* fs.watch(parent, { recursive: false }).pipe(
+          Stream.runForEach(() => Effect.promise(() => dropGoneUnder(parent))),
+        );
+      }),
     );
 
   /**
-   * Watch the directories that hold tracked worktrees, and only those. It runs
-   * where worktrees are taken on, never where one is dropped: a watcher must
-   * not be interrupted from inside its own callback.
+   * Watch the directories that hold tracked worktrees, and only those, and
+   * watch again one whose watch has ended, as it does when its directory went
+   * away for a while. It runs where worktrees are taken on, never where one is
+   * dropped: a watcher must not be interrupted from inside its own callback.
    */
   const syncParentWatchers = () => {
     const parents = new Set([...tracked.keys()].map((path) => dirname(path)));
@@ -1280,7 +1330,8 @@ export const runDaemon = async () => {
       parentWatchers.delete(parent);
     }
     for (const parent of parents) {
-      if (parentWatchers.has(parent)) continue;
+      const watcher = parentWatchers.get(parent);
+      if (watcher !== undefined && watcher.pollUnsafe() === undefined) continue;
       parentWatchers.set(parent, forkNode(watchParent(parent)));
     }
   };
