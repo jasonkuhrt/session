@@ -3,7 +3,12 @@
 Installation links `session` into `~/.local/bin`. It works from anywhere inside a
 worktree. `-C` points it elsewhere, at either a worktree or a `.session`
 directory, and defaults to the current directory; a worktree is resolved through
-Git.
+Git, asked without `GIT_DIR` and the other variables that aim Git at one
+repository, which a hook or a shell can leave set. A folder Git says is in no
+repository is a session of its own. A path inside a Git directory is refused,
+since it is no worktree, and so is a linked worktree Git lists somewhere else,
+as after a move by hand, which `git worktree repair` run there mends. When Git
+cannot run, or will not answer for the path, the command stops with Git's line.
 
 ```
 session [-C <worktree-or-.session>] <command>
@@ -215,8 +220,9 @@ worktree, so a lead puts its workers in an epic one command each, and each
 converges the session and registers it with a running daemon as every command
 does. `join` trims the name, as `group` does, and refuses one that is empty,
 holds a `/` or breaks a line. It refuses a main worktree, naming the rule: a
-main worktree is never in an epic, since Git keeps the repository there and
-lists it first. `leave` works in any worktree, a main one included, and in one
+main worktree is never in an epic, since its Git directory is the repository's
+own, which the linked worktrees share, and Git will not move, lock or remove it.
+`leave` works in any worktree, a main one included, and in one
 in no epic it has nothing to do. Success prints one line: `Joined "Back
 burner"`, `Joined "Back burner", leaving "Epics"` when the worktree moved,
 `Left "Back burner"`, or `In no epic, so nothing to leave`. Renaming an epic
@@ -499,11 +505,20 @@ error `check` would name.
 
 `session open` ensures the session, ensures the daemon, adds this worktree to it,
 prints the board's URL, and opens it in the browser on macOS. Run it when the
-user asks for the board, not as a matter of course.
+user asks for the board, not as a matter of course. The address is the one the
+daemon's own row for the worktree names. When the daemon serves no board for it,
+because a worktree it took on first has the same name or Git could not answer
+for it, `open` prints the daemon's reason and fails rather than opening a board
+that is another worktree's.
 
 One daemon serves every worktree, one process per user, on `127.0.0.1:53045`. Its
-state is `~/.local/state/session/daemon.json`, the worktrees it tracks, which
-the next daemon tracks again. It logs beside that file, in `daemon.log`. `open`
+state is `~/.local/state/session/daemon.json`, the worktrees it tracks and the
+paths it holds until Git answers, all of which the next daemon takes on again.
+A path Git refuses, such as a linked worktree moved by hand, is let go, and its
+log names it. A path Git could not answer for, because Git could not run or
+would not open its repository, is held: it stays in the state file, and every
+take-on and rescan asks Git about it again. It logs beside that file, in
+`daemon.log`. `open`
 reuses a daemon that answers with a stamp matching the sources on disk. It
 replaces one started from other sources, stopping the old process first, and
 starts one when nothing answers, so a rebuilt board reaches every worktree at
@@ -564,7 +579,10 @@ this machine cannot read a board.
 Every `open` also has the daemon rescan. For each Git repository among the
 worktrees it tracks, it lists that repository's worktrees and tracks every one
 that exists and holds a `.session` directory; paths that have gone away are
-dropped.
+dropped, and every path held until Git answers is asked about again. Git lists a
+main worktree whose Git directory is kept apart from it, as a submodule's or a
+separate one is, by that directory, so no rescan finds it: `open` in it takes it
+on, as does any command that scaffolds its session while the daemon runs.
 
 The index keeps itself current between those rescans, which is why it carries no
 refresh button. A worktree joins it as soon as a session exists: every command
@@ -594,13 +612,16 @@ the tips of the marks before a name, of an epic's heading, of a head's badge and
 of whatever is dim, so nothing needs a page-wide sentence. A project is a
 repository, or a folder outside Git, which is a project of its own. A repository
 is what Git names for every worktree of it: the worktrees that share one Git
-directory, named by what Git lists first for it, its main worktree. Every row
+directory, named by what Git lists first for it: its main worktree, or the Git
+directory Git lists in the main worktree's place. Every row
 the daemon serves carries its repository, the name and path of what Git lists
 first and what the listing says is checked out there, from the same `git
 worktree list` as the row's own branch. Nothing about a repository is stored:
 when Git cannot list one, its rows are Not served, with the reason, and keep
-their section, named by the main worktree Git listed when each was taken on,
-which the daemon holds for as long as it tracks the row.
+their section, named by what Git listed first when each was taken on, which
+the daemon holds for as long as it tracks the row. A path the daemon holds until
+Git answers names no repository and is no folder outside Git, so it stands in no
+section: the notices under the header name it, with Git's line.
 
 A section is headed by what heads its project, drawn as the constant it is and
 never dragged over the project's cards; a main worktree's head, while it has a
@@ -614,12 +635,19 @@ since there is no session there to show and the daemon opens and lists nothing
 for a worktree it does not track; when Git cannot list the repository, this head
 says so where its branch would be. A repository Git lists by its Git directory,
 where a main worktree would be, is headed by that directory's name alone, marked
-Git directory, with no branch: Git marks a bare repository's so, and lists the
-Git directory of a submodule, or a separate one, in the main worktree's place,
-and none of them is a worktree or holds a session. A folder outside Git is
-headed by its name, marked Outside Git. Two sections that would carry the same
-name carry each its parent folder's name before it, as a linked worktree is
-named whose folder shares its main worktree's name. Below its head a section
+Git directory, with no branch: always for a bare repository, which Git marks so,
+and for a submodule or a separate Git directory, whose Git directory Git lists
+in the main worktree's place, until the daemon tracks that main worktree; none
+of these directories is a worktree or holds a session. The main worktree of a
+submodule or a separate Git directory is a main worktree all the same, known by
+its Git directory being the repository's own rather than by where Git lists it:
+once the daemon tracks it, which `session open` in it does, it heads the
+repository as its row, under its own name, with its Git directory in the tip of
+the mark before that name. A folder outside Git is headed by its name, marked
+Outside Git. A section carries its head's name, and two sections whose heads
+would carry the same name carry each the name of the folder what its head names
+is in before it, as a linked worktree is named whose folder shares its main
+worktree's name. Below its head a section
 holds the project's cards: a card per epic whose worktrees all belong to it,
 headed by the epic's name, how many worktrees are in it and an icon that renames
 it, with its worktrees inside, and a card of its own for each of its worktrees
@@ -658,9 +686,13 @@ branch, and a commit in place of the branch for a detached HEAD, so a name and a
 branch are told apart wherever a worktree is drawn. The folder's tip says what
 the worktree is here: on the page while it has a session, at the head of its
 repository, in an epic or in none, under its repository or its own head outside
-Git, and where it can be dropped. A name stands without its path, which is its tip:
-the name already tells the worktrees apart, since one whose folder shares the
-main checkout's name carries its parent folder's name before it. A worktree with
+Git, and where it can be dropped. A name stands without its path, which is its
+tip. A linked worktree whose folder shares its main worktree's name carries its
+parent folder's name before it, but two worktrees can still share a name: the
+main worktrees of two repositories whose folders share one, or a linked worktree
+named like the main worktree of a separate Git directory, whose name Git does
+not list. The daemon serves the board of the one it took on first, and the other
+is Not served, naming the worktree that has the name. A worktree with
 a commit checked out rather than a branch reads `Detached HEAD` where the branch
 would be, and a folder outside Git reads `No branch`. What every row has checked
 out comes from one `git worktree list` per repository, run in the Git directory

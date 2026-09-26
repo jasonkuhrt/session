@@ -19,8 +19,9 @@ const readConcurrency = 4;
 
 /**
  * Why a main worktree cannot join an epic, naming the rule and the way round
- * it: Git keeps the repository in it and lists it first, so the index draws it
- * at the head of its repository's section instead.
+ * it: its Git directory is the repository's own and Git will not move, lock
+ * or remove it, so the index draws it at the head of its repository's section
+ * instead.
  */
 const mainWorktreeRefusal = (name: string) =>
   `Not joined: ${name} is its repository’s main worktree, and a main worktree is never in an epic; ` +

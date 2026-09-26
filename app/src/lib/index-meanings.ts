@@ -52,11 +52,15 @@ export const quietCardMeaning = 'Nothing is live here and nothing has happened i
 
 /** What the house before a main worktree says, whether or not it has a session. */
 export const mainMeaning =
-  'The main worktree of its repository: Git keeps the repository here and lists it first, so it stands at the head of the repository’s cards and is never in an epic.'
+  'The main worktree of its repository: its Git directory is the repository’s own, which the linked worktrees share, and Git will not move, lock or remove it, so it stands at the head of the repository’s cards and is never in an epic.'
 
 /** What the mark before a head's name says: what heads the section, what stands below it, how it is placed and how the sections are ordered. */
 export const trackedHeadMeaning = (row: WorktreeSummary) =>
   `A main worktree, on this page while it has a session, at the head of its repository: below it stand the repository’s epics and its worktrees in no epic. ${
+    row.repository?.bare === true
+      ? `Its Git directory is kept apart from it, at ${row.repository.path}, which Git lists in its place and names the repository by. `
+      : ''
+  }${
     row.rank === null
       ? 'Its repository is not placed by hand, so it stands after the ones that are.'
       : 'Its repository was placed by hand, so it keeps its place in the stack whatever happens in it.'
@@ -69,7 +73,11 @@ export const notTrackedMeaning =
   'This main worktree has no session, so the daemon does not track it and it has no board. A session command run in it, such as session init, gives it one and puts it on this page.'
 
 export const bareHeadMeaning =
-  `The repository’s Git directory, which Git lists first where a main worktree would be: the repository is bare, or keeps its Git directory apart from its main worktree, as a submodule or a separate Git directory does. It is no worktree and holds no session, so it heads the repository by name alone: below it stand the repository’s epics and its worktrees in no epic. ${unplaced} ${sectionOrder}`
+  `The repository’s Git directory, which Git lists first where a main worktree would be: the repository is bare, or keeps its Git directory apart from its main worktree, as a submodule or a separate Git directory does. It is no worktree and holds no session, so it heads the repository by name alone: below it stand the repository’s epics and its worktrees in no epic. A main worktree kept apart this way heads the repository here instead once the daemon tracks it, which running session open in it does. ${unplaced} ${sectionOrder}`
+
+/** What the page says of a row Git could not answer for, which has no section to stand in: where it is, and Git's line. */
+export const unresolvedNotice = (row: WorktreeSummary) =>
+  `Git did not answer for ${row.path}, so it has no place on this page until the next session open asks again: ${row.conflict ?? 'Git gave no reason.'}`
 
 export const folderHeadMeaning =
   `A folder outside Git, which belongs to no repository and so is a project of its own: its card stands below this head, unless it is in an epic across projects. It has no main worktree to keep the project’s place, so it stands after the repositories placed by hand. ${sectionOrder}`
