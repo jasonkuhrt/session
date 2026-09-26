@@ -46,8 +46,13 @@ function siblingsOf(rows: readonly WorktreeSummary[], row: WorktreeSummary): Wor
   return rows.filter((candidate) => !candidate.main && candidate.epic === row.epic && candidate.path !== row.path)
 }
 
-/** A placement a drop writes: the worktree, and the sibling it goes before, or null for last among the ranked. */
-export type Placement = { readonly path: string; readonly before: string | null }
+/**
+ * A placement a drop writes: the worktree, the ranked sibling it goes before
+ * or null, and the unranked siblings drawn above where it was dropped, which
+ * are ranked first so it lands there. With neither it goes last among the
+ * ranked.
+ */
+export type Placement = { readonly path: string; readonly before: string | null; readonly after: readonly string[] }
 
 /**
  * The rows with a placement drawn, while it is written, as the epics a drop
@@ -66,7 +71,8 @@ export function withPlacement({ rows, placement }: {
     .toSorted(rankedFirst({ rankOf: asRanked, otherwise: () => 0 }))
   const found = ranked.findIndex((sibling) => sibling.path === placement.before)
   const at = found === -1 ? ranked.length : found
-  const order = [...ranked.slice(0, at), row, ...ranked.slice(at)]
+  const above = placement.after.flatMap((path) => rows.filter((candidate) => candidate.path === path))
+  const order = [...ranked.slice(0, at), ...above, row, ...ranked.slice(at)]
   const drawn = new Map(order.map((entry, index) => [entry.path, index]))
   return rows.map((candidate) => {
     const rank = drawn.get(candidate.path)
@@ -81,14 +87,29 @@ export type Marker = { readonly list: string; readonly id: string; readonly side
 export const sectionsList = 'sections'
 export const epicList = (epic: string) => `epic:${epic}`
 
+/** Whether two drawn orders are the same entries in the same order. */
+const sameOrder = <A>(left: readonly A[], right: readonly A[]) =>
+  left.length === right.length && left.every((entry, index) => entry === right[index])
+
+/** What a drop writes and draws: the placement's `before` and `after`, where its line goes, and the words over the held copy. */
+export type Landing = {
+  readonly before: string | null
+  readonly after: readonly string[]
+  readonly marker: Marker
+  readonly words: string
+}
+
 /**
- * What letting a held sibling go at a slot does: the sibling it is written to
- * go before, or null for last among the ranked, where its line is drawn, and
- * the words the held copy carries. The slot is where it would be dropped in
- * the drawn list, counted without it. A ranked sibling there is what it goes
- * before; an unranked one stands after every ranked one, so it goes last among
- * the ranked, which is where it is drawn and still above that one. Null when
- * nothing would change: a ranked worktree already before the same one.
+ * What letting a held sibling go at a slot does, so that it lands where it
+ * was dropped. The slot is where it would be drawn, counted in the list
+ * without it. Over the ranked siblings, which are drawn first, it goes in
+ * front of the one at the slot. Among the unranked ones, the siblings drawn
+ * above the slot are ranked first, in their drawn order, and it right after
+ * them. An entry that cannot be ranked, a section no main worktree with a
+ * session heads, stands after every ranked one, so it can only be passed
+ * over, and the held one lands right after the last one ranked before it: the
+ * line is drawn where it lands and the words say beside what. Null when the
+ * drop would draw nothing new, which writes nothing either.
  */
 export function landingAt<A>({ list, entries, held, slot, idOf, pathOf, rankOf, nameOf }: {
   readonly list: string
@@ -101,22 +122,33 @@ export function landingAt<A>({ list, entries, held, slot, idOf, pathOf, rankOf, 
   readonly pathOf: (entry: A) => string | null
   readonly rankOf: (entry: A) => number | null
   readonly nameOf: (entry: A) => string
-}): { readonly before: string | null; readonly marker: Marker; readonly words: string } | null {
+}): Landing | null {
   const others = entries.filter((entry) => entry !== held)
-  const ranked = (entry: A | undefined) => entry !== undefined && rankOf(entry) !== null
-  const next = others[slot]
-  const target = ranked(next) ? next : undefined
-  const at = entries.indexOf(held)
-  if (rankOf(held) !== null) {
-    // Ranked, it stands before the next ranked entry, or last of them.
-    const current = entries.slice(at + 1).find((entry) => ranked(entry))
-    if (current === target) return null
+  const rankedCount = others.filter((entry) => rankOf(entry) !== null).length
+  if (slot < rankedCount) {
+    const target = others[slot]!
+    if (sameOrder([...others.slice(0, slot), held, ...others.slice(slot)], entries)) return null
+    return {
+      before: pathOf(target),
+      after: [],
+      marker: { list, id: idOf(target), side: 'before' },
+      words: `Before ${nameOf(target)}`,
+    }
   }
-  if (target !== undefined) {
-    return { before: pathOf(target), marker: { list, id: idOf(target), side: 'before' }, words: `Before ${nameOf(target)}` }
-  }
-  const last = others.findLast((entry) => ranked(entry))
-  if (last !== undefined) return { before: null, marker: { list, id: idOf(last), side: 'after' }, words: `After ${nameOf(last)}` }
+  const above = others.slice(rankedCount, slot).filter((entry) => pathOf(entry) !== null)
+  const ranking = new Set(above)
+  const rest = others.slice(rankedCount).filter((entry) => !ranking.has(entry))
+  const landing = [...others.slice(0, rankedCount), ...above, held, ...rest]
+  if (sameOrder(landing, entries)) return null
+  const previous = landing[landing.indexOf(held) - 1]
   const [first] = entries
-  return first === undefined ? null : { before: null, marker: { list, id: idOf(first), side: 'before' }, words: 'First' }
+  if (previous === undefined) {
+    return first === undefined ? null : { before: null, after: [], marker: { list, id: idOf(first), side: 'before' }, words: 'First' }
+  }
+  return {
+    before: null,
+    after: above.flatMap((entry) => pathOf(entry) ?? []),
+    marker: { list, id: idOf(previous), side: 'after' },
+    words: `After ${nameOf(previous)}`,
+  }
 }

@@ -32,6 +32,8 @@ import type {
   AgentsSummary,
   DaemonCapabilities,
   DaemonInfo,
+  EpicRename,
+  EpicRenamed,
   EpicWrite,
   IssuesReport,
   Links,
@@ -46,7 +48,7 @@ import type {
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
-import { setWorktreeEpic } from './epic.ts';
+import { renameEpic, setWorktreeEpic } from './epic.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import {
   epicResponse,
@@ -56,6 +58,7 @@ import {
   namedChannels,
   openResponse,
   orderResponse,
+  renameResponse,
 } from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
@@ -1560,12 +1563,18 @@ export const runDaemon = async () => {
   };
 
   /**
-   * Set a worktree's epic for the index's drags and renames, as `session
-   * join` and `session leave` set it, by the worktree's path, as a terminal
-   * and Zed are asked for: every row the index lists has one of its own,
-   * served or not, so no key two rows share can send a write to the wrong
-   * worktree. A rename to a name no other epic has keeps the worktree's rank,
-   * which only the index can say. The write
+   * One write of a fact at a time, a worktree's epic or its place, since an
+   * epic write takes a rank away and a placement reads the ranks of an epic's
+   * worktrees: two drags, in two tabs, never interleave. A command writes in
+   * its own process, which the engine's re-read before every placement meets.
+   */
+  const factWrites = Semaphore.makeUnsafe(1);
+
+  /**
+   * Set a worktree's epic for the index's drags, as `session join` and
+   * `session leave` set it, by the worktree's path, as a terminal and Zed are
+   * asked for: every row the index lists has one of its own, served or not,
+   * so no key two rows share can send a write to the wrong worktree. The write
    * is refused when the file names another epic than the one the index read. A
    * path the daemon does not track, or whose session has gone, is not written,
    * and a session is never brought back by it. Nothing else is converged:
@@ -1578,18 +1587,22 @@ export const runDaemon = async () => {
     if (entry === null) {
       throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
-    await runNode(setWorktreeEpic({
+    await runNode(factWrites.withPermit(setWorktreeEpic({
       session: entry.session,
       repository: entry.repository,
       epic: input.epic,
       from: input.from,
-      rename: input.rename,
-    }));
+    })));
     return { epic: input.epic === null ? null : input.epic.trim() };
   };
 
-  /** One placement at a time, so two drags, in two tabs, never number one set of siblings at once. */
-  const orderWrites = Semaphore.makeUnsafe(1);
+  /**
+   * Rename an epic for the index's rename icon: every tracked worktree in it
+   * takes the new name, under the lock the other fact writes take, and the
+   * worktrees the daemon tracks say whether the name was another epic's.
+   */
+  const renameAt = (input: EpicRename): Promise<EpicRenamed> =>
+    runNode(factWrites.withPermit(renameEpic({ from: input.from, to: input.to, tracked: [...tracked.values()] })));
 
   /**
    * Place a worktree among its siblings for the index's drags, as `session
@@ -1604,10 +1617,11 @@ export const runDaemon = async () => {
     if (entry === null) {
       throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
     }
-    const placed = await runNode(orderWrites.withPermit(setRank({
+    const placed = await runNode(factWrites.withPermit(setRank({
       worktree: entry,
       tracked: [...tracked.values()],
       before: input.before === null ? null : resolve(input.before),
+      after: input.after.map((path) => resolve(path)),
     })));
     return { rank: placed.rank };
   };
@@ -1645,6 +1659,7 @@ export const runDaemon = async () => {
     ['/api/terminal', (request) => openResponse({ request, open: terminalAt })],
     ['/api/zed', (request) => openResponse({ request, open: zedAt })],
     ['/api/worktrees/epic', (request) => epicResponse({ request, write: setEpicAt })],
+    ['/api/worktrees/epic/rename', (request) => renameResponse({ request, write: renameAt })],
     ['/api/worktrees/order', (request) => orderResponse({ request, write: setRankAt })],
   ]);
 

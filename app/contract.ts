@@ -704,19 +704,35 @@ export type WorktreeSummary = {
  * by two rows can route a write to the wrong one; the epic to put it in, or
  * null for none; and the epic the index last read for it. A file that names
  * anything else by then refuses the write, as a stale revision refuses a move.
- * `rename` is true when the write is the worktree's part of renaming its epic
- * to a name no other epic has: that is the same epic under another name, so
- * the worktree keeps its rank among the others. A join, a merge into an epic
- * that exists and a leave send false, and take the rank of a worktree that is
- * not a main one away, so it arrives unranked.
+ * A worktree that is not a main one loses its rank with any change of epic.
  */
-export type EpicWrite = { path: string; epic: string | null; from: string | null; rename: boolean };
+export type EpicWrite = { path: string; epic: string | null; from: string | null };
 
 export const EpicWriteSchema = Schema.Struct({
   path: Schema.String,
   epic: Schema.NullOr(Schema.String),
   from: Schema.NullOr(Schema.String),
-  rename: Schema.Boolean,
+});
+
+/**
+ * What `POST /api/worktrees/epic/rename` takes: the epic by its name, and the
+ * name it takes. The daemon moves every tracked worktree in it, and tells from
+ * the worktrees it tracks whether the name is new, when each keeps its rank,
+ * or another epic's, when they merge and arrive unranked.
+ */
+export type EpicRename = { from: string; to: string };
+
+export const EpicRenameSchema = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+});
+
+/** What the rename route answers: the epic's name now, and whether it merged into one that had it. */
+export type EpicRenamed = { epic: string; merged: boolean };
+
+export const EpicRenamedSchema = Schema.Struct({
+  epic: Schema.String,
+  merged: Schema.Boolean,
 });
 
 /** What the epic route answers: the epic the worktree is in now. */
@@ -728,15 +744,18 @@ export const WorktreeEpicSchema = Schema.Struct({
 
 /**
  * What `POST /api/worktrees/order` takes: the worktree by its path, as the
- * epic route takes it, and the sibling it goes before, by its path, or null to
- * go last among the ranked ones. A sibling that is not ranked stands after
- * every ranked one, so going before it is going last among the ranked.
+ * epic route takes it; the ranked sibling it goes before, by its path, or
+ * null; and the unranked siblings drawn above the place it was dropped, in
+ * their drawn order, which are ranked first so it lands where it was dropped,
+ * right after them. With neither it goes last among the ranked ones; a
+ * placement names one or the other, never both.
  */
-export type OrderWrite = { path: string; before: string | null };
+export type OrderWrite = { path: string; before: string | null; after: readonly string[] };
 
 export const OrderWriteSchema = Schema.Struct({
   path: Schema.String,
   before: Schema.NullOr(Schema.String),
+  after: Schema.Array(Schema.String),
 });
 
 /** What the order route answers: the rank the worktree holds now. */

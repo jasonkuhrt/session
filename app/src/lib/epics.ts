@@ -88,6 +88,7 @@ export type DropOutcome =
     readonly kind: 'order'
     readonly path: string
     readonly before: string | null
+    readonly after: readonly string[]
     readonly marker: Marker
     readonly words: string
   }

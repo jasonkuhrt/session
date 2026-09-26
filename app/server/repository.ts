@@ -1667,17 +1667,27 @@ export const makeRepository = (directory: string) =>
     /**
      * Set this worktree's rank, or take it away with null: the one write of
      * `meta/rank`, made whole through a neighbour renamed into place, as the
-     * epic's file is, with `meta/` made when nothing holds its name. Which
-     * rank a placement gives, and which of its siblings' ranks it moves, is
-     * `setRank`'s to decide; this writes one file.
+     * epic's file is, with `meta/` made when nothing holds its name. `from` is
+     * the rank the writer read, a file the rules reject reading as none, and
+     * under this session's lock a file that holds anything else by now
+     * refuses the write, as the epic's `from` does. Which rank a placement
+     * gives, and which of its siblings' ranks it moves, is `setRank`'s to
+     * decide; this writes one file.
      */
-    const writeRank = (rank: number | null) =>
+    const writeRank = (input: { readonly rank: number | null; readonly from: number | null }) =>
       semaphore.withPermit(
         Effect.gen(function*() {
+          const { rank } = input;
           if (rank !== null && !(Number.isSafeInteger(rank) && rank >= 0)) {
             return yield* new RepositoryError({ kind: 'validation', message: `Not ordered: ${rank} is not a non-negative integer.` });
           }
           const target = yield* factTarget(rankFact);
+          if ((yield* readRank.pipe(Effect.orElseSucceed(() => null))) !== input.from) {
+            return yield* new RepositoryError({
+              kind: 'conflict',
+              message: `${metaDirectory}/${rankFact} changed on disk since it was read; try again.`,
+            });
+          }
           if (rank !== null) yield* replaceFile(`${metaDirectory}/${rankFact}`, `${rank}\n`);
           else if (target.present) yield* fs.remove(target.path);
         }).pipe(Effect.mapError(asRepositoryError)),

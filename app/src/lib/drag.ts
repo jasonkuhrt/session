@@ -4,6 +4,9 @@ import { getInteractiveElement, isElement } from '@dnd-kit/dom/utilities'
 import type { DragMoveEvent } from '@dnd-kit/react'
 import { KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 
+import type { Holding } from './epics'
+import { draggedId, draggedOf, targetId, targetOf } from './epics'
+
 /**
  * What the board and the index drag with, so a card on either is picked up
  * and put down the same way.
@@ -58,3 +61,31 @@ export const pointerOf = (event: DragMoveEvent): Point => {
   if (event.to !== undefined) return event.to
   return event.by === undefined ? now : { x: now.x + event.by.x, y: now.y + event.by.y }
 }
+
+/** The drag's state as a point of it describes it: the pointer, and the operation's source and target. */
+type Operation = DragMoveEvent['operation']
+
+/**
+ * What is held and where, as the drag stands at a point: what the pointer is
+ * over, and which half of it, above or below its middle, which is what places
+ * a held project or worktree before or after what it is over.
+ */
+export function holdingOf({ operation, pointer = operation.position.current }: {
+  readonly operation: Operation
+  /** Where the pointer is going, when a move says so before the drag has moved there. */
+  readonly pointer?: Point
+}): Holding | null {
+  const dragged = draggedOf(operation.source?.id)
+  if (dragged === null) return null
+  const middle = operation.target?.shape?.center.y
+  return { dragged, target: targetOf(operation.target?.id), below: middle !== undefined && pointer.y > middle }
+}
+
+/** Whether two points of a drag hold the same thing over the same half of the same target, so nothing drawn changes. */
+export const sameHolding = ({ left, right }: { readonly left: Holding | null; readonly right: Holding | null }) =>
+  left === null || right === null
+    ? left === right
+    : draggedId(left.dragged) === draggedId(right.dragged) && left.below === right.below &&
+      (left.target === null || right.target === null
+        ? left.target === right.target
+        : targetId(left.target) === targetId(right.target))

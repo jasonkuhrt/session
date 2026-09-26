@@ -1,4 +1,3 @@
-import type { DragMoveEvent } from '@dnd-kit/react'
 import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
@@ -15,9 +14,9 @@ import { WorktreeStack } from './components/worktree-stack'
 import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
 import { dashboardOf, stageRangeOf } from './lib/dashboard'
-import { dragSensors, pointerOf } from './lib/drag'
+import { dragSensors, holdingOf, pointerOf, sameHolding } from './lib/drag'
 import type { DropOutcome, EpicWriting, Holding } from './lib/epics'
-import { draggedId, draggedOf, dropOutcome, targetId, targetOf, withEpics } from './lib/epics'
+import { dropOutcome, withEpics } from './lib/epics'
 import type { Placement } from './lib/order'
 import { withPlacement } from './lib/order'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
@@ -30,17 +29,10 @@ const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
 
 /**
  * One worktree's new epic, as a write sends it: the worktree by its path, the
- * epic to put it in, the epic the page had read for it when the change was
- * asked for, which the daemon refuses the write against if the file has moved,
- * and whether it is the worktree's part of renaming its epic to a new name,
- * which keeps its rank.
+ * epic to put it in, and the epic the page had read for it when the change was
+ * asked for, which the daemon refuses the write against if the file has moved.
  */
-type EpicChange = {
-  readonly path: string
-  readonly epic: string | null
-  readonly from: string | null
-  readonly rename: boolean
-}
+type EpicChange = { readonly path: string; readonly epic: string | null; readonly from: string | null }
 
 /**
  * What the page draws while a card is held: the rows, the pull requests and the
@@ -55,6 +47,9 @@ type Snapshot = {
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The daemon did not answer.')
 
+/** A refused write as the list of sentences a write answers with. */
+const refused = (error: unknown) => [reasonOf(error)]
+
 /** The worktrees a drop names, as the rows it read them from. */
 const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
   paths.flatMap((path) => rows.filter((row) => row.path === path))
@@ -62,8 +57,8 @@ const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
 /** What a drop writes: every worktree it names, put in its epic or in none, against the epic drawn for it when it was dropped. */
 const changesOf = (outcome: Extract<DropOutcome, { kind: 'join' | 'leave' }>, rows: readonly WorktreeSummary[]): EpicChange[] =>
   outcome.kind === 'join'
-    ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic, rename: false }))
-    : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic, rename: false }))
+    ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
+    : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
 
 /**
  * The dialog a new epic opens, for one worktree dropped on the `+` or two, one
@@ -80,30 +75,6 @@ const newEpicRequest = (
     : null
 }
 
-/** The drag's state as a point of it describes it: the pointer, and the operation's source and target. */
-type Operation = DragMoveEvent['operation']
-
-/**
- * What is held and where, as the drag stands at a point: what the pointer is
- * over, and which half of it, above or below its middle, which is what places
- * a held project or worktree before or after what it is over.
- */
-function holdingOf(operation: Operation, pointer = operation.position.current): Holding | null {
-  const dragged = draggedOf(operation.source?.id)
-  if (dragged === null) return null
-  const middle = operation.target?.shape?.center.y
-  return { dragged, target: targetOf(operation.target?.id), below: middle !== undefined && pointer.y > middle }
-}
-
-/** Whether two points of a drag hold the same thing over the same half of the same target, so nothing drawn changes. */
-const sameHolding = (left: Holding | null, right: Holding | null) =>
-  left === null || right === null
-    ? left === right
-    : draggedId(left.dragged) === draggedId(right.dragged) && left.below === right.below &&
-      (left.target === null || right.target === null
-        ? left.target === right.target
-        : targetId(left.target) === targetId(right.target))
-
 export function WorktreeIndex() {
   const [writing, setWriting] = React.useState(false)
   /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
@@ -115,7 +86,7 @@ export function WorktreeIndex() {
   const [holding, setHolding] = React.useState<Holding | null>(null)
   const latestHolding = React.useRef<Holding | null>(null)
   const hold = (next: Holding | null) => {
-    if (sameHolding(latestHolding.current, next)) return
+    if (sameHolding({ left: latestHolding.current, right: next })) return
     latestHolding.current = next
     setHolding(next)
   }
@@ -138,41 +109,59 @@ export function WorktreeIndex() {
   const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
 
   /**
+   * Make a write and draw what it is to do until the rows read afterwards,
+   * which are what the page shows from then on, whatever landed; that read is
+   * made whether or not reads are held, and it lands, since nothing is held
+   * then. What the daemon refused shows above the cards in its own words.
+   */
+  const commit = async (
+    draw: { readonly epics: ReadonlyMap<string, EpicWriting>; readonly placing: Placement | null },
+    request: () => Promise<readonly string[]>,
+  ) => {
+    setWriting(true)
+    setFailure(null)
+    setWrites(draw.epics)
+    setPlacing(draw.placing)
+    const refusals = await request()
+    await reload()
+    setWrites(new Map())
+    setPlacing(null)
+    setFailure(refusals.length === 0 ? null : [...new Set(refusals)].join(' '))
+    setWriting(false)
+  }
+  /**
    * Put worktrees in epics, one request per worktree, since each worktree's
    * file is its own, each carrying the epic the page had read for it when the
    * change was asked for, so a file changed since is refused rather than
-   * overwritten; and draw them there until the rows read afterwards, which are
-   * what the page shows from then on, whatever landed. That read is made
-   * whether or not reads are held, and it lands, since nothing is held then.
+   * overwritten. A worktree that is not a main one loses its rank with it.
    */
-  const write = async (changes: readonly EpicChange[]) => {
-    if (changes.length === 0) return
-    setWriting(true)
-    setFailure(null)
-    setWrites(new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: change.rename }])))
-    const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
-    const refusals = [...new Set(results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : [])))]
-    await reload()
-    setWrites(new Map())
-    setFailure(refusals.length === 0 ? null : refusals.join(' '))
-    setWriting(false)
-  }
+  const write = (changes: readonly EpicChange[]) =>
+    changes.length === 0 ? Promise.resolve() : commit(
+      { epics: new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: false }])), placing: null },
+      async () => {
+        const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
+        return results.flatMap((result) => (result.status === 'rejected' ? refused(result.reason) : []))
+      },
+    )
+
+  /** Place a worktree among its siblings, one request, since the engine ranks and renumbers whatever the place needs. */
+  const place = (placement: Placement) =>
+    commit({ epics: new Map(), placing: placement }, () => IndexApi.setOrder(placement).then(() => [], refused))
 
   /**
-   * Place a worktree among its siblings, one request, since the engine
-   * renumbers whatever siblings the place needs, and draw it there until the
-   * rows read afterwards, which are what the page shows from then on,
-   * whatever landed; that read is made whether or not reads are held.
+   * Rename an epic, one request, since the daemon moves whoever is in it and
+   * tells from the worktrees it tracks whether the name is another epic's. It
+   * is drawn as the rows say, keeping every rank for a new name and merging
+   * unranked into an epic that has it, until the daemon's answer replaces it.
    */
-  const place = async (placement: Placement) => {
-    setWriting(true)
-    setFailure(null)
-    setPlacing(placement)
-    const refusal = await IndexApi.setOrder(placement).then(() => null, (error: unknown) => reasonOf(error))
-    await reload()
-    setPlacing(null)
-    setFailure(refusal)
-    setWriting(false)
+  const rename = (from: string, to: string) => {
+    const shown = rows ?? []
+    const merging = shown.some((row) => !row.main && row.epic === to)
+    const members = shown.filter((row) => !row.main && row.epic === from)
+    return commit(
+      { epics: new Map(members.map((row) => [row.path, { epic: to, keepsRank: !merging }])), placing: null },
+      () => IndexApi.renameEpic({ from, to }).then(() => [], refused),
+    )
   }
 
   const context: DragContext = {
@@ -215,21 +204,21 @@ export function WorktreeIndex() {
               sensors={dragSensors}
               onDragStart={(event) => {
                 setSnapshot({ at: clock, rows: listed, pullRequests: readPullRequests })
-                hold(holdingOf(event.operation))
+                hold(holdingOf({ operation: event.operation }))
               }}
-              onDragOver={(event) => hold(holdingOf(event.operation))}
-              onDragMove={(event) => hold(holdingOf(event.operation, pointerOf(event)))}
+              onDragOver={(event) => hold(holdingOf({ operation: event.operation }))}
+              onDragMove={(event) => hold(holdingOf({ operation: event.operation, pointer: pointerOf(event) }))}
               onDragEnd={(event) => {
                 // The drop is read from what was drawn, which is what it was
                 // made on, and the epics and ranks drawn then are what it
                 // writes against.
                 setSnapshot(null)
                 hold(null)
-                const held = event.canceled ? null : holdingOf(event.operation)
+                const held = event.canceled ? null : holdingOf({ operation: event.operation })
                 const outcome = held === null ? null : dropOutcome({ rows, dashboard, holding: held })
                 if (outcome === null) return
                 if (outcome.kind === 'make') setNaming(newEpicRequest(outcome, rows))
-                else if (outcome.kind === 'order') void place({ path: outcome.path, before: outcome.before })
+                else if (outcome.kind === 'order') void place({ path: outcome.path, before: outcome.before, after: outcome.after })
                 else void write(changesOf(outcome, rows))
               }}
             >
@@ -250,23 +239,12 @@ export function WorktreeIndex() {
             // the drop, so a join that lands while the dialog is open is
             // refused rather than overwritten.
             if (request.kind === 'epic') {
-              void write(
-                request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null, rename: false })),
-              )
+              void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
               return
             }
-            // A rename moves whoever is in the epic now, since the files may
-            // have changed while the dialog was open. To a name no other epic
-            // has, it is the same epic under another name, and every worktree
-            // keeps its rank; to a name another epic has, it merges into that
-            // one, and they arrive unranked, after its ranked worktrees.
-            if (name === request.epic) return
-            const renaming = !rows.some((row) => !row.main && row.epic === name)
-            void write(
-              rows
-                .filter((row) => !row.main && row.epic === request.epic)
-                .map((row) => ({ path: row.path, epic: name, from: row.epic, rename: renaming })),
-            )
+            // A rename moves whoever is in the epic when the daemon writes it,
+            // since the files may have changed while the dialog was open.
+            if (name !== request.epic) void rename(request.epic, name)
           }}
         />
       </div>
