@@ -221,8 +221,9 @@ burner"`, `Joined "Back burner", leaving "Epics"` when the worktree moved,
 `Left "Back burner"`, or `In no epic, so nothing to leave`. Renaming an epic
 from a terminal is a `join` in each of its worktrees, and a name another epic
 has merges the two; since each is a join, each takes its worktree's rank away,
-where the index's rename, below, keeps it. Deleting a worktree takes its
-membership with it, and nothing else has to be done.
+where the index's rename to a name no epic has, below, keeps every rank.
+Deleting a worktree takes its membership with it, and nothing else has to be
+done.
 
 The index writes the same file through `POST /api/worktrees/epic {path, epic,
 from, rename}`: the worktree by its path, as `POST /api/terminal` takes it, so a
