@@ -1083,7 +1083,8 @@ export const runDaemon = async () => {
       entry.trailerEvents.changed();
       worktreeEvents.changed();
     } catch (error) {
-      // The session could not be read; its board already says so. The last
+      // The session could not be read, which its board says too, or a flaw of
+      // the pass's own reading failed it; this line says which. The last
       // answer stands until a pass can be made.
       console.error(`${entry.path}: trailers not reconciled: ${error instanceof Error ? error.message : String(error)}`);
     }

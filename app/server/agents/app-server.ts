@@ -1,12 +1,12 @@
-import { join, resolve } from 'node:path';
 import type * as Cause from 'effect/Cause';
 import * as Effect from 'effect/Effect';
-import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
+import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
+import { oneLine } from '../model.ts';
 
 /**
  * A conversation with one `codex app-server`, for the length of one refresh.
@@ -14,8 +14,6 @@ import * as ChildProcess from 'effect/unstable/process/ChildProcess';
  * carries an id, a notification does not, and the server may say things nobody
  * asked for, so a reply is found by its id and everything else is ignored.
  */
-
-const repositoryRoot = resolve(import.meta.dir, '../../..');
 
 /** Enough to see what is live in a worktree without becoming a log. */
 const perWorktree = 3;
@@ -42,18 +40,15 @@ const ListReplySchema = Schema.Struct({
   result: Schema.Struct({ data: Schema.Array(ThreadSchema) }),
 });
 
-const PackageJson = Schema.Struct({
-  version: Schema.String.pipe(Schema.optionalKey),
-}).pipe(Schema.fromJsonString);
+/** A `thread/list` reply, decoded. */
+const decodeListReply = Schema.decodeUnknownEffect(ListReplySchema);
 
-/** The board names itself to the app-server; the version is this project's. */
-const clientVersion = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem;
-  const manifest = yield* Schema.decodeEffect(PackageJson)(
-    yield* fs.readFileString(join(repositoryRoot, 'package.json')),
-  );
-  return manifest.version ?? '0.0.0';
-}).pipe(Effect.orElseSucceed(() => '0.0.0'));
+/**
+ * The version the board names itself by in the handshake. The project
+ * publishes no version of its own, so the board sends this one, which is the
+ * one it has always sent.
+ */
+const clientVersion = '0.0.0';
 
 const encoder = new TextEncoder();
 
@@ -154,33 +149,40 @@ const connect = Effect.gen(function*() {
 
 /**
  * One spawn, one handshake, one `thread/list` per worktree, keyed back to the
- * path the daemon tracks. A worktree whose reply cannot be read lists nothing
- * rather than failing the refresh for the others.
+ * path the daemon tracks. A worktree whose reply does not decode lists nothing
+ * rather than failing the refresh for the others, and is kept in `unread`, so
+ * its threads are said to be unlisted rather than drawn as none; the daemon's
+ * log says what Codex answered instead.
  */
 export const listThreads = (roots: ReadonlyMap<string, string>) =>
   Effect.scoped(
     Effect.gen(function*() {
-      const version = yield* clientVersion;
       const codex = yield* connect;
       yield* codex.send({
         id: 1,
         method: 'initialize',
-        params: { clientInfo: { name: 'session', title: 'Session board', version } },
+        params: { clientInfo: { name: 'session', title: 'Session board', version: clientVersion } },
       });
       yield* codex.reply(1);
       yield* codex.send({ method: 'initialized' });
 
       const byWorktree = new Map<string, ReadonlyArray<ThreadRow>>();
+      const unread = new Set<string>();
       let id = 1;
       for (const [path, real] of roots) {
         id += 1;
         yield* codex.send(listRequest(id, real));
-        const decoded = yield* Schema.decodeUnknownEffect(ListReplySchema)(
-          yield* codex.reply(id),
-        ).pipe(Effect.orElseSucceed(() => null));
-        byWorktree.set(path, decoded === null ? [] : decoded.result.data);
+        const decoded = yield* decodeListReply(yield* codex.reply(id)).pipe(Effect.result);
+        if (Result.isSuccess(decoded)) {
+          byWorktree.set(path, decoded.success.result.data);
+          continue;
+        }
+        unread.add(path);
+        yield* Effect.logWarning(
+          `codex thread/list for ${path} answered in a shape this build does not read: ${oneLine(decoded.failure.message)}`,
+        );
       }
       yield* codex.finish;
-      return byWorktree;
+      return { byWorktree, unread };
     }),
   );

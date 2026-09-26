@@ -485,6 +485,11 @@ output saved outside the session directory:
 session refresh --previous /tmp/session-previous.json
 ```
 
+`--previous` reads the file's `inventory` and nothing else. A file it cannot
+read, or one that is not a refresh's output, is refused with its path and what
+is wrong with it, and nothing is printed; it is never read as an empty
+inventory.
+
 The root's `ignore/` and `archive/` are excluded before traversal, and those
 two only: `archive` and `ignore` are names of the root, and a directory of
 either name further down, such as `context/SES-1/archive/`, is read like any

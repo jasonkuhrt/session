@@ -26,7 +26,7 @@ import {
 import { setWorktreeEpic } from '../../../app/server/epic.ts';
 import { type Rankable, setRank } from '../../../app/server/order.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
-import { quote } from '../../../app/server/model.ts';
+import { oneLine, quote } from '../../../app/server/model.ts';
 import type { SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
 import { headCommit } from '../../../app/server/git.ts';
@@ -400,15 +400,29 @@ const relaunchDaemon = Effect.gen(function*() {
   );
 });
 
+/**
+ * The inventory of the earlier refresh `--previous` names, read and decoded.
+ * A file that cannot be read, or that is not a refresh's output, is refused
+ * with its path, what is wrong with it, and the fix, never read as an empty
+ * inventory.
+ */
+const previousInventory = (path: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    return (yield* Schema.decodeEffect(PreviousRefreshJson)(yield* fs.readFileString(path))).inventory;
+  }).pipe(
+    Effect.mapError((cause) =>
+      new SessionCliError({
+        message: `--previous names ${path}, which holds no earlier refresh's inventory: ${oneLine(cause.message)}. ` +
+          'Save what `session refresh` prints to a file, and pass that file.',
+      })
+    ),
+  );
+
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
   Effect.gen(function*() {
     const { inventory, skipped } = yield* repository.inventory;
-    let previous: FileInventory = {};
-    if (options.previous !== undefined) {
-      const fs = yield* FileSystem.FileSystem;
-      const encoded = yield* fs.readFileString(options.previous);
-      previous = (yield* Schema.decodeEffect(PreviousRefreshJson)(encoded)).inventory;
-    }
+    const previous: FileInventory = options.previous === undefined ? {} : yield* previousInventory(options.previous);
     yield* Console.log(
       yield* Schema.encodeEffect(RefreshJson)({ directory, inventory, changes: changesFrom(previous, inventory), skipped }),
     );

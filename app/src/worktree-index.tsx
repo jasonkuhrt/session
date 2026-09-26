@@ -1,7 +1,7 @@
 import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
-import type { PullRequestReports, WorktreeSummary } from '../contract'
+import type { EpicWrite, PullRequestReports, WorktreeSummary } from '../contract'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
@@ -33,13 +33,6 @@ const unresolvedNotices = (rows: readonly WorktreeSummary[] | null) =>
   (rows ?? []).filter((row) => !row.resolved).map((row) => unresolvedNotice(row))
 
 /**
- * One worktree's new epic, as a write sends it: the worktree by its path, the
- * epic to put it in, and the epic the page had read for it when the change was
- * asked for, which the daemon refuses the write against if the file has moved.
- */
-type EpicChange = { readonly path: string; readonly epic: string | null; readonly from: string | null }
-
-/**
  * What the page draws while a card is held: the rows, the pull requests and the
  * clock as they were when it was picked up. A read already under way can land
  * while it is held, and nothing it brings is drawn until the card is let go.
@@ -60,7 +53,7 @@ const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
   paths.flatMap((path) => rows.filter((row) => row.path === path))
 
 /** What a drop writes: every worktree it names, put in its epic or in none, against the epic drawn for it when it was dropped. */
-const changesOf = (outcome: Extract<DropOutcome, { kind: 'join' | 'leave' }>, rows: readonly WorktreeSummary[]): EpicChange[] =>
+const changesOf = (outcome: Extract<DropOutcome, { kind: 'join' | 'leave' }>, rows: readonly WorktreeSummary[]): EpicWrite[] =>
   outcome.kind === 'join'
     ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
     : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
@@ -144,7 +137,7 @@ export function WorktreeIndex() {
    * change was asked for, so a file changed since is refused rather than
    * overwritten. A worktree that is not a main one loses its rank with it.
    */
-  const write = (changes: readonly EpicChange[]) =>
+  const write = (changes: readonly EpicWrite[]) =>
     changes.length === 0 ? Promise.resolve() : commit(
       { epics: new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: false }])), placing: null },
       async () => {

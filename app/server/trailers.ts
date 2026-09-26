@@ -69,8 +69,9 @@ const parseClaims = (stdout: string): Claim[] => {
 /**
  * This branch's commits that no remote has, oldest first, read from Git's log
  * and decoded. First parent only, so a merge brings in no other branch's
- * claims; a repository Git cannot read has no claims, and a log that does not
- * decode fails the pass, which the daemon's log says.
+ * claims; a repository Git cannot read has no claims. The claims are strings
+ * the reading has already checked, so only a flaw of this reading fails the
+ * decode, and then the pass, which the daemon's log says.
  */
 const unpushedClaims = (worktree: string) =>
   capture({
