@@ -231,7 +231,7 @@ export const ArchiveListingSchema = Schema.Struct({
  * - `links`: gh or linear was asked about the worktree's links again
  * - `worktrees`: the set of tracked worktrees changed, a trailer report
  *   changed, or a tracked worktree's `.session` changed where a row shows it:
- *   its items or its epic
+ *   its items, its epic or its rank
  * - `pull-requests`: gh was asked about a tracked worktree's pull request again
  */
 export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees' | 'pull-requests';
@@ -679,6 +679,19 @@ export type WorktreeSummary = {
    * The row is served all the same, in no epic.
    */
   epicProblem: string | null;
+  /**
+   * The rank its session's `meta/rank` holds, which places it among its
+   * siblings: a main worktree's orders its project among the projects, and
+   * any other worktree's orders it among the worktrees of its epic, ranked
+   * ones first. Null when it has none, and when the file breaks the rules.
+   */
+  rank: number | null;
+  /**
+   * Why `meta/rank` could not be read as a rank, in the sentence `session
+   * check` gives with its fix; null when the file is sound or absent. The row
+   * is served all the same, unranked.
+   */
+  rankProblem: string | null;
   /** Whether this is its repository's main worktree, which Git lists first and the index draws at the head of the repository's section. */
   main: boolean;
   /** The repository the worktree belongs to, named by its main worktree; null for a folder outside Git, which the index gives a section of its own. */
@@ -691,6 +704,7 @@ export type WorktreeSummary = {
  * by two rows can route a write to the wrong one; the epic to put it in, or
  * null for none; and the epic the index last read for it. A file that names
  * anything else by then refuses the write, as a stale revision refuses a move.
+ * A worktree that is not a main one loses its rank with any change of epic.
  */
 export type EpicWrite = { path: string; epic: string | null; from: string | null };
 
@@ -700,11 +714,55 @@ export const EpicWriteSchema = Schema.Struct({
   from: Schema.NullOr(Schema.String),
 });
 
+/**
+ * What `POST /api/worktrees/rename` takes: the epic by its name, and the
+ * name it takes. The daemon moves every tracked worktree in it, and tells from
+ * the worktrees it tracks whether the name is new, when each keeps its rank,
+ * or another epic's, when they merge and arrive unranked.
+ */
+export type EpicRename = { from: string; to: string };
+
+export const EpicRenameSchema = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+});
+
+/** What the rename route answers: the epic's name now, and whether it merged into one that had it. */
+export type EpicRenamed = { epic: string; merged: boolean };
+
+export const EpicRenamedSchema = Schema.Struct({
+  epic: Schema.String,
+  merged: Schema.Boolean,
+});
+
 /** What the epic route answers: the epic the worktree is in now. */
 export type WorktreeEpic = { epic: string | null };
 
 export const WorktreeEpicSchema = Schema.Struct({
   epic: Schema.NullOr(Schema.String),
+});
+
+/**
+ * What `POST /api/worktrees/order` takes: the worktree by its path, as the
+ * epic route takes it; the ranked sibling it goes before, by its path, or
+ * null; and the unranked siblings drawn above the place it was dropped, in
+ * their drawn order, which are ranked first so it lands where it was dropped,
+ * right after them. With neither it goes last among the ranked ones; a
+ * placement names one or the other, never both.
+ */
+export type OrderWrite = { path: string; before: string | null; after: readonly string[] };
+
+export const OrderWriteSchema = Schema.Struct({
+  path: Schema.String,
+  before: Schema.NullOr(Schema.String),
+  after: Schema.Array(Schema.String),
+});
+
+/** What the order route answers: the rank the worktree holds now. */
+export type WorktreeRank = { rank: number };
+
+export const WorktreeRankSchema = Schema.Struct({
+  rank: Schema.Int,
 });
 
 export const WorktreeSummarySchema = Schema.Struct({
@@ -728,6 +786,8 @@ export const WorktreeSummarySchema = Schema.Struct({
   trailerProblems: Schema.Array(TrailerProblemSchema),
   epic: Schema.NullOr(Schema.String),
   epicProblem: Schema.NullOr(Schema.String),
+  rank: Schema.NullOr(Schema.Int),
+  rankProblem: Schema.NullOr(Schema.String),
   main: Schema.Boolean,
   repository: Schema.NullOr(RepositorySchema),
 });

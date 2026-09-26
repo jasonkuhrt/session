@@ -2,6 +2,7 @@ import type { Repository, WorktreeSummary } from '../../contract'
 import { stageNames } from '../../contract'
 import { isLive } from './agents'
 import { hour } from './format'
+import { rankedFirst } from './order'
 
 /**
  * How the index draws the worktrees it lists: a stack of sections, one per
@@ -11,7 +12,9 @@ import { hour } from './format'
  * them ordered alike. A project is a repository, what Git names for every
  * worktree of it, or a folder outside Git, and an epic is only the name its
  * worktrees' files share, so everything here is derived from the rows on every
- * read: no section, no order and no fold is kept anywhere.
+ * read: no section and no fold is kept anywhere, and the one order kept is the
+ * rank each worktree's own file holds, which places a main worktree's project
+ * among the projects and any other worktree within its epic.
  */
 
 /** Nothing live and nothing for this long makes a worktree quiet, drawn dim and last: the bound the index's activity bands used. */
@@ -60,7 +63,7 @@ const busierFirst = (left: Ranked, right: Ranked) => {
   return left.name.localeCompare(right.name)
 }
 
-/** An epic's card: its name and its worktrees, busiest first. */
+/** An epic's card: its name and its worktrees, the ranked ones first, then the busiest. */
 export type EpicCardShape = {
   readonly kind: 'epic'
   readonly name: string
@@ -119,6 +122,24 @@ export type Dashboard = { readonly sections: ReadonlyArray<ProjectSection | Acro
 /** The section a worktree is drawn in when it is in no epic, and returns to when it leaves one: its repository's, or its own outside Git. */
 export const sectionKeyOf = (row: WorktreeSummary) => row.repository?.path ?? row.path
 
+/**
+ * The main worktree whose rank places a section among the others: the one
+ * heading it, while it has a session. No other section has a file of its own
+ * to keep a place in, so it stands after the ranked ones, by what is
+ * happening in it.
+ */
+export const sectionRowOf = (section: ProjectSection | AcrossSection): WorktreeSummary | null =>
+  section.kind === 'project' && section.head.kind === 'tracked' ? section.head.row : null
+
+/**
+ * The stack's order: the sections a main worktree placed by hand heads, by
+ * rank, and then the rest, busiest first, their keys settling a tie.
+ */
+const stackOrder = rankedFirst<Ranked & { readonly section: ProjectSection | AcrossSection }>({
+  rankOf: (entry) => ({ rank: sectionRowOf(entry.section)?.rank ?? null, path: entry.section.key }),
+  otherwise: (left, right) => busierFirst(left, right) || left.section.key.localeCompare(right.section.key),
+})
+
 /** What heads a project's section until its main worktree's row is found, if it has one. */
 const headOf = (row: WorktreeSummary): SectionHead => {
   if (row.repository === null) return { kind: 'folder', path: row.path }
@@ -152,16 +173,20 @@ function namesOf(projects: readonly Filling[]): ReadonlyMap<string, string> {
 }
 
 /**
- * The epics by name, each with the worktrees in it, busiest first. A main
- * worktree is never in an epic, so its file is not read as putting it in one.
+ * The epics by name, each with the worktrees in it: the ones placed by hand
+ * first, in their rank's order, then the rest, busiest first. A main worktree
+ * is never in an epic, so its file is not read as putting it in one.
  */
 function epicsOf(rows: readonly WorktreeSummary[], now: number): Array<Ranked & { readonly card: EpicCardShape }> {
   const members = new Map<string, WorktreeSummary[]>()
   for (const row of rows) {
     if (!row.main && row.epic !== null) members.set(row.epic, [...(members.get(row.epic) ?? []), row])
   }
-  const rowOrder = (left: WorktreeSummary, right: WorktreeSummary) =>
-    busierFirst({ standing: standingOf([left], now), name: left.name }, { standing: standingOf([right], now), name: right.name })
+  const rowOrder = rankedFirst<WorktreeSummary>({
+    rankOf: (row) => row,
+    otherwise: (left, right) =>
+      busierFirst({ standing: standingOf([left], now), name: left.name }, { standing: standingOf([right], now), name: right.name }),
+  })
   return [...members].map(([name, epicRows]) => {
     const standing = standingOf(epicRows, now)
     return { card: { kind: 'epic', name, rows: epicRows.toSorted(rowOrder), quiet: standing.quiet }, standing, name }
@@ -175,9 +200,11 @@ function epicsOf(rows: readonly WorktreeSummary[], now: number): Array<Ranked & 
  * inside that epic's card, which stands in the section of the project all its
  * worktrees belong to, or in the section of the epics across projects when
  * they belong to more than one. A project is in the stack while any worktree
- * of it is listed, headed whether or not a session is there. Every section,
- * the one across projects included, is ordered as the cards in it are,
- * busiest first, and a quiet one is dim and last.
+ * of it is listed, headed whether or not a session is there. The sections a
+ * main worktree placed by hand heads come first, in their rank's order; every
+ * other section, the one across projects included, is ordered after them as
+ * the cards in a section are, busiest first, and a quiet one is dim, and last
+ * unless it was placed.
  */
 export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }): Dashboard {
   const filling = new Map<string, Filling>()
@@ -224,9 +251,7 @@ export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSum
   }
   const ranked = across.length === 0 ? projects : [...projects, { section: acrossSection, standing: acrossStanding, name: acrossName }]
   return {
-    sections: ranked
-      .toSorted((left, right) => busierFirst(left, right) || left.section.key.localeCompare(right.section.key))
-      .map((entry) => entry.section),
+    sections: ranked.toSorted(stackOrder).map((entry) => entry.section),
   }
 }
 

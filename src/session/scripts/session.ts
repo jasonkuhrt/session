@@ -16,8 +16,11 @@ import {
   ensureDaemon,
   openInBrowser,
   restartDaemon,
+  trackedPaths,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
+import { setWorktreeEpic } from '../../../app/server/epic.ts';
+import { type Rankable, setRank } from '../../../app/server/order.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
 import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
@@ -27,7 +30,6 @@ import {
   ensureSession,
   headCommit,
   resolveWorktreeSession,
-  setWorktreeEpic,
   type WorktreeSession,
 } from '../../../app/server/worktree.ts';
 
@@ -36,27 +38,51 @@ import {
  * live in `app/server`; this file only reads argv and prints.
  */
 
+/** An option a command may take after its name, and how its usage line writes it. */
+type CommandOption = '--before' | '--previous';
+
+/** What a command takes: its operands and how many, and its options, each as its usage line writes it. */
+type CommandSpec = {
+  readonly operands: string;
+  readonly least: number;
+  readonly most: number;
+  readonly options: Partial<Record<CommandOption, string>>;
+};
+
+/**
+ * Every command and what it takes. An option a command does not list is
+ * refused with its usage line, so none is taken and quietly ignored.
+ */
 const commands = {
-  init: { operands: '', least: 0, most: 0 },
-  check: { operands: '', least: 0, most: 0 },
-  refresh: { operands: '', least: 0, most: 0 },
-  ls: { operands: '[STAGE]', least: 0, most: 1 },
-  add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3 },
-  mv: { operands: '<ID> <STAGE>', least: 2, most: 2 },
-  group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
-  ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY },
-  batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
-  start: { operands: '', least: 0, most: 0 },
-  done: { operands: '<ID>', least: 1, most: 1 },
-  archive: { operands: '<ID>', least: 1, most: 1 },
-  log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
-  join: { operands: '"<epic>"', least: 1, most: 1 },
-  leave: { operands: '', least: 0, most: 0 },
-  open: { operands: '', least: 0, most: 0 },
-  daemon: { operands: '<status|restart>', least: 1, most: 1 },
-} as const;
+  init: { operands: '', least: 0, most: 0, options: {} },
+  check: { operands: '', least: 0, most: 0, options: {} },
+  refresh: { operands: '', least: 0, most: 0, options: { '--previous': '[--previous <inventory.json>]' } },
+  ls: { operands: '[STAGE]', least: 0, most: 1, options: {} },
+  add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3, options: {} },
+  mv: { operands: '<ID> <STAGE>', least: 2, most: 2, options: { '--before': '[--before ID|GROUP]' } },
+  group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
+  ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY, options: {} },
+  batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
+  start: { operands: '', least: 0, most: 0, options: {} },
+  done: { operands: '<ID>', least: 1, most: 1, options: {} },
+  archive: { operands: '<ID>', least: 1, most: 1, options: {} },
+  log: { operands: '"<by>" "<title>"', least: 2, most: 2, options: {} },
+  join: { operands: '"<epic>"', least: 1, most: 1, options: {} },
+  leave: { operands: '', least: 0, most: 0, options: {} },
+  order: { operands: '', least: 0, most: 0, options: { '--before': '[--before <worktree>]' } },
+  open: { operands: '', least: 0, most: 0, options: {} },
+  daemon: { operands: '<status|restart>', least: 1, most: 1, options: {} },
+} satisfies Record<string, CommandSpec>;
 
 type Command = keyof typeof commands;
+
+const specOf = (command: Command): CommandSpec => commands[command];
+
+/** One command's usage line: its operands, then the options it takes. */
+const usageOf = (command: Command): string => {
+  const { operands, options } = specOf(command);
+  return `Usage: ${['session', command, operands, ...Object.values(options)].filter((part) => part !== '').join(' ')}`;
+};
 
 const daemonActions = ['status', 'restart'] as const;
 
@@ -79,6 +105,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
   join "<epic>"                         put this worktree in the named epic, out of any other
   leave                                 take this worktree out of its epic
+  order [--before <worktree>]           place this worktree among its siblings, before one or last
   open                                  ensure the daemon and open this worktree's board
   daemon status                         say whether the daemon runs and was started from these sources
   daemon restart                        stop the daemon and start it again from these sources`;
@@ -142,10 +169,14 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
   const command = operands[0];
   if (command === undefined || !isCommand(command)) throw new Error(usage);
   const rest = operands.slice(1);
-  const arity = commands[command];
-  if (rest.length < arity.least || rest.length > arity.most) {
-    throw new Error(`Usage: session ${command} ${arity.operands}`.trimEnd());
-  }
+  const arity = specOf(command);
+  const given: ReadonlyArray<CommandOption> = [
+    ...(before === undefined ? [] : ['--before' as const]),
+    ...(previous === undefined ? [] : ['--previous' as const]),
+  ];
+  const stray = given.find((option) => arity.options[option] === undefined);
+  if (stray !== undefined) throw new Error(`session ${command} takes no ${stray}.\n\n${usageOf(command)}`);
+  if (rest.length < arity.least || rest.length > arity.most) throw new Error(usageOf(command));
   return { command, operands: rest, directory, previous, before };
 };
 
@@ -160,7 +191,7 @@ const asStage = (value: string): Stage => {
 
 const asDaemonAction = (value: string): DaemonAction => {
   const action = daemonActions.find((candidate) => candidate === value);
-  if (action === undefined) throw new Error(`Usage: session daemon ${commands.daemon.operands}`);
+  if (action === undefined) throw new Error(usageOf('daemon'));
   return action;
 };
 
@@ -514,6 +545,67 @@ const leave = (repository: SessionRepository, resolved: WorktreeSession) =>
     yield* Console.log(previous === null ? none : `Left ${quote(previous)}`);
   });
 
+/**
+ * The worktree a path names, as Git spells it, so `--before` may name a
+ * worktree from anywhere inside it, or through a link, and still find it
+ * among the siblings.
+ */
+const worktreeAt = (value: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const target = path.resolve(value);
+    if (!(yield* fs.exists(target))) {
+      return yield* new SessionCliError({ message: `--before names ${target}, which does not exist; name a sibling worktree.` });
+    }
+    return (yield* resolveWorktreeSession(target)).worktree.path;
+  });
+
+/**
+ * Every worktree the daemon tracks, as its state file lists them, each
+ * resolved through Git as the daemon resolves it when it takes one on. A path
+ * whose `.session` has gone, or that Git no longer knows, is no sibling of
+ * anything and is left out.
+ */
+const trackedWorktrees = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const paths = yield* trackedPaths;
+  const resolved = yield* Effect.forEach(
+    paths,
+    (path) =>
+      Effect.gen(function*() {
+        const session = yield* resolveWorktreeSession(path);
+        const info = yield* fs.stat(session.directory);
+        if (info.type !== 'Directory' || Option.isSome(yield* fs.readLink(session.directory).pipe(Effect.option))) return [];
+        return [{ session, repository: yield* makeRepository(session.directory) } satisfies Rankable];
+      }).pipe(Effect.orElseSucceed((): Rankable[] => [])),
+    { concurrency: 4 },
+  );
+  return resolved.flat();
+});
+
+/** A sibling as a line names it. */
+const nameOf = (sibling: Rankable) => sibling.session.worktree.name;
+
+/**
+ * Place this worktree among its siblings by writing its `meta/rank`, and the
+ * renumbering the placement needs: before the worktree `--before` names, or
+ * last among the ranked ones. A main worktree is placed among the other main
+ * worktrees the daemon tracks, which orders its project on the index; any
+ * other worktree among the others of its epic. It says the rank and where
+ * that puts it among the ranked ones.
+ */
+const order = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const before = options.before === undefined ? null : yield* worktreeAt(options.before);
+    const placed = yield* setRank({ worktree: { session: resolved, repository }, tracked: yield* trackedWorktrees, before });
+    const where = placed.siblings.kind === 'projects' ? 'among the projects' : `in ${quote(placed.siblings.epic)}`;
+    const next = placed.before === null
+      ? placed.after === null ? 'the only one ranked' : `after ${nameOf(placed.after)}`
+      : `before ${nameOf(placed.before)}`;
+    yield* Console.log(`${placed.written ? 'Ranked' : 'Already ranked'} ${resolved.worktree.name} ${placed.rank} ${where}, ${next}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -564,6 +656,7 @@ const runCommand = (options: Options) =>
       case 'log': { yield* log(options, repository, resolved); break; }
       case 'join': { yield* join(options, repository, resolved); break; }
       case 'leave': { yield* leave(repository, resolved); break; }
+      case 'order': { yield* order(options, repository, resolved); break; }
     }
   });
 

@@ -3,12 +3,13 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import type { EpicWrite, StreamEvent } from '../../contract'
+import type { EpicRename, EpicWrite, OrderWrite, StreamEvent } from '../../contract'
 import {
   AgentsSummarySchema,
   ArchiveListingSchema,
   ContextListingSchema,
   DaemonCapabilitiesSchema,
+  EpicRenamedSchema,
   FocusResultSchema,
   LedgerListingSchema,
   LinksSchema,
@@ -17,6 +18,7 @@ import {
   OpenResultSchema,
   TrailerProblemSchema,
   WorktreeEpicSchema,
+  WorktreeRankSchema,
   WorktreeSummarySchema,
 } from '../../contract'
 import { basePath, rawFileHref } from './base'
@@ -45,6 +47,8 @@ const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
 const decodeContext = Schema.decodeUnknownEffect(ContextListingSchema)
 const decodeArchive = Schema.decodeUnknownEffect(ArchiveListingSchema)
 const decodeEpic = Schema.decodeUnknownEffect(WorktreeEpicSchema)
+const decodeRank = Schema.decodeUnknownEffect(WorktreeRankSchema)
+const decodeRenamed = Schema.decodeUnknownEffect(EpicRenamedSchema)
 
 const send = <A, E>(
   request: HttpClientRequest.HttpClientRequest,
@@ -206,6 +210,27 @@ export const IndexApi = {
     run(send(
       HttpClientRequest.post('/api/worktrees/epic').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
       decodeEpic,
+    )),
+
+  /**
+   * Renames an epic: every worktree in it takes the new name, keeping its
+   * rank, or, when another epic has the name, merging into it unranked, as
+   * the daemon tells from the worktrees it tracks.
+   */
+  renameEpic: (write: EpicRename) =>
+    run(send(
+      HttpClientRequest.post('/api/worktrees/rename').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+      decodeRenamed,
+    )),
+
+  /**
+   * Places a worktree before a ranked sibling, or after the unranked siblings
+   * drawn above where it was dropped, or last among the ranked, by paths.
+   */
+  setOrder: (write: OrderWrite) =>
+    run(send(
+      HttpClientRequest.post('/api/worktrees/order').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+      decodeRank,
     )),
 }
 

@@ -5,16 +5,20 @@ import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type {
   AgentsSummary,
+  EpicRename,
+  EpicRenamed,
   EpicWrite,
   FocusResult,
   Links,
   OpenResult,
+  OrderWrite,
   Session,
   StreamEvent,
   TrailerProblem,
   WorktreeEpic,
+  WorktreeRank,
 } from '../contract.ts';
-import { EpicWriteSchema, stageNames } from '../contract.ts';
+import { EpicRenameSchema, EpicWriteSchema, OrderWriteSchema, stageNames } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
@@ -183,6 +187,29 @@ export const epicResponse = ({ request, write }: {
   readonly request: Request;
   readonly write: (input: EpicWrite) => Promise<WorktreeEpic>;
 }) => sharedWrite(request, EpicWriteSchema, async (input) => json(await write(input)));
+
+/**
+ * An epic's new name, at the root, for the index's rename: the epic by its
+ * name and the name it takes, answered with the name it has now and whether
+ * it merged. The daemon owns which worktrees are in it, and so whether the
+ * name was another epic's.
+ */
+export const renameResponse = ({ request, write }: {
+  readonly request: Request;
+  readonly write: (input: EpicRename) => Promise<EpicRenamed>;
+}) => sharedWrite(request, EpicRenameSchema, async (input) => json(await write(input)));
+
+/**
+ * A worktree's place among its siblings, at the root, for the index's drags:
+ * the worktree by its path, as the epic route takes it, and the sibling it
+ * goes before, or null for last among the ranked ones, answered with the rank
+ * it holds now. The daemon owns which worktrees it tracks, and so which are
+ * siblings.
+ */
+export const orderResponse = ({ request, write }: {
+  readonly request: Request;
+  readonly write: (input: OrderWrite) => Promise<WorktreeRank>;
+}) => sharedWrite(request, OrderWriteSchema, async (input) => json(await write(input)));
 
 /** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
  *  by default, so a quiet session must still say something. */

@@ -1,9 +1,9 @@
-import type { DragMoveEvent, DragOverEvent } from '@dnd-kit/react'
+import type { DragOverEvent } from '@dnd-kit/react'
 import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
 import type { StageFile } from '../../contract'
-import { dragSensors } from '../lib/drag'
+import { dragSensors, pointerOf } from '../lib/drag'
 import type { Lane as LaneLayout, Placement } from '../lib/lanes'
 import { isInList, lanesOf, moved, placementInto, placementOf, placementOver } from '../lib/lanes'
 import { isStage, moveAvailability } from '../lib/workflow'
@@ -25,15 +25,6 @@ type Held = { readonly id: string; readonly origin: Placement; readonly placemen
 const samePlacement = (left: Placement, right: Placement) =>
   left.to === right.to && left.group === right.group && left.beforeId === right.beforeId &&
   left.beforeGroup === right.beforeGroup
-
-type Point = { readonly x: number; readonly y: number }
-
-/** Where the pointer is going: a pointer move names the point, a key move the step. */
-const pointerOf = (event: DragMoveEvent): Point => {
-  const now = event.operation.position.current
-  if (event.to !== undefined) return event.to
-  return event.by === undefined ? now : { x: now.x + event.by.x, y: now.y + event.by.y }
-}
 
 export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardProps) {
   const committed = lanesOf(stages)
@@ -83,7 +74,7 @@ export function Board({ stages, onMove, onDraggingChange, ...actions }: BoardPro
    * A group it is already in changes nothing, so the gaps between the group's
    * cards are not places of their own.
    */
-  const placementFor = (current: Held, operation: DragOverEvent['operation'], pointer?: Point): Placement | null => {
+  const placementFor = (current: Held, operation: DragOverEvent['operation'], pointer?: ReturnType<typeof pointerOf>): Placement | null => {
     const { source, target } = operation
     if (source === null || target === null || target.id === source.id || target.shape === undefined) return null
     const lanes = drawn(current)

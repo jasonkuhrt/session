@@ -53,10 +53,14 @@ worktrees still have a home; and when Git lists the repository by its Git
 directory, a bare repository's or a submodule's, by that directory's name,
 marked Git directory. A folder outside Git is a project of its own, headed by
 its name, marked Outside Git. An epic whose worktrees belong to more than one
-project is drawn once, in a section of its own, Across projects. Sections, and
-the cards in each, stand in the same order: the ones with a live agent first,
-then by their latest activity, and one with nothing live and nothing in five
-days dim and last, a project counting every worktree of it wherever it is drawn.
+project is drawn once, in a section of its own, Across projects. A project
+whose main worktree has a session is dragged by its head to place it in the
+stack, and a worktree within its epic's card to place it there; the ones placed
+stand first, in the order they were placed in, and keep their places when they
+go quiet. The rest, sections and the cards in each alike, stand in one order:
+the ones with a live agent first, then by their latest activity, and one with
+nothing live and nothing in five days dim and last, a project counting every
+worktree of it wherever it is drawn.
 A worktree is two lines, marked as the worktree picker marks them: a folder and
 its name with the agents live in it, over a branch and its branch, or a commit
 for a detached HEAD, and the pull request gh reports for it. At its top left a
@@ -66,7 +70,8 @@ every card. Drag a worktree onto an epic to join it, onto a worktree in no epic
 to make an epic of the two, from any project, onto the `+` that appears after
 its project's cards while it is held to make an epic of it alone, or out of its
 epic onto empty space to leave it and go back to its project; `session join
-"<epic>"` and `session leave` do the same from a terminal. Each board sits under
+"<epic>"` and `session leave` do the same from a terminal, and `session order`
+places a project or a worktree as a drag does. Each board sits under
 `/w/<worktree name>/`. Activity is when the worktree last did anything: a Claude
 Code session's status change, a Codex thread's update, or an item file written.
 The index has no refresh button and needs none: any command that scaffolds a
@@ -115,10 +120,10 @@ comes `ledger/`, the session's shared log: one dated entry per file, written
 with `session log` or by hand, for what another agent must know to act
 correctly here and would not learn from the items. Material about one item
 belongs under `context/<ID>/`, linked from that item's `### Evidence`. Facts
-about the worktree's session live in `meta/`, one file each: `meta/epic` names
-the epic the worktree is in, in one line, and is the only one defined. Finished
-and abandoned items live under `archive/`, one file each, and are not loaded as
-active context.
+about the worktree's session live in `meta/`, one file each, in one line, and
+there are two: `meta/epic` names the epic the worktree is in, and `meta/rank`
+places it among its siblings on the index. Finished and abandoned items live
+under `archive/`, one file each, and are not loaded as active context.
 
 A commit can close items itself: end its message with a `Session-Done: <ID>`
 trailer and the daemon files that item as done the moment the commit is made,
@@ -218,14 +223,25 @@ project's section, and one whose worktrees belong to more than one is drawn
 once, in a section of its own ordered with the others. Membership changes by a
 drag or a rename on the index, or by `session join` and `session leave`;
 deleting a worktree takes its membership with it, nothing is pruned, no path is
-stored, and nothing stores an order or a fold. Everything else about a worktree
-is read where it is kept: its session, `.session/`, which it has at most one of
-and which puts it on the index; its branch, from `git worktree list`, and none
-when detached; that branch's pull request, from `gh pr view`, taken as the one
-while one is open; and the agents in it, by the working directory their harness
-reports. An agent reaches an epic only through the worktree it works in, and no
-fact ties an agent to an epic, because none could be derived or verified. Linear
-issues are what the branch and the pull request name, and are not modeled.
+stored, and nothing stores a fold. The one order stored is a worktree's rank
+among its siblings, a number in its `meta/rank`: a main worktree's orders its
+project among the projects, any other worktree's orders it among the worktrees
+of its epic, and a change of epic removes it, but for a rename on the index to a
+name no other epic has, which is the same epic under another name and keeps
+every rank. Ranked siblings stand first, by rank, and the rest after them by
+what is happening in them. A placement, by a drag on the index or by `session
+order`, ranks the worktree placed, and on the index the unranked siblings drawn
+above where it was dropped, so it lands there, and renumbers the others only
+where there is no room between two; only that write gives a rank, and every epic
+write but a rename to a new name takes a linked worktree's away. Everything else
+about a worktree is read where it is kept: its session, `.session/`, which it
+has at most one of and which puts it on the index; its branch, from `git
+worktree list`, and none when detached; that branch's pull request, from `gh pr
+view`, taken as the one while one is open; and the agents in it, by the working
+directory their harness reports. An agent reaches an epic only through the
+worktree it works in, and no fact ties an agent to an epic, because none could
+be derived or verified. Linear issues are what the branch and the pull request
+name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night

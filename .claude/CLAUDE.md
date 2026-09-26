@@ -30,11 +30,14 @@ it exists exactly while a worktree names it. A worktree is in at most one epic
 and a main worktree in none. Membership changes only by a drag on the index, a
 rename from an epic's heading, or `session join` and `session leave`, through
 the engine's one write, `setEpic`, which the daemon's route reaches by a
-worktree's path with the epic the index last read; nothing stores an order or a
-fold. An agent reaches an epic only through the worktree its working directory
-is in, and no fact ties an agent to an epic. Each tracked worktree's `.session`
-watch also feeds the index's `worktrees` event, settled, for every change a row
-shows.
+worktree's path with the epic the index last read; nothing stores a fold, and a
+hand-set order is a worktree's `meta/rank`, which `setRank` alone gives and any
+change of epic other than a rename to a new name removes: a main's rank orders
+its project among the projects, any other worktree's rank orders it within its
+epic, ranked ones come first in their rank, and the rest sorts by standing. An
+agent reaches an epic only through the worktree its working directory is in, and
+no fact ties an agent to an epic. Each tracked worktree's `.session` watch also
+feeds the index's `worktrees` event, settled, for every change a row shows.
 
 The index is a stack of projects, each a repository, which is Git's rather than
 the tool's, the worktrees sharing one Git directory, or a folder outside Git: a
