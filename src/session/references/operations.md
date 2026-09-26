@@ -428,23 +428,24 @@ what changes after.
 
 The skill loads the brief itself, with the line
 `` !`session -C "${CLAUDE_PROJECT_DIR}" brief` `` in `SKILL.md`. Whenever the
-skill is invoked, typed as a command or chosen by the model, Claude Code writes
-the project's directory in place of `${CLAUDE_PROJECT_DIR}`, runs the line
-there, and puts what it prints where the line was before the model reads the
-skill; it writes the session's own id wherever the skill says
-`${CLAUDE_SESSION_ID}` the same way. A command there that fails stops the skill
-with `Shell command failed for pattern …`, and nothing of the skill reaches the
-model. Output past the limit Claude Code puts on a command's output, which a
-29 KB brief stays under and a 40 KB one does not, reaches the model as its
-first 2 KB and the path of a file holding the rest; with no item body in it,
-only a long `RULES.md` makes a brief that long.
+skill is invoked, typed as a command or chosen by the model, Claude Code runs
+the line and puts what it prints where the line was before the model reads the
+skill. It first writes the project's directory in place of
+`${CLAUDE_PROJECT_DIR}`, so the brief is of the directory Claude Code started
+in wherever its shell has moved since, and it writes the session's own id
+wherever the skill says `${CLAUDE_SESSION_ID}` the same way. A command there
+that fails stops the skill with `Shell command failed for pattern …`, and
+nothing of the skill reaches the model. A brief past the Bash tool's inline
+ceiling, roughly 30,000 characters by default, reaches the model as its first
+2,000 characters and the path of a file holding the rest; with no item body in
+it, only a long `RULES.md` makes one that long.
 
-Claude Code runs the line only as its permission rules allow, so `session` must
-be allowed for the brief to load without a prompt, as `"Bash(session *)"` in
-`permissions.allow` of `~/.claude/settings.json` allows it, or a rule that
-allows all of `Bash`. Where nothing allows it, a session that cannot ask, such
-as `claude -p`, refuses the line with `This command requires approval` and
-loads none of the skill.
+Claude Code never asks about a command in a skill. It checks the line against
+the permission rules, and outside auto mode anything short of an allow stops
+the skill with `Shell command permission check failed for pattern …`, a rule
+that would ask included. So `session` must be allowed for the brief to load,
+as `"Bash(session *)"` in `permissions.allow` of `~/.claude/settings.json`
+allows it, or a rule that allows all of `Bash`.
 
 Codex reads `SKILL.md` as it is written and runs nothing in it, so a Codex
 agent sees the line as a command, and the sentence above it says to run

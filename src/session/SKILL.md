@@ -29,8 +29,8 @@ explicit change of scope.
 
 ## Where the session stands
 
-When the line below is a command rather than its output, the harness has not
-run it: run `session brief` in the worktree before acting.
+When the line below shows a command or a notice rather than its output, the
+harness has not run it: run `session brief` in the worktree before acting.
 
 !`session -C "${CLAUDE_PROJECT_DIR}" brief`
 
