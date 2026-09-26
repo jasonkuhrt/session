@@ -1,5 +1,7 @@
 import { basename, dirname, join, resolve } from 'node:path';
 import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
+import * as Option from 'effect/Option';
 import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { Repository } from '../contract.ts';
@@ -171,9 +173,9 @@ const notListed = (input: {
  * separate one is. The main keeps its folder's name and is the one never in
  * an epic. What Git lists first names the repository, and a linked worktree
  * whose folder shares that name takes its parent's before it. It fails as
- * `refused` where Git lists no worktree at the path or the path is inside a
- * Git directory, and as `unanswered` where Git could not be asked or would
- * not answer.
+ * `refused` where there is no directory to ask Git about, where Git lists no
+ * worktree at the path and where the path is inside a Git directory, and as
+ * `unanswered` where Git could not be asked or would not answer.
  */
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
@@ -182,6 +184,11 @@ export const resolveWorktreeSession = (input: string) =>
     // worktree it belongs to is its parent.
     const isSessionDirectory = basename(candidate) === '.session';
     const start = isSessionDirectory ? dirname(candidate) : candidate;
+    const found = yield* (yield* FileSystem.FileSystem).stat(start).pipe(Effect.option);
+    if (Option.isNone(found) || found.value.type !== 'Directory') {
+      const what = Option.isNone(found) ? 'does not exist' : 'is not a directory';
+      return yield* new WorktreeError({ kind: 'refused', message: `${start} ${what}.` });
+    }
     const located = yield* locateGit(start);
     if (located === null) {
       return {
