@@ -78,7 +78,7 @@ function Held({ dragged, dashboard, context, words }: {
     return card === undefined ? null : <HeldPreview held={{ kind: 'epic', card }} words={words} context={context} />
   }
   const row = context.rows.find((candidate) => candidate.path === dragged.path)
-  return row === undefined ? null : <HeldPreview held={{ kind: 'row', row }} words={words} context={context} />
+  return row === undefined ? null : <HeldPreview held={{ kind: dragged.kind, row }} words={words} context={context} />
 }
 
 /**

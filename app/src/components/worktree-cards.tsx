@@ -255,24 +255,22 @@ export function NewEpicTarget({ name, context }: { name: string; context: DragCo
 /**
  * What the pointer carries while a card is held: the card as it is drawn,
  * with no drag of its own, and above it the few words of what dropping it
- * where it is would do, or none when it would do nothing.
+ * where it is would do, or none when it would do nothing. A project's head
+ * runs the width of the page, so its copy is drawn a card wide.
  */
 export function HeldPreview({ held, words, context }: {
-  held: { readonly kind: 'row'; readonly row: WorktreeSummary } | { readonly kind: 'epic'; readonly card: EpicCardShape }
+  held:
+    | { readonly kind: 'row' | 'head'; readonly row: WorktreeSummary }
+    | { readonly kind: 'epic'; readonly card: EpicCardShape }
   words: string | null
   context: RowContext
 }) {
   return (
     <div className="relative">
       {words === null ? null : <Badge className="absolute -top-3 left-3 z-10 shadow-sm">{words}</Badge>}
-      <Card size="sm" className="gap-0 py-0 shadow-lg">
-        {held.kind === 'row'
+      <Card size="sm" className={cn('gap-0 py-0 shadow-lg', held.kind === 'head' && 'max-w-md')}>
+        {held.kind === 'epic'
           ? (
-            <div className="px-3 py-2.5">
-              <WorktreeRow row={held.row} context={context} />
-            </div>
-          )
-          : (
             <>
               <EpicHeading card={held.card} movable={false} />
               <div className="divide-y">
@@ -281,6 +279,11 @@ export function HeldPreview({ held, words, context }: {
                 ))}
               </div>
             </>
+          )
+          : (
+            <div className="px-3 py-2.5">
+              <WorktreeRow row={held.row} context={context} />
+            </div>
           )}
       </Card>
     </div>
