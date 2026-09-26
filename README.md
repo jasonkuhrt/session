@@ -253,6 +253,15 @@ established sortable library. Keep custom code limited to the board, Markdown
 workflow, and file boundary. Do not add separate mobile behavior, accessibility
 work, or concurrent-edit coordination unless Jason changes this contract.
 
+Where data crosses a boundary, its shape is an Effect Schema, and the code's
+type for it is that schema's `Type`, never written by hand. This is an axiom,
+not a best effort: a file read or written, a command's output or input, a
+request, a response, an event, the URL, the browser's storage, and what
+another tool answers each has one schema, decoded where the data enters and
+encoded where it leaves, and a parser of a text format ends in a decode of the
+record it produced. One noun has one definition, so a hand-written type beside
+a schema is a second truth and is removed.
+
 Production checks replace authored tests for this project. Do not add tests,
 test dependencies, test scaffolding, or test pipelines unless Jason explicitly
 changes that policy. Oxlint, React Doctor, and the Effect-enabled TypeScript

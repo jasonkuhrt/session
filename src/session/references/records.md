@@ -166,7 +166,7 @@ An entry is YAML frontmatter, then the body:
 ---
 date: 2026-09-23T14:02:11Z
 title: Pivot to per-item evidence
-by: claude session_0135i3KrKC2ekfxKBAPee12d
+by: claude a45225f1-fb70-4db3-8a2e-25ad01794474
 branch: feat/agents
 commit: 8d287cf
 batch: Email backend peel
@@ -329,7 +329,7 @@ identifies the agent that picked it up, by harness and session id:
 ```markdown
 ### Agent
 
-claude session_0135i3KrKC2ekfxKBAPee12d
+claude a45225f1-fb70-4db3-8a2e-25ad01794474
 ```
 
 `codex <thread-id>` is the same convention for a Codex thread. Other agents,

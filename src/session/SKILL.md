@@ -1,6 +1,7 @@
 ---
 name: session
 description: Manage .session as the working record for Triage, Design, Batch, Queue, and Execute, and drive it with the session CLI, under the session's standing rules. Use when organizing session work, deciding, batching, queueing or executing items, briefing an agent or recording its output, refreshing context, maintaining the five stage records, RULES.md and the ledger, or opening the session board.
+allowed-tools: Bash(session *)
 ---
 
 # Session
@@ -62,8 +63,9 @@ context.
 
 Nothing has to be set up. A command that touches the records creates `.session`,
 the five stage directories, `meta/`, and the `.gitignore` when they are missing;
-`check` only reads what is on disk. `session init` does that scaffolding and
-nothing else, printing what it created, for handing the directory to an editor.
+`check` and `brief` only read what is on disk. `session init` does that
+scaffolding and nothing else, printing what it created, for handing the
+directory to an editor.
 
 The CLI never migrates an old session. A `.session` that is a symlink is refused
 by every command, and so is a session with a stage kept under another name,
@@ -80,11 +82,12 @@ this session: who stages and commits, what qualifies as work, what is closed
 for now, and the roles of the agents sharing the worktree. It is ad hoc and
 per session; it is not a record, a plan, or a checkpoint, and it holds no items.
 
-Read it first in every session and again whenever a refresh reports it changed.
-It governs over habits, memories, and defaults for as long as the session
-lasts. Write it only from the user's own words, naming who set each rule and
-when; never add, relax, or reinterpret a rule on the agent's initiative. A
-session without standing rules has no `RULES.md`; nothing scaffolds one.
+The brief carries it, or says why it could not be read; read it again whenever
+a refresh reports it changed. It governs over habits, memories, and defaults
+for as long as the session lasts. Write it only from the user's own words,
+naming who set each rule and when; never add, relax, or reinterpret a rule on
+the agent's initiative. A session without standing rules has no `RULES.md`;
+nothing scaffolds one.
 
 ## Ledger
 
@@ -97,7 +100,8 @@ or deleted; a mistake is corrected by a later one. The ledger is memory, not a
 queue: nothing marks an entry read, and no entry waits for anyone.
 
 Write an entry with `session log "<by>" "<title>"` and its body, if it has one,
-on stdin. `<by>` is who is writing: `claude <session id>`, `codex <thread id>`,
+on stdin. `<by>` is who is writing: `claude ${CLAUDE_SESSION_ID}` from Claude
+Code, `codex $CODEX_THREAD_ID` from Codex, which sets it to the thread's id,
 or a person's name. The command reads the clock, adds the branch, commit, and
 running batch it can observe, and writes one file named for the moment and the
 title, such as `2026-09-23 14-02-11Z — Pivot to per-item evidence.md`: flat
@@ -106,9 +110,12 @@ same form and the same keys, which
 [references/records.md](references/records.md) defines. The engine writes no
 entry of its own; moves and closes are already in the files and in Git.
 
-On the first refresh, read `RULES.md`, then the ledger, then the stages. A later
-refresh reports each new entry as an added path; read it, because that is how
-agents sharing a session hear from each other.
+The brief lists the newest entries by title; open those whose titles bear on
+the work. A refresh without `--previous` lists every path as added, so on the
+first one treat as new only the entries newer than the brief's newest, and on
+later ones only those missing from the inventory kept from the one before; read
+each new entry, because that is how agents sharing a session hear from each
+other.
 
 ## Epics
 
@@ -134,25 +141,25 @@ content in an editor, in the item files themselves, and run `session check` afte
 hand edits. [references/operations.md](references/operations.md) has the
 commands.
 
-An item is its own brief: point an agent at the item it is to execute, and keep
-what the item does not say under `context/<ID>/`, linked from its `### Evidence`.
-The agent's output goes back to the item the same way, into `### Evidence` or
-into files under `context/<ID>/` linked from there, so the item stays the one
-place its outcome is read. Write into the records only what they need; scratch
-work stays out of them. Anything that needs the user is a stage move: the item
-goes into the lane where the user decides it, as a new card or a moved one,
-because the lanes are where the user looks for it. Nothing in `context/`, the
-ledger, or any other file asks for the user's attention.
+An item is its own instructions: point an agent at the item it is to execute,
+and keep what the item does not say under `context/<ID>/`, linked from its
+`### Evidence`. The agent's output goes back to the item the same way, into
+`### Evidence` or into files under `context/<ID>/` linked from there, so the
+item stays the one place its outcome is read. Write into the records only what
+they need; scratch work stays out of them. Anything that needs the user is a
+stage move: the item goes into the lane where the user decides it, as a new
+card or a moved one, because the lanes are where the user looks for it. Nothing
+in `context/`, the ledger, or any other file asks for the user's attention.
 
 Read [references/records.md](references/records.md) when creating, migrating, or
 moving items. It defines the small stage-specific format and supporting folders.
 Use stable IDs across stages. Do not infer authorization from an old filename,
 confidence label, or another agent's suggestion; reconcile the conversation.
 
-Before acting, refresh changed context with the CLI. Load `RULES.md` when it
-exists, then the ledger, then the five stage records, and only relevant
-supporting context. Keep the path/hash inventory in the conversation; read
-changed files and avoid reloading unchanged material.
+Beyond the brief, load only the supporting context that is relevant. Before
+acting on a later turn, refresh changed context with the CLI: keep the path/hash
+inventory in the conversation, read changed files, and avoid reloading unchanged
+material.
 `ignore/` and `archive/` are outside normal context: do not traverse, read,
 summarize, or follow links into them during a refresh. Read inactive history only
 when the user asks for it.
@@ -166,9 +173,10 @@ the accepted intent. If execution exposes a consequential change, discuss it
 and update the affected item's state rather than quietly changing the contract.
 
 An agent that picks up an item in Execute writes a trailing `### Agent` section
-naming itself by harness and session id, so other agents, including mixed-model
-teams, can address it. It is a convention the engine neither writes nor enforces,
-and `session start` does not add it.
+naming itself by harness and session id, `claude ${CLAUDE_SESSION_ID}` or
+`codex $CODEX_THREAD_ID`, so other agents, including mixed-model teams, can
+address it. It is a convention the engine neither writes nor enforces, and
+`session start` does not add it.
 
 Execution continues through the agreed outcome, including verification and
 landing when requested. A task is not complete merely because only tests or CI
@@ -230,3 +238,13 @@ Validate after editing or migrating records. The checker proves structural
 invariants, not that a design is sound or the user agreed. The agent still owns
 those judgments. Keep explanations short, titles concrete, and detailed evidence
 out of the first reading view.
+
+## Where the session stands
+
+When the line below shows a command, or
+`[shell command execution disabled by policy]`, rather than its output, the
+harness has not run it: run `session brief` in the worktree before acting. When
+the brief arrives as a short preview and the path of a file, read that file
+whole before acting.
+
+!`session -C "${CLAUDE_PROJECT_DIR}" brief`
