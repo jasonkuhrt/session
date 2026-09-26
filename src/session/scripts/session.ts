@@ -38,28 +38,51 @@ import {
  * live in `app/server`; this file only reads argv and prints.
  */
 
+/** An option a command may take after its name, and how its usage line writes it. */
+type CommandOption = '--before' | '--previous';
+
+/** What a command takes: its operands and how many, and its options, each as its usage line writes it. */
+type CommandSpec = {
+  readonly operands: string;
+  readonly least: number;
+  readonly most: number;
+  readonly options: Partial<Record<CommandOption, string>>;
+};
+
+/**
+ * Every command and what it takes. An option a command does not list is
+ * refused with its usage line, so none is taken and quietly ignored.
+ */
 const commands = {
-  init: { operands: '', least: 0, most: 0 },
-  check: { operands: '', least: 0, most: 0 },
-  refresh: { operands: '', least: 0, most: 0 },
-  ls: { operands: '[STAGE]', least: 0, most: 1 },
-  add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3 },
-  mv: { operands: '<ID> <STAGE>', least: 2, most: 2 },
-  group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
-  ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY },
-  batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY },
-  start: { operands: '', least: 0, most: 0 },
-  done: { operands: '<ID>', least: 1, most: 1 },
-  archive: { operands: '<ID>', least: 1, most: 1 },
-  log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
-  join: { operands: '"<epic>"', least: 1, most: 1 },
-  leave: { operands: '', least: 0, most: 0 },
-  order: { operands: '', least: 0, most: 0 },
-  open: { operands: '', least: 0, most: 0 },
-  daemon: { operands: '<status|restart>', least: 1, most: 1 },
-} as const;
+  init: { operands: '', least: 0, most: 0, options: {} },
+  check: { operands: '', least: 0, most: 0, options: {} },
+  refresh: { operands: '', least: 0, most: 0, options: { '--previous': '[--previous <inventory.json>]' } },
+  ls: { operands: '[STAGE]', least: 0, most: 1, options: {} },
+  add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3, options: {} },
+  mv: { operands: '<ID> <STAGE>', least: 2, most: 2, options: { '--before': '[--before ID|GROUP]' } },
+  group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
+  ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY, options: {} },
+  batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
+  start: { operands: '', least: 0, most: 0, options: {} },
+  done: { operands: '<ID>', least: 1, most: 1, options: {} },
+  archive: { operands: '<ID>', least: 1, most: 1, options: {} },
+  log: { operands: '"<by>" "<title>"', least: 2, most: 2, options: {} },
+  join: { operands: '"<epic>"', least: 1, most: 1, options: {} },
+  leave: { operands: '', least: 0, most: 0, options: {} },
+  order: { operands: '', least: 0, most: 0, options: { '--before': '[--before <worktree>]' } },
+  open: { operands: '', least: 0, most: 0, options: {} },
+  daemon: { operands: '<status|restart>', least: 1, most: 1, options: {} },
+} satisfies Record<string, CommandSpec>;
 
 type Command = keyof typeof commands;
+
+const specOf = (command: Command): CommandSpec => commands[command];
+
+/** One command's usage line: its operands, then the options it takes. */
+const usageOf = (command: Command): string => {
+  const { operands, options } = specOf(command);
+  return `Usage: ${['session', command, operands, ...Object.values(options)].filter((part) => part !== '').join(' ')}`;
+};
 
 const daemonActions = ['status', 'restart'] as const;
 
@@ -146,10 +169,14 @@ const parseOptions = (path: Path.Path, args: ReadonlyArray<string>): Options => 
   const command = operands[0];
   if (command === undefined || !isCommand(command)) throw new Error(usage);
   const rest = operands.slice(1);
-  const arity = commands[command];
-  if (rest.length < arity.least || rest.length > arity.most) {
-    throw new Error(`Usage: session ${command} ${arity.operands}`.trimEnd());
-  }
+  const arity = specOf(command);
+  const given: ReadonlyArray<CommandOption> = [
+    ...(before === undefined ? [] : ['--before' as const]),
+    ...(previous === undefined ? [] : ['--previous' as const]),
+  ];
+  const stray = given.find((option) => arity.options[option] === undefined);
+  if (stray !== undefined) throw new Error(`session ${command} takes no ${stray}.\n\n${usageOf(command)}`);
+  if (rest.length < arity.least || rest.length > arity.most) throw new Error(usageOf(command));
   return { command, operands: rest, directory, previous, before };
 };
 
@@ -164,7 +191,7 @@ const asStage = (value: string): Stage => {
 
 const asDaemonAction = (value: string): DaemonAction => {
   const action = daemonActions.find((candidate) => candidate === value);
-  if (action === undefined) throw new Error(`Usage: session daemon ${commands.daemon.operands}`);
+  if (action === undefined) throw new Error(usageOf('daemon'));
   return action;
 };
 
