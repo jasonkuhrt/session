@@ -111,6 +111,16 @@ stages dim. The overlay adds no state and no verb: the files remain the work,
 the CLI is unchanged, and the `### Agent` convention in the records stays a
 convention the board does not interpret.
 
+Where data crosses a boundary, its shape is an Effect Schema and the code's
+type for it is that schema's `Type`, never written by hand; this is an axiom,
+not a best effort. The shared nouns live in `app/contract.ts` as schemas alone,
+the client decodes every answer in `lib/api.ts`, each server source decodes
+what it reads, a file, a listing, a tool's answer, a request, and the CLI
+decodes what it reads and what `refresh --previous` is given; a parser of a
+text format ends in a decode of the record it produced, and no `JSON.parse` or
+`.json()` result is used undecoded. A hand-written type beside a schema is a
+second truth and is removed.
+
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
 nothing in them reaches the daemon. A new setting is a field of the schema with
