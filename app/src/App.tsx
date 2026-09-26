@@ -1,6 +1,7 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
-import type { AgentsSummary, FocusResult, Item, Session, TrailerProblem } from '../contract'
+import type { FocusResult, Item } from '../contract'
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
@@ -12,22 +13,48 @@ import type { Choosing } from './components/workflow-card'
 import { useCapabilities } from './components/worktree-actions'
 import { Alert, AlertDescription } from './components/ui/alert'
 import { Skeleton } from './components/ui/skeleton'
-import { eventsUrl, SessionApi } from './lib/api'
+import { SessionApi } from './lib/api'
+import { useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
-import { useNewestRead } from './lib/newest-read'
+import { landWrite, reads, reread } from './lib/reads'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
+import { useStream } from './lib/stream'
 
-const linksProblem = (error: unknown) =>
-  error instanceof Error ? error.message : 'The pull request and issues could not be read'
+const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
+
+/** Why a read failed, or nothing while it has not. */
+const failureOf = (error: unknown, fallback: string) => (error === null ? null : messageOf(error, fallback))
+
+/**
+ * The board's reads, each on its own. The agents overlay, the trailers and the
+ * links answer different questions than the files do and change on their own
+ * schedule, and a source that cannot be reached must not take the board down
+ * with it: a failed read keeps what it last had and says the latest one
+ * failed. The trailers are the daemon's answer, derived from the branch and
+ * the files, and a failed read of them says nothing: the session read beside
+ * it reports an unreachable daemon.
+ */
+function useBoardReads(board: string) {
+  const session = useQuery(reads.session(board))
+  const agents = useQuery(reads.agents(board))
+  const trailers = useQuery(reads.trailers(board))
+  const links = useQuery(reads.links(board))
+  return {
+    session: session.data ?? null,
+    loading: session.isPending,
+    loadError: failureOf(session.error, 'Could not load the session'),
+    agents: agents.data ?? null,
+    agentsError: failureOf(agents.error, 'The agent listing could not be read'),
+    trailers: trailers.data ?? [],
+    links: links.data ?? null,
+    linksError: failureOf(links.error, 'The pull request and issues could not be read'),
+  }
+}
 
 function App() {
-  const [session, setSession] = React.useState<Session | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const board = useBoardPath()
+  const client = useQueryClient()
   const [dragging, setDragging] = React.useState(false)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
-  const [agents, setAgents] = React.useState<AgentsSummary | null>(null)
-  const [agentsError, setAgentsError] = React.useState<string | null>(null)
-  const [trailers, setTrailers] = React.useState<readonly TrailerProblem[]>([])
   const [naming, setNaming] = React.useState<BoardNameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [choosing, setChoosing] = React.useState<Choosing>(null)
@@ -35,126 +62,45 @@ function App() {
   const now = useNow()
   const capabilities = useCapabilities()
 
-  const load = React.useCallback(async (signal?: AbortSignal): Promise<Session | null> => {
-    try {
-      const next = await SessionApi.read(signal)
-      if (signal?.aborted) return null
-      setSession(next)
-      setLoadError(null)
-      return next
-    } catch (error) {
-      if (!signal?.aborted) setLoadError(error instanceof Error ? error.message : 'Could not load the session')
-      return null
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
-  }, [])
+  const { session, loading, loadError, agents, agentsError, trailers, links, linksError } = useBoardReads(board)
 
-  const reload = React.useCallback(async () => {
-    await load()
-  }, [load])
+  const readSession = React.useCallback(() => reread({ client, queryKey: reads.session(board).queryKey }), [board, client])
 
   const { pending, failure, refreshed, mutate, follow } = useSessionMutations({
     session,
-    onSession: setSession,
-    reload,
+    // A write answers with the session it made, which is drawn at once.
+    onSession: (next) => landWrite({ client, queryKey: reads.session(board).queryKey, answer: () => next }),
+    reload: readSession,
   })
-
-  // The agents overlay is read on its own: it answers a different question than
-  // the files do, changes on its own schedule, and a source that cannot be
-  // reached must not take the board down with it. A failed read keeps the rows
-  // it last had and says that the latest one failed.
-  const loadAgents = React.useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await SessionApi.agents(signal)
-      if (signal?.aborted) return
-      setAgents(next)
-      setAgentsError(null)
-    } catch (error) {
-      if (signal?.aborted) return
-      setAgentsError(error instanceof Error ? error.message : 'The agent listing could not be read')
-    }
-  }, [])
-
-  // The trailers answer is the daemon's, derived from the branch and the files;
-  // a failed read keeps what the board last showed rather than clearing it.
-  const loadTrailers = React.useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await SessionApi.trailers(signal)
-      if (!signal?.aborted) setTrailers(next)
-    } catch {
-      // The session read beside it reports an unreachable daemon.
-    }
-  }, [])
-
-  // The links are the daemon's last answers from gh and linear, read on their
-  // own for the same reason as the agents: a source that cannot be reached
-  // must not take the board down, and a failed read keeps the chips it last had.
-  // gh and linear answer apart, so two reads can resolve out of order; only the
-  // newest lands.
-  const links = useNewestRead({ read: SessionApi.links, describe: linksProblem })
-  const loadLinks = links.load
 
   const focusAgent = React.useCallback(async (pid: number): Promise<FocusResult> => {
     try {
-      return await SessionApi.focus(pid)
+      return await SessionApi.focus(board, pid)
     } catch (error) {
-      return { ok: false, reason: error instanceof Error ? error.message : 'The focus request failed' }
+      return { ok: false, reason: messageOf(error, 'The focus request failed') }
     }
-  }, [])
-
-  React.useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    void loadAgents(controller.signal)
-    void loadTrailers(controller.signal)
-    void loadLinks(controller.signal)
-    return () => controller.abort()
-  }, [load, loadAgents, loadLinks, loadTrailers])
+  }, [board])
 
   // The daemon pushes one `changed` event per debounced write under `.session`;
-  // the board never polls. A refetch waits while a mutation is in flight or a
-  // card is being dragged, because the sortable library owns placement until
-  // drop. Reconnecting refetches too, since writes can land while the stream
-  // is down.
+  // the board never polls. A read of the session waits while a mutation is in
+  // flight or a card is being dragged, because the sortable library owns
+  // placement until drop, and one read catches up when that ends. The agents
+  // overlay, the trailers and the links are not the files, so none is held
+  // back by a drag, and each is read only when its own answer changed.
   const busy = pending || dragging
-  const busyRef = React.useRef(busy)
-  const missedRef = React.useRef(false)
-  const droppedRef = React.useRef(false)
-
-  React.useEffect(() => {
-    const source = new EventSource(eventsUrl(['changed', 'agents', 'trailers', 'links']))
-    const refetch = () => {
-      if (busyRef.current) missedRef.current = true
-      else void follow(load)
-    }
-    // The agents overlay, the trailers and the links are not the files, so none
-    // is held back by a drag, and each is read only when its own answer changed.
-    const refetchAgents = () => void loadAgents()
-    const refetchTrailers = () => void loadTrailers()
-    const refetchLinks = () => void loadLinks()
-    source.addEventListener('changed', refetch)
-    source.addEventListener('agents', refetchAgents)
-    source.addEventListener('trailers', refetchTrailers)
-    source.addEventListener('links', refetchLinks)
-    source.addEventListener('error', () => { droppedRef.current = true })
-    source.addEventListener('open', () => {
-      if (!droppedRef.current) return
-      droppedRef.current = false
-      refetch()
-      refetchAgents()
-      refetchTrailers()
-      refetchLinks()
-    })
-    return () => source.close()
-  }, [follow, load, loadAgents, loadLinks, loadTrailers])
-
-  React.useEffect(() => {
-    busyRef.current = busy
-    if (busy || !missedRef.current) return
-    missedRef.current = false
-    void load()
-  }, [busy, load])
+  useStream({
+    board,
+    on: {
+      changed: () => follow(async () => {
+        await readSession()
+        return client.getQueryData(reads.session(board).queryKey) ?? null
+      }),
+      agents: () => reread({ client, queryKey: reads.agents(board).queryKey }),
+      trailers: () => reread({ client, queryKey: reads.trailers(board).queryKey }),
+      links: () => reread({ client, queryKey: reads.links(board).queryKey }),
+    },
+    hold: { held: busy, events: ['changed'], release: readSession },
+  })
 
   // Only the lane that is choosing has chosen items; one that has moved out of
   // it since is no longer chosen.
@@ -182,8 +128,8 @@ function App() {
       <SessionHeader
         worktree={session?.worktree}
         rules={session?.rules ?? false}
-        links={links.answer}
-        linksError={links.problem}
+        links={links}
+        linksError={linksError}
         terminal={capabilities.terminal}
         zed={capabilities.zed}
       />

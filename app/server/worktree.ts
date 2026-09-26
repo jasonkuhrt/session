@@ -253,13 +253,6 @@ export const resolveWorktreeSession = (input: string) =>
   });
 
 /**
- * Route key for a worktree: its name, encoded segment by segment so a nested
- * name (`email-backend/Heartbeat`) still addresses one board under `/w/`.
- */
-export const encodeWorktreeKey = (name: string): string =>
-  name.split('/').map((segment) => encodeURIComponent(segment)).join('/');
-
-/**
  * The one setup step, and the only one: every command runs it first, and the
  * daemon runs it for every worktree it serves. It scaffolds, it never
  * converts an older session. Returns what it had to create.

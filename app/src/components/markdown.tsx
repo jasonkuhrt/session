@@ -1,7 +1,7 @@
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { absoluteHref, basePath, isMarkdownPath } from '../lib/base'
+import { absoluteHref, isMarkdownPath, useBoardPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
 import { cn } from '../lib/utils'
 import { copyLabel, useCopy } from './copyable'
@@ -47,6 +47,7 @@ export function Markdown({ children, collapseEvidence = false, page = false }: {
 
 function MarkdownLink({ href, children }: { href: string | undefined; children: React.ReactNode }) {
   const [copyState, copy] = useCopy()
+  const board = useBoardPath()
   if (!href) return <span>{children}</span>
 
   // An absolute path is a place on this machine rather than a page, so it is
@@ -71,7 +72,7 @@ function MarkdownLink({ href, children }: { href: string | undefined; children: 
   // Everything else opens beside the page, once: a second click brings back
   // the tab the first one opened. An address the URL parser rejects has no tab
   // to name, so the browser is left to do with it what it does with any link.
-  const target = linkHref(href)
+  const target = linkHref(board, href)
   const absolute = absoluteHref(target)
   return (
     <a
@@ -91,8 +92,9 @@ function MarkdownLink({ href, children }: { href: string | undefined; children: 
  * to load, so its description stands in its place.
  */
 function MarkdownImage({ alt, src, title }: { alt: string | undefined; src: string | undefined; title: string | undefined }) {
+  const board = useBoardPath()
   if (!src) return <span>{alt}</span>
-  return <img alt={alt ?? ''} src={fileHref(src)} title={title} />
+  return <img alt={alt ?? ''} src={fileHref(board, src)} title={title} />
 }
 
 /**
@@ -101,17 +103,17 @@ function MarkdownImage({ alt, src, title }: { alt: string | undefined; src: stri
  * opens on the board's file page, where it is read the way an item is; any
  * other file opens as it is on disk through the files route.
  */
-function linkHref(href: string) {
-  if (/^https?:/iu.test(href) || href.startsWith('/files/')) return fileHref(href)
+function linkHref(board: string, href: string) {
+  if (/^https?:/iu.test(href) || href.startsWith('/files/')) return fileHref(board, href)
   const path = href.replace(/^\.\//u, '')
   const end = path.search(/[?#]/u)
   const file = end === -1 ? path : path.slice(0, end)
-  return isMarkdownPath(file) ? `${basePath}/file/${path}` : fileHref(href)
+  return isMarkdownPath(file) ? `${board}/file/${path}` : fileHref(board, href)
 }
 
-/** Session-relative paths resolve through this board's files route. */
-function fileHref(href: string) {
+/** Session-relative paths resolve through the board's files route. */
+function fileHref(board: string, href: string) {
   if (href.startsWith('#') || /^(https?:|mailto:)/iu.test(href)) return href
-  if (href.startsWith('/files/')) return `${basePath}${href}`
-  return `${basePath}/files/${href.replace(/^\.\//u, '')}`
+  if (href.startsWith('/files/')) return `${board}${href}`
+  return `${board}/files/${href.replace(/^\.\//u, '')}`
 }

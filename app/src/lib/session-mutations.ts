@@ -3,6 +3,7 @@ import * as React from 'react'
 import type { Session } from '../../contract'
 import type { SessionMutation } from './api'
 import { ApiError, SessionApi } from './api'
+import { useBoardPath } from './base'
 
 /** A conflict is not a failure: nothing was lost and the surface caught up. */
 export const refreshedNotice =
@@ -23,6 +24,7 @@ export function useSessionMutations(input: {
   readonly reload: () => Promise<void>
 }) {
   const { session, onSession, reload } = input
+  const board = useBoardPath()
   const [pending, setPending] = React.useState(false)
   const [failure, setFailure] = React.useState<string | null>(null)
   const [refreshed, setRefreshed] = React.useState(false)
@@ -34,7 +36,7 @@ export function useSessionMutations(input: {
       setFailure(null)
       setRefreshed(false)
       try {
-        await onSession(await SessionApi.mutate(path, { ...body, revision: session.revision }))
+        await onSession(await SessionApi.mutate(board, path, { ...body, revision: session.revision }))
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
@@ -49,7 +51,7 @@ export function useSessionMutations(input: {
         setPending(false)
       }
     },
-    [onSession, reload, session],
+    [board, onSession, reload, session],
   )
 
   const clear = React.useCallback(() => {

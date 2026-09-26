@@ -1,6 +1,6 @@
 import * as React from 'react'
 
-import { basePath } from '../lib/base'
+import { useBoardPath } from '../lib/base'
 import { cn } from '../lib/utils'
 import { SettingsMenu } from './settings-menu'
 import { useTip } from './tip'
@@ -97,6 +97,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
   crumbs: readonly Crumb[]
 }) {
   const tip = useTip()
+  const boardPath = useBoardPath()
   const board = worktree ?? 'Board'
   // A step is known by the steps that lead to it, so two steps with one name,
   // such as a path's `a/a`, are still two.
@@ -124,7 +125,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink render={<a aria-label={board} href={`${basePath}/`} title={tip(boardMeaning)} />}>
+            <BreadcrumbLink render={<a aria-label={board} href={`${boardPath}/`} title={tip(boardMeaning)} />}>
               {board}
             </BreadcrumbLink>
           </BreadcrumbItem>

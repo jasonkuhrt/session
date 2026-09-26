@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { Check } from 'lucide-react'
 
 import type { Item, Stage } from '../../contract'
-import { itemHref } from '../lib/base'
+import { itemHref, useBoardPath } from '../lib/base'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { Copyable } from './copyable'
@@ -50,6 +50,7 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
   // Only the lane that is choosing offers its cards to be chosen.
   const purpose = choosing?.stage === stage ? choosing.purpose : null
   const tip = useTip()
+  const board = useBoardPath()
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
     // what the sortable's keyboard sensor listens on. It carries the name a
@@ -90,7 +91,7 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
               )}
             {/* A real link: the item has a page, so it opens in a tab like anything else. */}
             <a
-              href={itemHref(item.id)}
+              href={itemHref({ board, id: item.id })}
               className="min-w-0 flex-1 rounded-sm text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {item.title}

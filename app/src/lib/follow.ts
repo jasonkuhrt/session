@@ -1,6 +1,7 @@
-import * as React from 'react'
+import { type QueryKey, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query'
 
-import { eventsUrl } from './api'
+import { reread } from './reads'
+import { useStream } from './stream'
 
 /** What a page last read, and why its latest read failed. */
 export type Followed<A> = {
@@ -18,47 +19,20 @@ export type Followed<A> = {
  * answer never replaces a newer one, and a failed read keeps what the page
  * last showed and says why. The page never polls, and its stream carries
  * nothing but `changed`, so it keeps nothing else asking.
- *
- * `read` is the page's one question and must keep its identity across renders.
  */
-export function useFollowed<A>(read: (signal: AbortSignal) => Promise<A>): Followed<A> {
-  const [state, setState] = React.useState<Followed<A>>({ value: null, error: null })
-
-  React.useEffect(() => {
-    const controller = new AbortController()
-    let cancelled = false
-    let latest = 0
-    const load = async () => {
-      const mine = ++latest
-      try {
-        const value = await read(controller.signal)
-        if (cancelled || mine !== latest) return
-        setState({ value, error: null })
-      } catch (error) {
-        if (cancelled || mine !== latest) return
-        const message = error instanceof Error ? error.message : 'The session could not be read'
-        setState((last) => ({ value: last.value, error: message }))
-      }
-    }
-
-    void load()
-    const source = new EventSource(eventsUrl(['changed']))
-    let dropped = false
-    source.addEventListener('changed', () => void load())
-    source.addEventListener('error', () => {
-      dropped = true
-    })
-    source.addEventListener('open', () => {
-      if (!dropped) return
-      dropped = false
-      void load()
-    })
-    return () => {
-      cancelled = true
-      controller.abort()
-      source.close()
-    }
-  }, [read])
-
-  return state
+export function useFollowed<A, K extends QueryKey>({ board, read }: {
+  /** The board's prefix, whose stream says when to read again. */
+  readonly board: string
+  readonly read: UseQueryOptions<A, Error, A, K>
+}): Followed<A> {
+  const client = useQueryClient()
+  const { data, error } = useQuery(read)
+  useStream({ board, on: { changed: () => reread({ client, queryKey: read.queryKey }) } })
+  return {
+    value: data ?? null,
+    error: error === null ? null : reasonOf(error),
+  }
 }
+
+/** Why a read failed, in the daemon's words when it gave some. */
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The session could not be read')

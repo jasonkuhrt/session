@@ -1,8 +1,10 @@
+import { useQuery } from '@tanstack/react-query'
 import { type LucideIcon, SquareCode, SquareTerminal } from 'lucide-react'
 import * as React from 'react'
 
 import type { DaemonCapabilities, OpenResult } from '../../contract'
 import { DaemonApi } from '../lib/api'
+import { reads } from '../lib/reads'
 import { Tip } from './tip'
 import { Button } from './ui/button'
 
@@ -21,22 +23,9 @@ const noCapabilities: DaemonCapabilities = { terminal: false, zed: false }
  * that answer arrives, and if it never does, there is no control to draw, and
  * the page's own read is what says the daemon cannot be reached.
  */
-export function useCapabilities() {
-  const [capabilities, setCapabilities] = React.useState(noCapabilities)
-  React.useEffect(() => {
-    const controller = new AbortController()
-    const load = async () => {
-      try {
-        const answer = await DaemonApi.capabilities(controller.signal)
-        if (!controller.signal.aborted) setCapabilities({ terminal: answer.terminal, zed: answer.zed })
-      } catch {
-        // Nothing to draw, and nothing to say twice.
-      }
-    }
-    void load()
-    return () => controller.abort()
-  }, [])
-  return capabilities
+export function useCapabilities(): DaemonCapabilities {
+  // A failed read draws nothing, and has nothing to say twice.
+  return useQuery(reads.capabilities()).data ?? noCapabilities
 }
 
 type ActionProps = {

@@ -46,15 +46,17 @@ export type ArchivedItem = { readonly record: ArchiveRecord; readonly item: Item
  * the end, so its first line is the item's heading; a record edited by hand
  * past that is shown whole, under the title its name gives.
  */
-export async function readArchivedItem({ id, signal }: {
+export async function readArchivedItem({ board, id, signal }: {
+  /** The board's prefix, whose session's archive is read. */
+  readonly board: string
   readonly id: string
   readonly signal?: AbortSignal | undefined
 }): Promise<ArchivedItem | null> {
-  const { records } = await SessionApi.archive(signal)
+  const { records } = await SessionApi.archive(board, signal)
   // The listing is newest day first, then by name.
   const record = records.find((candidate) => candidate.id === id)
   if (record === undefined) return null
-  const text = (await SessionApi.file(record.path, signal)).replaceAll('\r\n', '\n')
+  const text = (await SessionApi.file(board, record.path, signal)).replaceAll('\r\n', '\n')
   const heading = `## ${id} — `
   const [first = '', ...rest] = text.split('\n')
   const titled = first.startsWith(heading)

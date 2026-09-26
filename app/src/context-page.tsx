@@ -7,17 +7,15 @@ import { useCopy } from './components/copyable'
 import { useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
-import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { absoluteHref, filePageHref, isMarkdownPath, rawFileHref } from './lib/base'
+import { problemOf, worktreeOf } from './lib/api'
+import { absoluteHref, filePageHref, isMarkdownPath, rawFileHref, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
 import { listingMeta } from './lib/listings'
 import { openOnceOnClick } from './lib/open-once'
+import { reads } from './lib/reads'
 import { cn } from './lib/utils'
-
-/** The page reads where it stands, for its name and root, and `context/` for its entries, together. */
-const readContext = (signal: AbortSignal) => Promise.all([readPlace(signal), SessionApi.context(signal)])
 
 /** One entry of the tree, with what it holds when it is a directory. */
 type Node = {
@@ -60,7 +58,9 @@ function treeOf(entries: readonly ContextEntry[]): readonly Node[] {
  */
 export function ContextPage() {
   const now = useNow()
-  const { value, error } = useFollowed(readContext)
+  const board = useBoardPath()
+  // Where the page stands, for its name and root, and `context/` for its entries, are read together.
+  const { value, error } = useFollowed({ board, read: reads.context(board) })
   const [place, context] = value ?? [null, null]
   // Which directories are open, by path, so a refetch after a write keeps them
   // as the reader left them.
@@ -183,9 +183,10 @@ function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
  */
 function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
   const tip = useTip()
+  const board = useBoardPath()
   const { path, writtenAt } = node.entry
   const markdown = isMarkdownPath(path)
-  const href = markdown ? filePageHref(path) : rawFileHref(path)
+  const href = markdown ? filePageHref({ board, path }) : rawFileHref({ board, path })
   const absolute = absoluteHref(href)
   return (
     <div className={cn(rowClass, 'group/file pl-8 hover:bg-muted')}>

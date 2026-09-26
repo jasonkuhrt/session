@@ -197,22 +197,12 @@
             }
           },
           {
-            "include": ["app/build.ts", "app/server/daemon.ts"],
+            "include": ["app/server/daemon.ts"],
             "options": {
               "diagnosticSeverity": {
-                // These Bun entrypoints own terminal output directly; the
+                // This Bun entrypoint owns terminal output directly; the
                 // server's application logic still logs through Effect.
                 "globalConsole": "off"
-              }
-            }
-          },
-          {
-            "include": ["app/build.ts"],
-            "options": {
-              "diagnosticSeverity": {
-                // The build script is Bun infrastructure rather than Effect
-                // application code, so Bun owns its filesystem operations.
-                "nodeBuiltinImport": "off"
               }
             }
           },

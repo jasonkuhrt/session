@@ -2,14 +2,12 @@ import type { ArchiveRecord } from '../contract'
 import { BoardPageFrame, ListingEmpty, PageLoading } from './components/board-page'
 import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
-import { problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
+import { problemOf, worktreeOf } from './lib/api'
 import { archiveStateMeaning } from './lib/archive'
-import { filePageHref } from './lib/base'
+import { filePageHref, useBoardPath } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
-
-/** The page reads where it stands and the archive's records together. */
-const readArchive = (signal: AbortSignal) => Promise.all([readPlace(signal), SessionApi.archive(signal)])
+import { reads } from './lib/reads'
 
 /** What each column holds, said where its name is. */
 const columnMeaning = {
@@ -26,7 +24,9 @@ const columnMeaning = {
  * it is, since nothing can be read from it.
  */
 export function ArchivePage() {
-  const { value, error } = useFollowed(readArchive)
+  const board = useBoardPath()
+  // Where the page stands and the archive's records are read together.
+  const { value, error } = useFollowed({ board, read: reads.archive(board) })
   const [place, archive] = value ?? [null, null]
   return (
     <BoardPageFrame
@@ -62,6 +62,7 @@ const recordLink = 'rounded-sm underline-offset-4 outline-none hover:underline f
 /** One record: the day, the item, its title, and how it left, as its name gives them. */
 function RecordRow({ record }: { record: ArchiveRecord }) {
   const tip = useTip()
+  const board = useBoardPath()
   const { date, id, title, state } = record
   if (date === null || id === null || title === null || state === null) {
     return (
@@ -69,7 +70,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
         <TableCell colSpan={4} className="whitespace-normal wrap-anywhere">
           <a
             className={recordLink}
-            href={filePageHref(record.path)}
+            href={filePageHref({ board, path: record.path })}
             title={tip('This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file.')}
           >
             {record.name}
@@ -83,7 +84,7 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
       <TableCell className="font-mono text-muted-foreground tabular-nums">{date}</TableCell>
       <TableCell className="font-mono">{id}</TableCell>
       <TableCell className="whitespace-normal">
-        <a className={recordLink} href={filePageHref(record.path)} title={tip(`Read the record of ${id} on a page of its own.`)}>
+        <a className={recordLink} href={filePageHref({ board, path: record.path })} title={tip(`Read the record of ${id} on a page of its own.`)}>
           {title}
         </a>
       </TableCell>

@@ -45,7 +45,7 @@ import type {
   WorktreeRank,
   WorktreeSummary,
 } from '../contract.ts';
-import { DaemonInfoSchema, daemonPort } from '../contract.ts';
+import { DaemonInfoSchema, daemonPort, encodeWorktreeKey } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { renameEpic, setWorktreeEpic } from './epic.ts';
@@ -59,6 +59,7 @@ import {
   openResponse,
   orderResponse,
   renameResponse,
+  shellResponse,
 } from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
@@ -75,7 +76,6 @@ import { cmuxOnPath, openTerminal } from './terminal.ts';
 import { reconcileTrailers } from './trailers.ts';
 import {
   checkoutIn,
-  encodeWorktreeKey,
   ensureSession,
   listRepositories,
   type RepositoryListing,
@@ -94,7 +94,9 @@ import { openInZed, zedOnPath } from './zed.ts';
  */
 
 const repositoryRoot = resolve(import.meta.dir, '../..');
-const distDirectory = join(repositoryRoot, 'app/dist');
+/** What `bun run build` writes for the browser: the shell every page is, and the assets it names. */
+const distDirectory = join(repositoryRoot, 'app/dist/client');
+const shellFile = join(distDirectory, '_shell.html');
 const daemonEntry = join(repositoryRoot, 'app/server/daemon.ts');
 
 /** Sources whose newest mtime decides whether a running daemon is current. */
@@ -918,20 +920,18 @@ const keyConflict = (input: { readonly path: string; readonly key: string; reado
   `${input.path} has no board: its key ${input.key} already belongs to ${input.owner}.`;
 
 /**
- * A file of the built app, and `index.html` for a path without an extension,
- * which is a route the app draws itself. Nothing outside the build is served.
+ * A file of the built app, and the shell for a path without an extension,
+ * which is a page the app draws itself. Nothing outside the build is served.
  */
 const staticFile = async (url: URL, method: string) => {
   if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
-  const requested = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+  const requested = url.pathname.slice(1);
+  if (!requested.includes('.')) return await shellResponse({ shell: shellFile, method });
   const path = resolve(distDirectory, requested);
   if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
     return json({ error: 'Not found.' }, 404);
   }
-  let candidate = file(path);
-  if (!(await candidate.exists()) && !requested.includes('.')) {
-    candidate = file(join(distDirectory, 'index.html'));
-  }
+  const candidate = file(path);
   if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
   return method === 'HEAD' ? new Response(null) : new Response(candidate);
 };
@@ -1475,7 +1475,7 @@ export const runDaemon = async () => {
     await runNode(ensureSession(entry.session));
     entry.handler = await runNode(makeRequestHandler({
       repository: entry.repository,
-      distDirectory,
+      shell: shellFile,
       session: entry.session,
       events: entry.events,
       agents: {

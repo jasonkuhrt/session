@@ -127,9 +127,10 @@
       }
     },
     {
-      "files": ["app/src/main.tsx"],
+      "files": ["app/src/routes/__root.tsx"],
       "rules": {
-        // The browser entrypoint loads the stylesheet for its side effect.
+        // Every page's document loads the font and the stylesheet for their
+        // side effect, which is how the build links them into the shell.
         "import/no-unassigned-import": "off"
       }
     },
@@ -151,5 +152,7 @@
       }
     }
   ],
-  "ignorePatterns": ["app/dist/**"]
+  // The router's generated route tree is written by the build and asks to be
+  // left out of linters.
+  "ignorePatterns": ["app/dist/**", "app/src/routeTree.gen.ts"]
 }

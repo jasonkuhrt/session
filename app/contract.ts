@@ -239,6 +239,15 @@ export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktre
 /** The one daemon per user listens here; `session open` upserts it. */
 export const daemonPort = 53045;
 
+/**
+ * A worktree's key under `/w/`: its name, encoded segment by segment, so a
+ * nested name (`email-backend/Heartbeat`) still addresses one board. The daemon
+ * routes a board by it, the CLI prints it, and a board's pages reach their API
+ * through it, so all three spell it with this one function.
+ */
+export const encodeWorktreeKey = (name: string): string =>
+  name.split('/').map((segment) => encodeURIComponent(segment)).join('/');
+
 export type DaemonInfo = {
   pid: number;
   port: number;

@@ -9,7 +9,7 @@ import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import * as Schema from 'effect/Schema';
 import type { Session, Stage } from '../../../app/contract.ts';
-import { stageNames } from '../../../app/contract.ts';
+import { encodeWorktreeKey, stageNames } from '../../../app/contract.ts';
 import {
   daemonOnPort,
   daemonStatus,
@@ -26,7 +26,6 @@ import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
 import {
-  encodeWorktreeKey,
   ensureSession,
   headCommit,
   resolveWorktreeSession,
