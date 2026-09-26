@@ -23,6 +23,9 @@
     "react-perf",
     "jsx-a11y"
   ],
+  // The project's own rules. Plain JavaScript, so any Node that runs oxlint
+  // loads it without type stripping.
+  "jsPlugins": ["./scripts/lint/session.js"],
   "env": {
     "browser": true,
     "builtin": true,
@@ -141,6 +144,14 @@
         // Every page's document loads the font and the stylesheet for their
         // side effect, which is how the build links them into the shell.
         "import/no-unassigned-import": "off"
+      }
+    },
+    {
+      "files": ["app/contract.ts"],
+      "rules": {
+        // Every type in the contract is its schema's `Type`, never written by
+        // hand beside it: one noun has one definition, and the gate holds it.
+        "session/derived-contract-types": "error"
       }
     },
     {
