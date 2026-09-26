@@ -97,7 +97,12 @@ export type ProjectSection = {
   readonly kind: 'project'
   /** What tells it from every other section: the path of what Git lists first for its repository, or the folder's own outside Git. */
   readonly key: string
-  /** The name its head carries: the repository's, or the folder's, with its parent folder's before it when another section has the same one. */
+  /**
+   * The name its head carries: a tracked main worktree's own, what Git lists
+   * first for a repository whose main worktree is not tracked, or the
+   * folder's, with the name of the folder what it names stands in before it
+   * when another section has the same one.
+   */
   readonly name: string
   readonly head: SectionHead
   readonly cards: readonly IndexCard[]
@@ -149,7 +154,6 @@ const headOf = (row: WorktreeSummary): SectionHead => {
 /** A section as it fills: its head so far, its cards with what orders them, and every worktree of the project, which say how busy it is. */
 type Filling = {
   readonly key: string
-  readonly name: string
   head: SectionHead
   readonly cards: Array<Ranked & { readonly card: IndexCard }>
   readonly members: WorktreeSummary[]
@@ -159,15 +163,28 @@ type Filling = {
 const parentName = (path: string) => path.split('/').at(-2) ?? ''
 
 /**
- * The names the heads carry: a project's own, or, where two sections would
- * carry the same, each with its parent folder's name before it, as a linked
- * worktree is named whose folder shares its main worktree's name.
+ * The name a head carries, and where what it names is: a tracked main
+ * worktree's own, even where Git lists its Git directory in its place; what
+ * Git lists first for a repository whose main worktree is not tracked; and a
+ * folder's own.
+ */
+const headName = (head: SectionHead): { readonly name: string; readonly path: string } => {
+  if (head.kind === 'tracked') return { name: head.row.name, path: head.row.path }
+  if (head.kind === 'folder') return { name: head.path.split('/').at(-1) ?? '', path: head.path }
+  return { name: head.repository.name, path: head.repository.path }
+}
+
+/**
+ * The names the heads carry: each head's own, or, where two sections would
+ * carry the same, each with the name of the folder its head names is in before
+ * it, as a linked worktree is named whose folder shares its main's name.
  */
 function namesOf(projects: readonly Filling[]): ReadonlyMap<string, string> {
+  const named = projects.map((project) => ({ key: project.key, ...headName(project.head) }))
   const shared = new Map<string, number>()
-  for (const project of projects) shared.set(project.name, (shared.get(project.name) ?? 0) + 1)
-  return new Map(projects.map((project) => {
-    const parent = parentName(project.key)
+  for (const project of named) shared.set(project.name, (shared.get(project.name) ?? 0) + 1)
+  return new Map(named.map((project) => {
+    const parent = parentName(project.path)
     return [project.key, (shared.get(project.name) ?? 0) > 1 && parent !== '' ? `${parent}/${project.name}` : project.name]
   }))
 }
@@ -204,15 +221,17 @@ function epicsOf(rows: readonly WorktreeSummary[], now: number): Array<Ranked & 
  * main worktree placed by hand heads come first, in their rank's order; every
  * other section, the one across projects included, is ordered after them as
  * the cards in a section are, busiest first, and a quiet one is dim, and last
- * unless it was placed.
+ * unless it was placed. A row Git could not answer for is in no section: it
+ * names no repository, and the page names it in a notice instead.
  */
-export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }): Dashboard {
+export function dashboardOf({ rows: listed, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }): Dashboard {
+  const rows = listed.filter((row) => row.resolved)
   const filling = new Map<string, Filling>()
   const projectOf = (row: WorktreeSummary): Filling => {
     const key = sectionKeyOf(row)
     const known = filling.get(key)
     if (known !== undefined) return known
-    const project: Filling = { key, name: row.repository?.name ?? row.name, head: headOf(row), cards: [], members: [] }
+    const project: Filling = { key, head: headOf(row), cards: [], members: [] }
     filling.set(key, project)
     return project
   }
@@ -236,7 +255,7 @@ export function dashboardOf({ rows, now }: { readonly rows: readonly WorktreeSum
   }
   const names = namesOf([...filling.values()])
   const projects = [...filling.values()].map((project) => {
-    const name = names.get(project.key) ?? project.name
+    const name = names.get(project.key) ?? headName(project.head).name
     const standing = standingOf(project.members, now)
     const cards = project.cards.toSorted(busierFirst).map((entry) => entry.card)
     const section: ProjectSection = { kind: 'project', key: project.key, name, head: project.head, cards, quiet: standing.quiet }

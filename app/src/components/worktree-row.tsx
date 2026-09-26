@@ -100,9 +100,10 @@ export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.
 }
 
 /**
- * The name alone, which already tells the worktrees apart: a worktree whose
- * folder shares the main checkout's name carries its parent folder's name
- * before it, and so does a head whose section shares its name with another.
+ * The name alone: a worktree whose folder shares its main worktree's name
+ * carries its parent folder's name before it, and so does a head whose
+ * section shares its name with another. Two worktrees that still share a name
+ * share a key, and the daemon serves the board of the one it took on first.
  * Where it sits is its tip. It opens the worktree's board, unless the daemon
  * cannot serve one.
  */
