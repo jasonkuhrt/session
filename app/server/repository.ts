@@ -543,8 +543,8 @@ export const makeRepository = (directory: string) =>
           return yield* new RepositoryError({
             kind: 'not-found',
             message: fileType === null
-              ? `Session is missing ${expected}/. Run any session command to create it.`
-              : `Session is missing ${expected}/. Run any session command to create it, then fold ${leftover} into it by hand.`,
+              ? `Session is missing ${expected}/. Run \`session init\` to create it.`
+              : `Session is missing ${expected}/. Run \`session init\` to create it, then fold ${leftover} into it by hand.`,
           });
         }
         const tree = yield* readStageTree(directoryPath);
@@ -809,7 +809,7 @@ export const makeRepository = (directory: string) =>
         if (gitignore === null) {
           return yield* new RepositoryError({
             kind: 'validation',
-            message: 'Session is missing .gitignore. Run any session command to write it.',
+            message: 'Session is missing .gitignore. Run `session init` to write it.',
           });
         }
         if (gitignore !== 'File') {
@@ -1425,13 +1425,16 @@ export const makeRepository = (directory: string) =>
     );
 
     /**
-     * What `RULES.md` says, read as the board would serve it, or null when the
-     * session holds none the board would link to. It reads no stage, so a
-     * session whose items do not load still has its rules read.
+     * What `RULES.md` says, or null when the root lists no `RULES.md`. A file
+     * the root lists but the board would not serve, such as a link out of the
+     * session, is refused with `servedFile`'s sentence rather than read as no
+     * rules, and one that cannot be read is refused too, so rules that exist
+     * are never silently missing. It reads no stage, so a session whose items
+     * do not load still has its rules read.
      */
     const rules = semaphore.withPermit(
       Effect.gen(function*() {
-        if (!(yield* hasRules)) return null;
+        if (!(yield* fs.readDirectory(root)).includes(rulesFile)) return null;
         return yield* fs.readFileString(yield* servedFile(rulesFile));
       }).pipe(Effect.mapError(asRepositoryError)),
     );
@@ -1609,7 +1612,7 @@ export const makeRepository = (directory: string) =>
         if ((yield* pathType(root)) !== 'Directory') {
           return yield* new RepositoryError({
             kind: 'not-found',
-            message: `${root} does not exist; run any session command to create it.`,
+            message: `${root} does not exist; run \`session init\` to create it.`,
           });
         }
         const meta = absolute(metaDirectory);

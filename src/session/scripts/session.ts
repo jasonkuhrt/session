@@ -10,7 +10,7 @@ import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
-import type { Session, Stage } from '../../../app/contract.ts';
+import type { Session, SessionSchema, Stage } from '../../../app/contract.ts';
 import { stageNames } from '../../../app/contract.ts';
 import {
   daemonOnPort,
@@ -305,13 +305,13 @@ const stageIn = (session: Session, stage: Stage) =>
   session.stages.find((entry) => entry.stage === stage)!;
 
 /** What `check` prints for a sound session: its revision, and how many items it holds, or that it holds none. */
-const checkLine = (session: Session): string => {
+const checkLine = (session: typeof SessionSchema.Type): string => {
   const total = itemCount(session);
   return `OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`;
 };
 
 /** What `ls` prints: a line per item in listing order, its ID, path and title in columns, of one stage alone when one is named. */
-const itemLines = (session: Session, only?: Stage): ReadonlyArray<string> => {
+const itemLines = (session: typeof SessionSchema.Type, only?: Stage): ReadonlyArray<string> => {
   const items = session.stages
     .filter((entry) => only === undefined || entry.stage === only)
     .flatMap((entry) => entry.items);
@@ -664,7 +664,7 @@ const ledgerSection = (repository: SessionRepository) =>
  */
 const itemsSection = (
   repository: SessionRepository,
-  checked: Result.Result<Session, unknown>,
+  checked: Result.Result<typeof SessionSchema.Type, unknown>,
   first: string,
 ) =>
   Effect.gen(function*() {
