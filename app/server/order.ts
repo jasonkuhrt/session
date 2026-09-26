@@ -220,9 +220,8 @@ const standsAlone = (input: {
  * move; after writing, every rank is read once more, and a placement another
  * made at the same moment clashed with takes back what it wrote and is
  * refused the same way. A sibling's rank the rules reject reads as none and
- * is left as it is.
- * It answers the rank, whether anything was written, the siblings, and its
- * ranked neighbours.
+ * is left as it is. It answers the rank, whether anything was written, the
+ * siblings, and its ranked neighbours.
  */
 export const setRank = (input: {
   readonly worktree: Rankable;
