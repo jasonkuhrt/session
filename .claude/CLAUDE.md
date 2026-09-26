@@ -42,13 +42,23 @@ feeds the index's `worktrees` event, settled, for every change a row shows.
 The index is a stack of projects, each a repository, which is Git's rather than
 the tool's, the worktrees sharing one Git directory, or a folder outside Git: a
 section headed by the repository's main worktree whether or not that has a
-session, by the Git directory's name when Git lists that in its place, or by the
-folder's name, and holding the project's epic cards and its worktrees in no
+session, by the Git directory's name when Git lists that in its place and the daemon
+does not track the main, or by the folder's name, and holding the project's epic cards and its worktrees in no
 epic; an epic whose worktrees span projects is drawn once, in the section
 "Across projects". Every served row carries its repository from the same `git
 worktree list` as its branch, nothing stores a section, and every section, the
 one across projects included, is ordered and dimmed as cards are, a project
 counting every worktree of it wherever it is drawn.
+
+A main worktree is the one whose Git directory is its repository's own, as `git
+rev-parse` says when asked without the variables that aim Git at another
+repository, never the one found at its own path in `git worktree list`: Git
+lists a submodule's or a separate Git directory's main by that directory, and
+such a main is resolved, tracked, kept out of epics and drawn at the head of its
+repository's section like any other, under its own name, with its Git directory
+in the tip. Only Git's refusal lets a tracked path go: a path Git could not
+answer for stays in the state file, is named in the index's notices with Git's
+line, and is asked about again at every take-on and rescan.
 
 A `Session-Done: <ID>` trailer on a commit closes that item: the daemon watches
 each tracked worktree's session, its reflog and the repository's remote-tracking
