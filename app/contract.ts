@@ -603,6 +603,16 @@ export const LinksSchema = Schema.Struct({
 
 export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequestReportSchema);
 
+/** What a worktree has checked out, as Git lists it. */
+export const CheckoutSchema = Schema.Struct({
+  /** The branch checked out; null on a detached HEAD, and outside Git. */
+  branch: Schema.NullOr(Schema.String),
+  /** True when Git has a commit checked out rather than a branch. */
+  detached: Schema.Boolean,
+});
+
+export type Checkout = typeof CheckoutSchema.Type;
+
 /**
  * The repository a worktree belongs to, as Git names it for every worktree of
  * it: by what Git lists first for it, its main worktree, which holds the
@@ -613,11 +623,11 @@ export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequest
  * as the row's own branch, so the index heads each repository's section with
  * it whether or not a session is there.
  */
-export type Repository = {
+export const RepositorySchema = Schema.Struct({
   /** The name of what Git lists first, its folder's, which names the repository. */
-  name: string;
+  name: Schema.String,
   /** Where that is, which tells the repository from every other. */
-  path: string;
+  path: Schema.String,
   /**
    * Whether Git lists the repository's Git directory first, where a main
    * worktree would be: a bare repository's, which Git marks bare, and the Git
@@ -628,89 +638,16 @@ export type Repository = {
    * until the daemon tracks its main worktree, which `session open` there
    * does. That worktree's row heads it then, under its own name.
    */
-  bare: boolean;
+  bare: Schema.Boolean,
   /**
    * What the listing says is checked out there, which the index shows for a
    * main worktree; null when Git could not list the repository, which each of
    * its rows says in place of its own branch.
    */
-  checkout: { branch: string | null; detached: boolean } | null;
-};
-
-export const RepositorySchema = Schema.Struct({
-  name: Schema.String,
-  path: Schema.String,
-  bare: Schema.Boolean,
-  checkout: Schema.NullOr(Schema.Struct({
-    branch: Schema.NullOr(Schema.String),
-    detached: Schema.Boolean,
-  })),
+  checkout: Schema.NullOr(CheckoutSchema),
 });
 
-/** One row of the index: a tracked worktree and what its session holds. */
-export type WorktreeSummary = {
-  /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
-  key: string;
-  name: string;
-  path: string;
-  /** The branch checked out; null on a detached HEAD, and outside Git. */
-  branch: string | null;
-  /** True when Git has a commit checked out rather than a branch. */
-  detached: boolean;
-  /** The batch in Execute, and null when Execute is empty. */
-  executing: string | null;
-  counts: Record<Stage, number>;
-  /** ISO 8601 of the newest item file, or null for an empty session. */
-  lastChange: string | null;
-  /** The newest of the agents' moments and `lastChange`; null when there is none. */
-  activity: Activity | null;
-  /**
-   * Why the row's board is not served: another tracked worktree already owns
-   * this key, or its session or Git could not be read; null when it is served.
-   */
-  conflict: string | null;
-  agents: AgentsSummary;
-  /** Trailers on this worktree's unpushed commits that could not be acted on. */
-  trailerProblems: readonly TrailerProblem[];
-  /**
-   * The epic this worktree is in: the name its session's `meta/epic` holds,
-   * or null when it names none, and when the file breaks the rules. The index
-   * never draws a main worktree in one.
-   */
-  epic: string | null;
-  /**
-   * Why `meta/epic` could not be read as an epic's name, in the sentence
-   * `session check` gives with its fix; null when the file is sound or absent.
-   * The row is served all the same, in no epic.
-   */
-  epicProblem: string | null;
-  /**
-   * The rank its session's `meta/rank` holds, which places it among its
-   * siblings: a main worktree's orders its project among the projects, and
-   * any other worktree's orders it among the worktrees of its epic, ranked
-   * ones first. Null when it has none, and when the file breaks the rules.
-   */
-  rank: number | null;
-  /**
-   * Why `meta/rank` could not be read as a rank, in the sentence `session
-   * check` gives with its fix; null when the file is sound or absent. The row
-   * is served all the same, unranked.
-   */
-  rankProblem: string | null;
-  /** Whether this is its repository's main worktree, the one whose Git directory is the repository's own: the index draws it at the head of the repository's section. */
-  main: boolean;
-  /**
-   * Whether Git answered where the worktree is. False for a path the daemon
-   * holds but Git could not be asked about, or would not answer for, as when
-   * it cannot run: its `conflict` is Git's line, and nothing only Git could
-   * say is known of it, so it is not `main`, names no repository and is no
-   * folder outside Git either. The index names it in a notice rather than
-   * drawing it in a section, until a take-on or a rescan asks again.
-   */
-  resolved: boolean;
-  /** The repository the worktree belongs to, named by what Git lists first for it; null for a folder outside Git, which the index gives a section of its own. */
-  repository: Repository | null;
-};
+export type Repository = typeof RepositorySchema.Type;
 
 /**
  * What `POST /api/worktrees/epic` takes: the worktree by its path, as
@@ -779,12 +716,14 @@ export const WorktreeRankSchema = Schema.Struct({
   rank: Schema.Int,
 });
 
+/** One row of the index: a tracked worktree and what its session holds. */
 export const WorktreeSummarySchema = Schema.Struct({
+  /** Route segment(s) under `/w/`: the worktree name, e.g. `Heartbeat` or `email-backend/Heartbeat`. */
   key: Schema.String,
   name: Schema.String,
   path: Schema.String,
-  branch: Schema.NullOr(Schema.String),
-  detached: Schema.Boolean,
+  ...CheckoutSchema.fields,
+  /** The batch in Execute, and null when Execute is empty. */
   executing: Schema.NullOr(Schema.String),
   counts: Schema.Struct({
     Triage: Schema.Int,
@@ -793,19 +732,59 @@ export const WorktreeSummarySchema = Schema.Struct({
     Queue: Schema.Int,
     Execute: Schema.Int,
   }),
+  /** ISO 8601 of the newest item file, or null for an empty session. */
   lastChange: Schema.NullOr(Schema.String),
+  /** The newest of the agents' moments and `lastChange`; null when there is none. */
   activity: Schema.NullOr(ActivitySchema),
+  /**
+   * Why the row's board is not served: another tracked worktree already owns
+   * this key, or its session or Git could not be read; null when it is served.
+   */
   conflict: Schema.NullOr(Schema.String),
   agents: AgentsSummarySchema,
+  /** Trailers on this worktree's unpushed commits that could not be acted on. */
   trailerProblems: Schema.Array(TrailerProblemSchema),
+  /**
+   * The epic this worktree is in: the name its session's `meta/epic` holds,
+   * or null when it names none, and when the file breaks the rules. The index
+   * never draws a main worktree in one.
+   */
   epic: Schema.NullOr(Schema.String),
+  /**
+   * Why `meta/epic` could not be read as an epic's name, in the sentence
+   * `session check` gives with its fix; null when the file is sound or absent.
+   * The row is served all the same, in no epic.
+   */
   epicProblem: Schema.NullOr(Schema.String),
+  /**
+   * The rank its session's `meta/rank` holds, which places it among its
+   * siblings: a main worktree's orders its project among the projects, and
+   * any other worktree's orders it among the worktrees of its epic, ranked
+   * ones first. Null when it has none, and when the file breaks the rules.
+   */
   rank: Schema.NullOr(Schema.Int),
+  /**
+   * Why `meta/rank` could not be read as a rank, in the sentence `session
+   * check` gives with its fix; null when the file is sound or absent. The row
+   * is served all the same, unranked.
+   */
   rankProblem: Schema.NullOr(Schema.String),
+  /** Whether this is its repository's main worktree, the one whose Git directory is the repository's own: the index draws it at the head of the repository's section. */
   main: Schema.Boolean,
+  /**
+   * Whether Git answered where the worktree is. False for a path the daemon
+   * holds but Git could not be asked about, or would not answer for, as when
+   * it cannot run: its `conflict` is Git's line, and nothing only Git could
+   * say is known of it, so it is not `main`, names no repository and is no
+   * folder outside Git either. The index names it in a notice rather than
+   * drawing it in a section, until a take-on or a rescan asks again.
+   */
   resolved: Schema.Boolean,
+  /** The repository the worktree belongs to, named by what Git lists first for it; null for a folder outside Git, which the index gives a section of its own. */
   repository: Schema.NullOr(RepositorySchema),
 });
+
+export type WorktreeSummary = typeof WorktreeSummarySchema.Type;
 
 /** The result of asking the daemon to focus a session's terminal. */
 export type FocusResult = { ok: true } | { ok: false; reason: string };

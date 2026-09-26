@@ -32,7 +32,7 @@ export type Command = {
   readonly args: ReadonlyArray<string>;
   readonly cwd?: string | undefined;
   /** What the child's environment adds, or is, as `extendEnv` says; an undefined value unsets a variable. */
-  readonly env?: Record<string, string | undefined> | undefined;
+  readonly env?: ChildProcess.CommandOptions['env'];
   /**
    * False hands the child `env` and nothing else, as a fresh login starts;
    * otherwise `env` is added to the daemon's own, since a child without PATH

@@ -1,22 +1,18 @@
 import { resolve } from 'node:path';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
+import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
+import { CheckoutSchema } from '../contract.ts';
 import { capture, refusal } from './command.ts';
 
 /**
  * Git, asked about a path: where it puts the path, the worktrees it lists for
  * a repository, and the commit a worktree's HEAD names. Every question runs
  * without the variables that would aim Git at some other repository, so each
- * answer is about the path asked about and nothing else.
+ * answer is about the path asked about and nothing else, and every answer is
+ * decoded into the record it gives before anything reads it.
  */
-
-/** What a worktree has checked out, as Git lists it. */
-export type Checkout = {
-  /** The branch; null on a detached HEAD, and outside Git. */
-  readonly branch: string | null;
-  /** True when Git has a commit checked out rather than a branch. */
-  readonly detached: boolean;
-};
 
 /**
  * Why Git gave no answer to build on. `refused`: Git answered, and its answer
@@ -31,12 +27,35 @@ export class WorktreeError extends Data.TaggedError('WorktreeError')<{
   readonly cause?: unknown;
 }> {}
 
-/** One entry of a repository's listing. */
-export type GitWorktree = Checkout & {
-  readonly path: string;
+/** One entry of a repository's listing, which `git worktree list --porcelain` gives as a record of fields. */
+export const GitWorktreeSchema = Schema.Struct({
+  path: Schema.String,
+  ...CheckoutSchema.fields,
   /** Git marks the entry bare: a bare repository's own directory, which it lists first and which is no worktree. */
-  readonly bare: boolean;
-};
+  bare: Schema.Boolean,
+});
+
+export type GitWorktree = typeof GitWorktreeSchema.Type;
+
+const decodeListing = Schema.decodeUnknownEffect(Schema.Array(GitWorktreeSchema));
+
+/**
+ * Where Git puts a path, which `git rev-parse` gives as three lines: the
+ * worktree it belongs to, that worktree's own Git state, and the state it
+ * shares with the repository's other worktrees.
+ */
+const LocatedSchema = Schema.Struct({
+  topLevel: Schema.NonEmptyString,
+  git: Schema.Struct({ directory: Schema.NonEmptyString, common: Schema.NonEmptyString }),
+});
+
+const decodeLocated = Schema.decodeUnknownEffect(LocatedSchema);
+
+/** What `git rev-parse --is-inside-git-dir` answers. */
+const decodeInsideGitDirectory = Schema.decodeUnknownOption(Schema.Literals(['true', 'false']));
+
+/** The commit a HEAD names, as `git rev-parse --short` abbreviates it. */
+const decodeAbbreviatedCommit = Schema.decodeUnknownOption(Schema.NonEmptyString);
 
 /**
  * The variables Git sets for the processes it runs, as `git rev-parse
@@ -80,7 +99,8 @@ const runGit = (workingDirectory: string, args: ReadonlyArray<string>, english =
 
 /**
  * Every worktree Git knows about, as seen from one of them, or from the Git
- * directory they share.
+ * directory they share: one record per worktree, its fields separated by NUL,
+ * `worktree <path>` among them, each record read into an entry and decoded.
  */
 export const listGitWorktrees = (workingDirectory: string) =>
   Effect.gen(function*() {
@@ -91,26 +111,25 @@ export const listGitWorktrees = (workingDirectory: string) =>
         message: result.stderr || 'Could not list Git worktrees.',
       });
     }
-    return yield* Effect.try({
-      try: () =>
-        result.stdout
-          .split('\0\0')
-          .filter((record) => record !== '')
-          .map((record): GitWorktree => {
-            const fields = record.split('\0');
-            const worktree = fields.find((field) => field.startsWith('worktree '));
-            const branch = fields.find((field) => field.startsWith('branch refs/heads/'));
-            if (worktree === undefined) throw new Error('Missing worktree field.');
-            return {
-              path: resolve(worktree.slice('worktree '.length)),
-              branch: branch?.slice('branch refs/heads/'.length) ?? null,
-              detached: fields.includes('detached'),
-              bare: fields.includes('bare'),
-            };
-          }),
-      catch: (cause) =>
-        new WorktreeError({ kind: 'unanswered', message: 'Git returned a malformed worktree list.', cause }),
-    });
+    const entries = result.stdout
+      .split('\0\0')
+      .filter((record) => record !== '')
+      .map((record) => {
+        const fields = record.split('\0');
+        const worktree = fields.find((field) => field.startsWith('worktree '));
+        const branch = fields.find((field) => field.startsWith('branch refs/heads/'));
+        return {
+          path: worktree === undefined ? undefined : resolve(worktree.slice('worktree '.length)),
+          branch: branch?.slice('branch refs/heads/'.length) ?? null,
+          detached: fields.includes('detached'),
+          bare: fields.includes('bare'),
+        };
+      });
+    return yield* decodeListing(entries).pipe(
+      Effect.mapError((cause) =>
+        new WorktreeError({ kind: 'unanswered', message: 'Git returned a malformed worktree list.', cause })
+      ),
+    );
   });
 
 /**
@@ -119,13 +138,11 @@ export const listGitWorktrees = (workingDirectory: string) =>
  */
 export const headCommit = (worktreePath: string) =>
   runGit(worktreePath, ['rev-parse', '--short', '--verify', '--quiet', 'HEAD']).pipe(
-    Effect.map((result) => (result.exitCode === 0 && result.stdout !== '' ? result.stdout : null)),
+    Effect.map((result) => (result.exitCode === 0 ? Option.getOrNull(decodeAbbreviatedCommit(result.stdout)) : null)),
   );
 
 /**
- * Where Git puts a path: the worktree it belongs to, that worktree's own Git
- * state, and the state it shares with the repository's other worktrees. One
- * question, three answers, one per line, all absolute. Null outside Git, which
+ * Where Git puts a path, all three answers absolute. Null outside Git, which
  * Git says as "not a git repository" and nothing else does. A path inside a
  * Git directory is refused, since it is no worktree and holds no session. Any
  * other answer is Git's line, as a failure to locate the path: Git that could
@@ -138,13 +155,18 @@ export const locateGit = (start: string) =>
       ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-dir', '--git-common-dir'],
       true,
     );
-    const [topLevel, directory, common] = located.stdout.split('\n');
-    if (located.exitCode === 0 && topLevel !== undefined && directory !== undefined && common !== undefined) {
-      return { topLevel, git: { directory, common } };
+    if (located.exitCode === 0) {
+      const [topLevel, directory, common] = located.stdout.split('\n');
+      return yield* decodeLocated({ topLevel, git: { directory, common } }).pipe(
+        Effect.mapError((cause) =>
+          new WorktreeError({ kind: 'unanswered', message: 'Git answered git rev-parse with other than three paths.', cause })
+        ),
+      );
     }
     if (located.stderr.includes('not a git repository')) return null;
     const inside = yield* runGit(start, ['rev-parse', '--is-inside-git-dir'], true);
-    if (inside.exitCode === 0 && inside.stdout === 'true') {
+    const answer = inside.exitCode === 0 ? decodeInsideGitDirectory(inside.stdout) : Option.none();
+    if (Option.isSome(answer) && answer.value === 'true') {
       return yield* new WorktreeError({
         kind: 'refused',
         message: `${start} is inside a Git directory, which is no worktree and holds no session; ` +
