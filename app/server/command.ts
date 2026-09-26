@@ -2,9 +2,10 @@ import * as Cause from 'effect/Cause';
 import type * as Duration from 'effect/Duration';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
 import * as Stream from 'effect/Stream';
 import * as ChildProcess from 'effect/unstable/process/ChildProcess';
-import type { OpenResult } from '../contract.ts';
+import { type OpenResult, OpenResultSchema } from '../contract.ts';
 
 /**
  * Running a command and keeping what it printed. Git, the agent listings and
@@ -32,7 +33,7 @@ export type Command = {
   readonly args: ReadonlyArray<string>;
   readonly cwd?: string | undefined;
   /** What the child's environment adds, or is, as `extendEnv` says; an undefined value unsets a variable. */
-  readonly env?: Record<string, string | undefined> | undefined;
+  readonly env?: ChildProcess.CommandOptions['env'];
   /**
    * False hands the child `env` and nothing else, as a fresh login starts;
    * otherwise `env` is added to the daemon's own, since a child without PATH
@@ -95,18 +96,23 @@ export const refusal = ({ command, result }: {
   return line ?? `${command} exited ${result.exitCode}.`;
 };
 
+const decodeOpenResult = Schema.decodeUnknownEffect(OpenResultSchema);
+
 /**
  * One command, and what it printed: its first line when it worked, the line
  * it complained with when it did not, and the plainest true sentence when it
- * never ran or never finished. `name` is how a refusal with no line of its
- * own names the command, when its first two words would not.
+ * never ran or never finished, read into the result and decoded. `name` is
+ * how a refusal with no line of its own names the command, when its first two
+ * words would not.
  */
 export const say = (input: Command & { readonly name?: string | undefined }) =>
   capture(input).pipe(
-    Effect.map((result): OpenResult =>
-      result.exitCode === 0
-        ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
-        : { ok: false, line: refusal({ command: input.name ?? `${input.command} ${input.args[0] ?? ''}`.trim(), result }) }
+    Effect.flatMap((result) =>
+      decodeOpenResult(
+        result.exitCode === 0
+          ? { ok: true, line: result.stdout.split('\n').find((line) => line.trim() !== '') ?? '' }
+          : { ok: false, line: refusal({ command: input.name ?? `${input.command} ${input.args[0] ?? ''}`.trim(), result }) },
+      )
     ),
     Effect.catch((error) => Effect.succeed<OpenResult>({ ok: false, line: error.message })),
   );

@@ -1,7 +1,7 @@
 import { useParams } from '@tanstack/react-router'
 import { Option, Schema } from 'effect'
 
-import { encodeWorktreeKey } from '../../contract'
+import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
 
 /**
  * The daemon serves the index at `/`, each board at `/w/<key>/`, and the
@@ -68,12 +68,15 @@ export function useBoardPath() {
   return key === undefined ? '' : boardPath(key)
 }
 
-/** A path under the session as a URL path: every segment encoded, the slashes kept. */
-const encodedPath = (path: string) => path.split('/').map((segment) => encodeURIComponent(segment)).join('/')
+/** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
+const encodedPath = Schema.encodeSync(AddressPathSchema)
+
+/** An item's id as the address carries it: one URI component. */
+const encodedId = Schema.encodeSync(Schema.StringFromUriComponent)
 
 /** The page for one item of a board. The one place the route is spelled. */
 export const itemHref = ({ board, id }: { readonly board: string; readonly id: string }) =>
-  `${board}/item/${encodeURIComponent(id)}`
+  `${board}/item/${encodedId(id)}`
 
 /** The page of one of a board's listings. */
 export const listingHref = ({ board, listing }: { readonly board: string; readonly listing: Listing }) =>

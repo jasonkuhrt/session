@@ -243,16 +243,6 @@
                 "nodeBuiltinImport": "off"
               }
             }
-          },
-          {
-            "include": ["src/session/scripts/session.ts"],
-            "options": {
-              "diagnosticSeverity": {
-                // The refresh command's stdout is a human-readable protocol;
-                // JSON.stringify preserves its stable two-space formatting.
-                "preferSchemaOverJson": "off"
-              }
-            }
           }
         ]
       }

@@ -1,3 +1,4 @@
+import * as Schema from 'effect/Schema';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, rulesFile, stageDirectory, stageNames } from '../contract.ts';
 import {
@@ -25,23 +26,27 @@ const numberStep = 10;
 /** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a group's name. */
 export const entryName = /^(\d+)-(.+)$/u;
 
-/** One file of a stage, addressed relative to the session root. */
-export type StageFileEntry = {
-  readonly path: string;
-  readonly content: string;
-};
+/** One file of a stage, addressed relative to the session root, and what it holds. */
+export const StageFileEntrySchema = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+});
+export type StageFileEntry = typeof StageFileEntrySchema.Type;
 
-/** A stage directory as read from disk, two levels deep. */
-export type StageTreeEntry = {
-  readonly name: string;
-  readonly type: 'directory' | 'file';
-  readonly content: string;
-  readonly children: ReadonlyArray<{
-    readonly name: string;
-    readonly type: 'directory' | 'file';
-    readonly content: string;
-  }>;
-};
+/** An entry of a stage directory as read from disk: its name, its kind, and a file's content. */
+const TreeEntrySchema = Schema.Struct({
+  name: Schema.String,
+  type: Schema.Literals(['directory', 'file']),
+  /** What a file holds; empty for a directory. */
+  content: Schema.String,
+});
+
+/** A stage directory as read from disk, two levels deep: its entries, and what each group's directory holds. */
+export const StageTreeEntrySchema = Schema.Struct({
+  ...TreeEntrySchema.fields,
+  children: Schema.Array(TreeEntrySchema),
+});
+export type StageTreeEntry = typeof StageTreeEntrySchema.Type;
 
 const formatPrefix = (value: number): string => String(value).padStart(3, '0');
 
@@ -123,6 +128,11 @@ const itemIdOf = (parent: string, name: string, remainder: string): string => {
   return remainder.slice(0, -'.md'.length);
 };
 
+/**
+ * A stage's items and files from its directory as it was read and decoded:
+ * each entry's name read for its place, its id and its group, and each item
+ * file parsed, which ends in the decode of the item it holds.
+ */
 export const parseStageDirectory = (
   stage: Stage,
   entries: ReadonlyArray<StageTreeEntry>,

@@ -1,9 +1,13 @@
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as Option from 'effect/Option';
-import type { LedgerEntry } from '../contract.ts';
+import * as Result from 'effect/Result';
+import * as Schema from 'effect/Schema';
+import * as Struct from 'effect/Struct';
+import { type LedgerEntry, LedgerEntrySchema } from '../contract.ts';
 import { ledgerDirectory } from './layout.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
+import { recordReading } from './model.ts';
 
 /**
  * The ledger's entry format. An entry is one file under `ledger/`: YAML
@@ -54,10 +58,14 @@ export const ledgerFileName = (input: { readonly date: string; readonly title: s
   `${input.date.replaceAll(':', '-').replace('T', ' ')} — ${input.title.replaceAll('/', '-')}.md`;
 
 /** An entry's fields before it has a file. */
-export type LedgerFields = Omit<LedgerEntry, 'name' | 'path'>;
+export const LedgerFieldsSchema = LedgerEntrySchema.mapFields(Struct.omit(['name', 'path']));
+export type LedgerFields = typeof LedgerFieldsSchema.Type;
 
-/** The file content for an entry: frontmatter in the flat form, a blank line, the body. */
-export const renderLedgerEntry = (fields: LedgerFields): string => {
+const encodeFields = Schema.encodeSync(LedgerFieldsSchema);
+
+/** The file content for an entry, from its fields encoded as they leave: frontmatter in the flat form, a blank line, the body. */
+export const renderLedgerEntry = (entry: LedgerFields): string => {
+  const fields = encodeFields(entry);
   const lines = ['---'];
   for (const key of ledgerKeys) {
     const value = fields[key];
@@ -121,29 +129,41 @@ const parseYaml = (text: string): { readonly value: unknown } | { readonly error
 };
 
 /**
- * The problem with one decoded value, or null when it is one line of text as
- * written. `source` is the value as the line wrote it.
+ * The frontmatter as YAML read it, decoded as a mapping of each key to what
+ * YAML read its value as; anything else YAML reads it as holds no key, which
+ * the keys it must hold then say.
  */
-const valueProblem = (
+const decodeMapping = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown));
+
+/** A value YAML read as text. */
+const decodeText = Schema.decodeUnknownOption(Schema.String);
+
+/**
+ * One value, decoded as the one line of text it was written as, or the
+ * problem with it. `source` is the value as the line wrote it.
+ */
+const valueOf = (
   key: LedgerKey,
   value: unknown,
   source: { readonly line: number; readonly text: string },
-): { readonly problem: LedgerProblem } | null => {
-  if (typeof value !== 'string') {
+): { readonly text: string } | { readonly problem: LedgerProblem } => {
+  const decoded = decodeText(value);
+  if (Option.isNone(decoded)) {
     return problem(source.line, `YAML reads ${key} as ${kindOf(value)}, not as text; put its value in double quotes.`);
   }
+  const text = decoded.value;
   const quoted = source.text.startsWith('"') || source.text.startsWith("'");
-  if (!quoted && value !== source.text) {
-    return problem(source.line, `YAML reads ${key} as "${value}", not as written; put its value in double quotes.`);
+  if (!quoted && text !== source.text) {
+    return problem(source.line, `YAML reads ${key} as "${text}", not as written; put its value in double quotes.`);
   }
-  if (value === '') return problem(source.line, `${key} has no value; give it one or remove the line.`);
-  if (value !== value.trim() || /[\r\n]/u.test(value)) {
+  if (text === '') return problem(source.line, `${key} has no value; give it one or remove the line.`);
+  if (text !== text.trim() || /[\r\n]/u.test(text)) {
     return problem(source.line, `${key} is one line of text with no space around it; rewrite its value.`);
   }
-  if (key === 'date' && !isLedgerDate(value)) {
-    return problem(source.line, `date is a UTC instant to the second, like 2026-09-23T14:02:11Z; rewrite ${value} in that form.`);
+  if (key === 'date' && !isLedgerDate(text)) {
+    return problem(source.line, `date is a UTC instant to the second, like 2026-09-23T14:02:11Z; rewrite ${text} in that form.`);
   }
-  return null;
+  return { text };
 };
 
 /**
@@ -174,15 +194,12 @@ const parseFrontmatter = (
   if ('error' in parsed) {
     return problem(null, `the frontmatter is not valid YAML (${parsed.error}); put any value YAML cannot read in double quotes.`);
   }
-  const decoded = typeof parsed.value === 'object' && parsed.value !== null && !Array.isArray(parsed.value)
-    ? new Map(Object.entries(parsed.value))
-    : new Map<string, unknown>();
+  const decoded = new Map(Object.entries(Option.getOrElse(decodeMapping(parsed.value), () => ({}))));
   const fields = new Map<LedgerKey, string>();
   for (const [key, source] of written) {
-    const value = decoded.get(key);
-    const invalid = valueProblem(key, value, source);
-    if (invalid !== null) return invalid;
-    fields.set(key, value as string);
+    const value = valueOf(key, decoded.get(key), source);
+    if ('problem' in value) return value;
+    fields.set(key, value.text);
   }
   for (const [key, meaning] of requiredKeys) {
     if (!fields.has(key)) return problem(null, `the frontmatter has no ${key}, ${meaning}; add it.`);
@@ -190,10 +207,15 @@ const parseFrontmatter = (
   return { fields };
 };
 
+/** An entry as its file was read, decoded before anything reads it. */
+const decodeEntry = recordReading(LedgerEntrySchema);
+
 /**
  * Read one file of `ledger/` as an entry, or say which rule it breaks. The same
  * reading serves `check`, the board's listing, and `session log` before it
- * writes, so nothing the engine writes can fail the check.
+ * writes, so nothing the engine writes can fail the check. The entry it reads
+ * ends in a decode, which only a flaw of this reading could fail, and which
+ * then is the problem it names.
  */
 export const parseLedgerEntry = (input: { readonly name: string; readonly content: string }): LedgerParse => {
   const lines = input.content.replace(/^\uFEFF/u, '').replaceAll('\r\n', '\n').split('\n');
@@ -223,18 +245,17 @@ export const parseLedgerEntry = (input: { readonly name: string; readonly conten
           'this underline makes the lines above it a heading, and a ledger body has none; put a blank line before it.',
         );
   }
-  return {
-    entry: {
-      // The name as it is on disk, which is what addresses the file.
-      name: input.name,
-      path: `${ledgerDirectory}/${input.name}`,
-      date,
-      title,
-      by: fields.get('by')!,
-      branch: fields.get('branch') ?? null,
-      commit: fields.get('commit') ?? null,
-      batch: fields.get('batch') ?? null,
-      body: bodyLines.join('\n').trim(),
-    },
-  };
+  const entry = decodeEntry({
+    // The name as it is on disk, which is what addresses the file.
+    name: input.name,
+    path: `${ledgerDirectory}/${input.name}`,
+    date,
+    title,
+    by: fields.get('by'),
+    branch: fields.get('branch') ?? null,
+    commit: fields.get('commit') ?? null,
+    batch: fields.get('batch') ?? null,
+    body: bodyLines.join('\n').trim(),
+  });
+  return Result.match(entry, { onSuccess: (read) => ({ entry: read }), onFailure: (flaw) => problem(null, `${flaw}.`) });
 };

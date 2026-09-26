@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { FocusResult } from '../contract.ts';
+import type { FocusResult, Terminal } from '../contract.ts';
 import { capture, type Command, refusal, say } from './command.ts';
 
 /**
@@ -15,13 +15,6 @@ import { capture, type Command, refusal, say } from './command.ts';
 /** A way to spawn the CLI, which finds cmux's socket for itself. */
 type Services = ChildProcessSpawner;
 
-/** The cmux refs that name one panel: the surface, and where it is docked. */
-export type Terminal = {
-  readonly surface: string;
-  readonly workspace: string;
-  readonly window: string;
-};
-
 /** cmux is a local socket call; nothing here should ever take seconds. */
 const budget = '5 seconds';
 
@@ -31,7 +24,15 @@ const quiet = { CMUX_QUIET: '1' };
 /** A window holds a workspace holds a pane holds a surface holds a process. */
 const depthLimit = 8;
 
-type Node = { readonly kind: string; readonly parent: string };
+/** One node of the running tree: its ref, its kind, and the ref of the node it hangs off. */
+const NodeSchema = Schema.Struct({
+  ref: Schema.String,
+  kind: Schema.String,
+  parent: Schema.String,
+});
+type Node = typeof NodeSchema.Type;
+
+const decodeNodes = Schema.decodeUnknownEffect(Schema.Array(NodeSchema));
 
 /**
  * `cpu | bytes | count | kind | ref | parent | label`: the running tree,
@@ -42,19 +43,19 @@ type Node = { readonly kind: string; readonly parent: string };
  * `"caller": null`, at exit 0, for a surface outside the caller's own
  * workspace, which on a machine with several windows is most of them. The
  * format is undocumented, so a row in an unexpected shape is skipped rather
- * than guessed at.
+ * than guessed at. The nodes it reads are decoded before the tree is built.
  */
-const parseTree = (tsv: string): ReadonlyMap<string, Node> => {
-  const tree = new Map<string, Node>();
+const parseTree = (tsv: string): Node[] => {
+  const nodes: Node[] = [];
   for (const line of tsv.split('\n')) {
     const fields = line.split('\t');
     if (fields.length !== 7) continue;
     const [, , , kind, ref, parent] = fields;
     if (kind === undefined || ref === undefined || parent === undefined) continue;
     if (ref === '' || parent === '') continue;
-    tree.set(ref, { kind, parent });
+    nodes.push({ ref, kind, parent });
   }
-  return tree;
+  return nodes;
 };
 
 /** The panel a pid runs in, or nothing: not every session lives in cmux. */
@@ -80,14 +81,22 @@ const terminalOf = (tree: ReadonlyMap<string, Node>, pid: number): Terminal | nu
  * which has moved between releases, so nothing here guesses at where it is: a
  * cmux that is not running is a listing that fails, and says why.
  */
-const runningTree = capture({
-  command: 'cmux',
-  args: ['top', '--all', '--processes', '--format', 'tsv'],
-  env: quiet,
-  timeout: budget,
+const runningTree = Effect.gen(function*() {
+  const listing = yield* capture({
+    command: 'cmux',
+    args: ['top', '--all', '--processes', '--format', 'tsv'],
+    env: quiet,
+    timeout: budget,
+  });
+  if (listing.exitCode !== 0) return refusal({ command: 'cmux top', result: listing });
+  const nodes = yield* decodeNodes(parseTree(listing.stdout));
+  const tree: ReadonlyMap<string, Node> = new Map(nodes.map((node) => [node.ref, node] as const));
+  return tree;
 }).pipe(
-  Effect.map((listing) => (listing.exitCode === 0 ? parseTree(listing.stdout) : refusal({ command: 'cmux top', result: listing }))),
-  Effect.catchTag('CommandError', (error) => Effect.succeed(error.message)),
+  Effect.catchTags({
+    CommandError: (error) => Effect.succeed(error.message),
+    SchemaError: () => Effect.succeed('cmux top answered in a shape this build does not read.'),
+  }),
 );
 
 /**

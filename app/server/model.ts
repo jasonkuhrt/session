@@ -1,6 +1,9 @@
 import * as Data from 'effect/Data';
+import * as Result from 'effect/Result';
+import * as Schema from 'effect/Schema';
+import * as Struct from 'effect/Struct';
 import type { Item, Stage } from '../contract.ts';
-import { isBatchedStage, stageDirectory } from '../contract.ts';
+import { isBatchedStage, ItemSchema, stageDirectory } from '../contract.ts';
 import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
 
@@ -11,7 +14,8 @@ export class SessionError extends Data.TaggedError('SessionError')<{
 }> {}
 
 /** An item before its file has a place: the path follows from the stage's order. */
-export type ItemDraft = Omit<Item, 'path'>;
+export const ItemDraftSchema = ItemSchema.mapFields(Struct.omit(['path']));
+export type ItemDraft = typeof ItemDraftSchema.Type;
 
 /** What an item id may be, as a pattern source for every reader that finds one in text. */
 export const itemIdSource = '[A-Za-z0-9][A-Za-z0-9._-]*';
@@ -23,6 +27,31 @@ const groupHeading = /^# (\S(?:.*\S)?)$/u;
 export const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
 };
+
+/** A schema's complaint in one line, for a sentence that names where it was read. */
+export const oneLine = (message: string): string => message.replaceAll(/\s*\n\s*/gu, ' ');
+
+/**
+ * The decode a parser of a text format ends in: the record it produced,
+ * through the schema of what it is, so a parser hands on nothing of another
+ * shape. A record that does not decode can only be a flaw of the parser, and
+ * it fails with the clause that says so, for the parser to name where it was
+ * read in the way it names every other problem.
+ */
+export const recordReading = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) => {
+  const decode = Schema.decodeUnknownResult(schema);
+  return (record: unknown): Result.Result<S['Type'], string> =>
+    Result.mapError(decode(record), (error) => `the engine read it as something it does not write: ${oneLine(error.message)}`);
+};
+
+/** A record's decode, for a parser that refuses by throwing, as the stage parsers do: a flaw is refused where it was read. */
+export const recordDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) => {
+  const read = recordReading(schema);
+  return (record: unknown, where: string): S['Type'] => Result.getOrElse(read(record), (flaw) => fail(`${where}: ${flaw}.`));
+};
+
+const decodeItem = recordDecoder(ItemSchema);
+const encodeDraft = Schema.encodeSync(ItemDraftSchema);
 
 /** Quote a name inside a message without reaching for JSON. */
 export const quote = (value: string): string => `"${value}"`;
@@ -148,9 +177,11 @@ export const makeItem = (input: {
   };
 };
 
-/** One item's Markdown chunk: its heading and body, as stored in an item file. */
-export const renderItem = (item: ItemDraft): string =>
-  `## ${item.id} — ${item.title}\n\n${item.body.trim()}`;
+/** One item's Markdown chunk: its heading and body, as stored in an item file, from the draft encoded as it leaves. */
+export const renderItem = (item: ItemDraft): string => {
+  const { id, title, body } = encodeDraft(item);
+  return `## ${id} — ${title}\n\n${body.trim()}`;
+};
 
 /** One item file of a stage directory: its group, when it has one, comes from the directory name. */
 export const parseItemFile = (input: {
@@ -184,7 +215,7 @@ export const parseItemFile = (input: {
     group: input.group,
   });
   validateItem(input.stage, draft);
-  return { ...draft, path: input.path };
+  return decodeItem({ ...draft, path: input.path }, input.path);
 };
 
 export const findRequiredItem = (

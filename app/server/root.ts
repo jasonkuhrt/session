@@ -1,7 +1,9 @@
+import * as Result from 'effect/Result';
+import * as Schema from 'effect/Schema';
 import type { Stage } from '../contract.ts';
-import { stageDirectory, stageNames } from '../contract.ts';
+import { RankSchema, stageDirectory, stageNames } from '../contract.ts';
 import { contextDirectory, entryName, epicFact, metaDirectory, rankFact, rootEntries } from './layout.ts';
-import { nameRuleBroken, quote } from './model.ts';
+import { nameRuleBroken, quote, recordReading } from './model.ts';
 
 /**
  * The session root's rules: whether an entry belongs there, what `meta/` may
@@ -38,6 +40,25 @@ export const epicNameProblem = (name: string): string | null => {
   return broken === 'slash' ? `an epic’s name must not contain "/", and ${quote(name)} does` : null;
 };
 
+/** What `meta/epic` holds: the name of the epic the worktree is in. */
+const EpicFactSchema = Schema.Struct({ epic: Schema.String });
+
+/** What `meta/rank` holds: the worktree's rank among its siblings. */
+const RankFactSchema = Schema.Struct({ rank: RankSchema });
+
+/**
+ * The fact a file of `meta/` was read as, decoded; one that does not decode,
+ * which only a flaw of its reading could give, is the file's problem.
+ */
+const factDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schema: S, path: string) => {
+  const read = recordReading(schema);
+  return (fact: unknown): S['Type'] | { readonly problem: string } =>
+    Result.getOrElse(read(fact), (flaw) => ({ problem: `${path}: ${flaw}.` }));
+};
+
+const decodeEpicFact = factDecoder(EpicFactSchema, epicPath);
+const encodeEpicFact = Schema.encodeSync(EpicFactSchema);
+
 /**
  * The epic a `meta/epic` file names, or the rule it breaks, with its fix: the
  * file is one line, the epic's name, ending in a newline, and nothing else.
@@ -49,8 +70,11 @@ export const parseEpicFile = (content: string): { readonly epic: string } | { re
   }
   const epic = content.slice(0, end);
   const problem = epicNameProblem(epic);
-  return problem === null ? { epic } : { problem: `${epicPath}: ${problem}; ${epicFix}.` };
+  return problem === null ? decodeEpicFact({ epic }) : { problem: `${epicPath}: ${problem}; ${epicFix}.` };
 };
+
+/** What `meta/epic` is written as for an epic's name, encoded as it leaves: the one line. */
+export const renderEpicFile = (epic: string): string => `${encodeEpicFact({ epic }).epic}\n`;
 
 /** Why `meta` may not be a link: a worktree's facts are its own, and a link would share them or put them elsewhere. */
 export const metaLinkProblem =
@@ -61,6 +85,9 @@ export const epicLinkProblem = `${epicPath} is a link; each worktree names its e
 
 /** The rank's file as a refusal names it. */
 const rankPath = `${metaDirectory}/${rankFact}`;
+
+const decodeRankFact = factDecoder(RankFactSchema, rankPath);
+const encodeRankFact = Schema.encodeSync(RankFactSchema);
 
 /**
  * How a broken rank's file is mended: by the command that places the
@@ -83,9 +110,15 @@ export const parseRankFile = (content: string): { readonly rank: number } | { re
   const line = content.slice(0, end);
   const rank = Number(line);
   return Number.isSafeInteger(rank)
-    ? { rank }
+    ? decodeRankFact({ rank })
     : { problem: `${rankPath} holds ${line}, which is too large for a rank; ${rankFix}.` };
 };
+
+/** Whether a number is a rank, as `meta/rank` holds one: a non-negative integer, small enough to be counted exactly. */
+export const isRank = Schema.is(RankSchema);
+
+/** What `meta/rank` is written as for a rank, encoded as it leaves: the one line of its digits. */
+export const renderRankFile = (rank: number): string => `${encodeRankFact({ rank }).rank}\n`;
 
 /** Why `meta/rank` may not be a link: each worktree keeps its place in a file of its own. */
 export const rankLinkProblem = `${rankPath} is a link; each worktree keeps its rank in a file of its own, so ${rankFix}.`;

@@ -6,9 +6,9 @@ import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { ClaudeSession, ContextFill } from '../../contract.ts';
+import type { ClaudeSession, Terminal } from '../../contract.ts';
 import { capture } from '../command.ts';
-import { terminalsFor, type Terminal } from '../cmux.ts';
+import { terminalsFor } from '../cmux.ts';
 import { ownerOf, realPaths } from '../paths.ts';
 import { contextOf } from './transcript.ts';
 
@@ -106,12 +106,8 @@ const resumeCommand = (row: Row): string | null => {
   return row.sessionId === undefined ? null : `claude --resume ${row.sessionId}`;
 };
 
-/** What is read beside the listing for one live session. */
-type LiveFacts = {
-  readonly statusChangedAt: string | null;
-  readonly nameSource: string | null;
-  readonly context: ContextFill | null;
-};
+/** What is read beside the listing for one live session: the parts of it the listing does not carry. */
+type LiveFacts = Pick<ClaudeSession, 'statusChangedAt' | 'nameSource' | 'context'>;
 
 type Registered = Omit<LiveFacts, 'context'>;
 const unregistered: Registered = { statusChangedAt: null, nameSource: null };

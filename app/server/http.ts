@@ -1,6 +1,7 @@
 import { extname, resolve } from 'node:path';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
+import * as Option from 'effect/Option';
 import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type {
@@ -18,52 +19,42 @@ import type {
   WorktreeEpic,
   WorktreeRank,
 } from '../contract.ts';
-import { EpicRenameSchema, EpicWriteSchema, OrderWriteSchema, stageNames } from '../contract.ts';
+import {
+  AddressPathSchema,
+  AgentsSummarySchema,
+  ArchiveListingSchema,
+  CompleteItemSchema,
+  ContextListingSchema,
+  EpicRenamedSchema,
+  EpicRenameSchema,
+  EpicWriteSchema,
+  FocusResultSchema,
+  FocusSessionSchema,
+  GroupItemsSchema,
+  LedgerListingSchema,
+  LinksSchema,
+  MoveItemSchema,
+  OpenResultSchema,
+  OrderWriteSchema,
+  QueueBatchSchema,
+  RefusalSchema,
+  SessionSchema,
+  StartBatchSchema,
+  StreamEventNamesSchema,
+  StreamEventSchema,
+  StreamPayloadSchema,
+  TrailerProblemSchema,
+  UngroupItemsSchema,
+  WorktreeEpicSchema,
+  WorktreePathSchema,
+  WorktreeRankSchema,
+} from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
 import { checkoutOf, type WorktreeSession } from './worktree.ts';
 
 /* eslint-disable max-lines -- The HTTP boundary: the board's route table and the handlers the root shares with it live together, so the two surfaces can never answer one request two ways. */
-
-const Stage = Schema.Literals(stageNames);
-const MoveItem = Schema.Struct({
-  id: Schema.String,
-  to: Stage,
-  beforeId: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
-  /** A group the item, landing in no group, goes in front of; given instead of `beforeId`. */
-  beforeGroup: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
-  /** The drop target's group, or null for none; left out, as `session mv` leaves it out. */
-  group: Schema.NullOr(Schema.String).pipe(Schema.optionalKey),
-  revision: Schema.String,
-});
-const GroupItems = Schema.Struct({
-  ids: Schema.Array(Schema.String),
-  name: Schema.String,
-  revision: Schema.String,
-});
-const UngroupItems = Schema.Struct({
-  ids: Schema.Array(Schema.String),
-  revision: Schema.String,
-});
-const QueueBatch = Schema.Struct({
-  ids: Schema.Array(Schema.String),
-  name: Schema.String,
-  revision: Schema.String,
-});
-const StartBatch = Schema.Struct({
-  revision: Schema.String,
-});
-const CompleteItem = Schema.Struct({
-  id: Schema.String,
-  revision: Schema.String,
-});
-const FocusSession = Schema.Struct({
-  pid: Schema.Int,
-});
-const OpenWorktree = Schema.Struct({
-  path: Schema.String,
-});
 
 /**
  * What the files route says each file is: Markdown as Markdown, the image
@@ -82,11 +73,41 @@ const fileTypes: ReadonlyMap<string, string> = new Map([
 
 const fileTypeOf = (path: string): string => fileTypes.get(extname(path).toLowerCase()) ?? 'text/plain; charset=utf-8';
 
-const json = (value: unknown, init?: ResponseInit) =>
-  Response.json(value, {
-    ...init,
-    headers: { 'cache-control': 'no-store', ...init?.headers },
-  });
+/**
+ * How a route answers: through the schema of what it answers, each value
+ * encoded as it leaves, so a page reads only a shape the contract names. It
+ * goes out `no-store`, as every answer does.
+ */
+export const answer = <A, I>(schema: Schema.Codec<A, I>) => {
+  const encode = Schema.encodeSync(schema);
+  return (value: A, init?: ResponseInit) =>
+    Response.json(encode(value), {
+      ...init,
+      headers: { 'cache-control': 'no-store', ...init?.headers },
+    });
+};
+
+const answerRefusal = answer(RefusalSchema);
+
+/** A refusal: the sentence that says why, as every route refuses, with its status. */
+export const refuse = ({ error, status }: { readonly error: string; readonly status: number }) =>
+  answerRefusal({ error }, { status });
+
+const answerSession = answer(SessionSchema);
+const answerAgents = answer(AgentsSummarySchema);
+const answerTrailers = answer(Schema.Array(TrailerProblemSchema));
+const answerLinks = answer(LinksSchema);
+const answerLedger = answer(LedgerListingSchema);
+const answerContext = answer(ContextListingSchema);
+const answerArchive = answer(ArchiveListingSchema);
+const answerFocus = answer(FocusResultSchema);
+const answerOpen = answer(OpenResultSchema);
+const answerEpic = answer(WorktreeEpicSchema);
+const answerRenamed = answer(EpicRenamedSchema);
+const answerRank = answer(WorktreeRankSchema);
+
+/** A file's path under the session, as the files route's address carries it. */
+const decodePath = Schema.decodeUnknownOption(AddressPathSchema);
 
 /**
  * The shell the build prerendered, which is every page of the app: the index
@@ -100,7 +121,7 @@ const shellResponse = async ({ shell, method }: {
   readonly method: string;
 }): Promise<Response> => {
   const page = file(shell);
-  if (!(await page.exists())) return json({ error: 'Not found.' }, { status: 404 });
+  if (!(await page.exists())) return refuse({ error: 'Not found.', status: 404 });
   return new Response(method === 'HEAD' ? null : page, {
     headers: { 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' },
   });
@@ -120,28 +141,26 @@ export const staticResponse = async ({ directory, shell, url, method }: {
   readonly url: URL;
   readonly method: string;
 }): Promise<Response> => {
-  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, { status: 405 });
-  if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
+  if (method !== 'GET' && method !== 'HEAD') return refuse({ error: 'Method not allowed.', status: 405 });
+  if (url.pathname.startsWith('/api/')) return refuse({ error: 'Not found.', status: 404 });
   const requested = url.pathname.slice(1);
   if (!requested.includes('.')) return await shellResponse({ shell, method });
   const path = resolve(directory, requested);
-  if (path !== directory && !path.startsWith(`${directory}/`)) return json({ error: 'Not found.' }, { status: 404 });
+  if (path !== directory && !path.startsWith(`${directory}/`)) return refuse({ error: 'Not found.', status: 404 });
   const candidate = file(path);
-  if (!(await candidate.exists())) return json({ error: 'Not found.' }, { status: 404 });
+  if (!(await candidate.exists())) return refuse({ error: 'Not found.', status: 404 });
   return method === 'HEAD' ? new Response(null) : new Response(candidate);
 };
 
 const errorResponse = (error: unknown): Response => {
   if (error instanceof RepositoryError || error instanceof SessionError) {
     const status = error.kind === 'conflict' ? 409 : error.kind === 'not-found' ? 404 : 400;
-    return json({ error: error.message }, { status });
+    return refuse({ error: error.message, status });
   }
-  return json(
-    { error: error instanceof Error ? error.message : 'Unexpected server error.' },
-    { status: 500 },
-  );
+  return refuse({ error: error instanceof Error ? error.message : 'Unexpected server error.', status: 500 });
 };
 
+/** A request's body, read as JSON and decoded through the schema of what its route takes. */
 const decodeBody = <A, I>(request: Request, schema: Schema.Codec<A, I>) =>
   Effect.tryPromise({
     try: () => request.json(),
@@ -179,16 +198,16 @@ const writeIsSameOrigin = (request: Request): boolean => {
  * two surfaces can never send different bodies or read a refusal differently;
  * the daemon owns what stands behind each one.
  */
-const sharedWrite = async <A, I>(
-  request: Request,
-  schema: Schema.Codec<A, I>,
-  answer: (input: A) => Promise<Response>,
-): Promise<Response> => {
-  if (!writeIsSameOrigin(request)) {
-    return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
-  }
+export const sharedWrite = async <A, I>({ request, schema, respond }: {
+  readonly request: Request;
+  /** What the route takes. */
+  readonly schema: Schema.Codec<A, I>;
+  /** The route's answer to the decoded body. */
+  readonly respond: (input: A) => Promise<Response>;
+}): Promise<Response> => {
+  if (!writeIsSameOrigin(request)) return refuse({ error: 'Cross-origin writes are not allowed.', status: 403 });
   try {
-    return await answer(await Effect.runPromise(decodeBody(request, schema)));
+    return await respond(await Effect.runPromise(decodeBody(request, schema)));
   } catch (error) {
     return errorResponse(error);
   }
@@ -201,7 +220,7 @@ const sharedWrite = async <A, I>(
 export const focusResponse = ({ request, focus }: {
   readonly request: Request;
   readonly focus: (pid: number) => Promise<FocusResult>;
-}) => sharedWrite(request, FocusSession, async (input) => json(await focus(input.pid)));
+}) => sharedWrite({ request, schema: FocusSessionSchema, respond: async (input) => answerFocus(await focus(input.pid)) });
 
 /**
  * A worktree opened in a tool, cmux's terminal or Zed, at the root, for a
@@ -213,11 +232,15 @@ export const openResponse = ({ request, open }: {
   /** The tool's answer for a tracked worktree's path; undefined for any other path. */
   readonly open: (path: string) => Promise<OpenResult | undefined>;
 }) =>
-  sharedWrite(request, OpenWorktree, async (input) => {
-    const result = await open(input.path);
-    return result === undefined
-      ? json({ error: 'The daemon tracks no worktree at that path.' }, { status: 404 })
-      : json(result);
+  sharedWrite({
+    request,
+    schema: WorktreePathSchema,
+    respond: async (input) => {
+      const result = await open(input.path);
+      return result === undefined
+        ? refuse({ error: 'The daemon tracks no worktree at that path.', status: 404 })
+        : answerOpen(result);
+    },
   });
 
 /**
@@ -229,7 +252,7 @@ export const openResponse = ({ request, open }: {
 export const epicResponse = ({ request, write }: {
   readonly request: Request;
   readonly write: (input: EpicWrite) => Promise<WorktreeEpic>;
-}) => sharedWrite(request, EpicWriteSchema, async (input) => json(await write(input)));
+}) => sharedWrite({ request, schema: EpicWriteSchema, respond: async (input) => answerEpic(await write(input)) });
 
 /**
  * An epic's new name, at the root, for the index's rename: the epic by its
@@ -240,7 +263,7 @@ export const epicResponse = ({ request, write }: {
 export const renameResponse = ({ request, write }: {
   readonly request: Request;
   readonly write: (input: EpicRename) => Promise<EpicRenamed>;
-}) => sharedWrite(request, EpicRenameSchema, async (input) => json(await write(input)));
+}) => sharedWrite({ request, schema: EpicRenameSchema, respond: async (input) => answerRenamed(await write(input)) });
 
 /**
  * A worktree's place among its siblings, at the root, for the index's drags:
@@ -252,7 +275,7 @@ export const renameResponse = ({ request, write }: {
 export const orderResponse = ({ request, write }: {
   readonly request: Request;
   readonly write: (input: OrderWrite) => Promise<WorktreeRank>;
-}) => sharedWrite(request, OrderWriteSchema, async (input) => json(await write(input)));
+}) => sharedWrite({ request, schema: OrderWriteSchema, respond: async (input) => answerRank(await write(input)) });
 
 /** Bun closes a connection that has been idle for `idleTimeout`, ten seconds
  *  by default, so a quiet session must still say something. */
@@ -264,18 +287,38 @@ export type EventChannel = {
   readonly events: SessionEvents | undefined;
 };
 
+/** The events a page named, as its stream carries them: the channels it has, and the names it has no event for. */
+export type NamedChannels = {
+  readonly channels: ReadonlyArray<EventChannel>;
+  readonly unknown: ReadonlyArray<string>;
+};
+
+const decodeEventNames = Schema.decodeUnknownOption(StreamEventNamesSchema);
+const decodeEvent = Schema.decodeUnknownOption(StreamEventSchema);
+const encodeEvent = Schema.encodeSync(StreamEventSchema);
+
+/** Every event's line of data: the empty payload, encoded as it leaves. */
+const payload = Schema.encodeSync(Schema.fromJsonString(StreamPayloadSchema))({});
+
 /**
- * The channels a page asked for in `?events=`, and no others: a stream that
- * names none carries none. A page names what it reads, so a source the daemon
- * re-reads only for a listening page is not kept busy by a page that ignores
- * it.
+ * The channels a page asked for in `?events=`, decoded, and no others: a
+ * stream that names none carries none. A page names what it reads, so a
+ * source the daemon re-reads only for a listening page is not kept busy by a
+ * page that ignores it. A name the daemon has no event for is carried by
+ * nothing, and kept so the stream can say so.
  */
 export const namedChannels = ({ url, channels }: {
   readonly url: URL;
   readonly channels: ReadonlyArray<EventChannel>;
-}): ReadonlyArray<EventChannel> => {
-  const wanted = new Set((url.searchParams.get('events') ?? '').split(','));
-  return channels.filter((channel) => wanted.has(channel.name));
+}): NamedChannels => {
+  const wanted = new Set<StreamEvent>();
+  const unknown: string[] = [];
+  for (const name of Option.getOrElse(decodeEventNames(url.searchParams.get('events') ?? ''), () => [])) {
+    const event = decodeEvent(name);
+    if (Option.isSome(event)) wanted.add(event.value);
+    else if (name !== '') unknown.push(name);
+  }
+  return { channels: channels.filter((channel) => wanted.has(channel.name)), unknown };
 };
 
 /**
@@ -283,9 +326,11 @@ export const namedChannels = ({ url, channels }: {
  * the debounce. Each channel names the event it writes, so one stream carries
  * everything a page listens for and the page decides what to refetch. A surface
  * served without any source keeps a silent stream rather than a 404, so the
- * client connects once instead of retrying forever.
+ * client connects once instead of retrying forever. A name the page gave that
+ * the daemon has no event for is said once, in a comment line, which a page
+ * never reads as an event.
  */
-export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => {
+export const eventStream = ({ channels, unknown }: NamedChannels): Response => {
   const encoder = new TextEncoder();
   let unsubscribes: Array<() => void> = [];
   let keepAlive: ReturnType<typeof setInterval> | undefined;
@@ -307,10 +352,10 @@ export const eventStream = (channels: ReadonlyArray<EventChannel>): Response => 
         }
       };
       write(': open\n\n');
+      if (unknown.length > 0) write(`: this stream carries no event named ${unknown.join(' or ')}\n\n`);
       for (const channel of channels) {
-        const unsubscribe = channel.events?.subscribe(() =>
-          write(`event: ${channel.name}\ndata: {}\n\n`),
-        );
+        const frame = `event: ${encodeEvent(channel.name)}\ndata: ${payload}\n\n`;
+        const unsubscribe = channel.events?.subscribe(() => write(frame));
         if (unsubscribe !== undefined) unsubscribes.push(unsubscribe);
       }
       keepAlive = setInterval(() => write(': keep-alive\n\n'), keepAliveMilliseconds);
@@ -384,24 +429,22 @@ export const makeRequestHandler = (options: {
       try {
         const url = new URL(request.url);
         const mutation = request.method === 'PUT' || request.method === 'POST';
-        if (mutation && !writeIsSameOrigin(request)) {
-          return json({ error: 'Cross-origin writes are not allowed.' }, { status: 403 });
-        }
+        if (mutation && !writeIsSameOrigin(request)) return refuse({ error: 'Cross-origin writes are not allowed.', status: 403 });
 
         if (request.method === 'GET' && url.pathname === '/api/session') {
-          return json(await attachWorktree(await run(repository.load)));
+          return answerSession(await attachWorktree(await run(repository.load)));
         }
 
         if (request.method === 'GET' && url.pathname === '/api/agents') {
-          return json(await options.agents.read());
+          return answerAgents(await options.agents.read());
         }
 
         if (request.method === 'GET' && url.pathname === '/api/trailers') {
-          return json(options.trailers.read());
+          return answerTrailers(options.trailers.read());
         }
 
         if (request.method === 'GET' && url.pathname === '/api/links') {
-          return json(await options.links.read());
+          return answerLinks(await options.links.read());
         }
 
         if (request.method === 'GET' && url.pathname === '/api/events') {
@@ -417,24 +460,22 @@ export const makeRequestHandler = (options: {
         }
 
         if (request.method === 'GET' && url.pathname === '/api/ledger') {
-          return json(await run(repository.ledgerListing));
+          return answerLedger(await run(repository.ledgerListing));
         }
 
         if (request.method === 'GET' && url.pathname === '/api/context') {
-          return json(await run(repository.contextListing));
+          return answerContext(await run(repository.contextListing));
         }
 
         if (request.method === 'GET' && url.pathname === '/api/archive') {
-          return json(await run(repository.archiveListing));
+          return answerArchive(await run(repository.archiveListing));
         }
 
         if (request.method === 'GET' && url.pathname.startsWith('/files/')) {
-          let relativePath: string;
-          try {
-            relativePath = decodeURIComponent(url.pathname.slice('/files/'.length));
-          } catch {
-            return json({ error: 'Not found.' }, { status: 404 });
-          }
+          // The file's path under the session, as the address carries it; one that does not decode is no file's.
+          const decoded = decodePath(url.pathname.slice('/files/'.length));
+          if (Option.isNone(decoded)) return refuse({ error: 'Not found.', status: 404 });
+          const relativePath = decoded.value;
           return new Response(file(await run(repository.servedFile(relativePath))), {
             headers: {
               'cache-control': 'no-store',
@@ -449,39 +490,37 @@ export const makeRequestHandler = (options: {
         }
 
         if (request.method === 'POST' && url.pathname === '/api/move') {
-          const input = await run(decodeBody(request, MoveItem));
-          return json(await attachWorktree(await run(repository.moveItem(input))));
+          const input = await run(decodeBody(request, MoveItemSchema));
+          return answerSession(await attachWorktree(await run(repository.moveItem(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/group') {
-          const input = await run(decodeBody(request, GroupItems));
-          return json(await attachWorktree(await run(repository.groupItems(input))));
+          const input = await run(decodeBody(request, GroupItemsSchema));
+          return answerSession(await attachWorktree(await run(repository.groupItems(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/ungroup') {
-          const input = await run(decodeBody(request, UngroupItems));
-          return json(await attachWorktree(await run(repository.ungroupItems(input))));
+          const input = await run(decodeBody(request, UngroupItemsSchema));
+          return answerSession(await attachWorktree(await run(repository.ungroupItems(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/batch') {
-          const input = await run(decodeBody(request, QueueBatch));
-          return json(await attachWorktree(await run(repository.queueBatch(input))));
+          const input = await run(decodeBody(request, QueueBatchSchema));
+          return answerSession(await attachWorktree(await run(repository.queueBatch(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/start') {
-          const input = await run(decodeBody(request, StartBatch));
-          return json(await attachWorktree(await run(repository.startBatch(input))));
+          const input = await run(decodeBody(request, StartBatchSchema));
+          return answerSession(await attachWorktree(await run(repository.startBatch(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
           return await focusResponse({ request, focus: options.agents.focus });
         }
         if (request.method === 'POST' && url.pathname === '/api/complete') {
-          const input = await run(decodeBody(request, CompleteItem));
-          return json(await attachWorktree(await run(repository.completeItem(input))));
+          const input = await run(decodeBody(request, CompleteItemSchema));
+          return answerSession(await attachWorktree(await run(repository.completeItem(input))));
         }
 
-        if (request.method !== 'GET' && request.method !== 'HEAD') {
-          return json({ error: 'Method not allowed.' }, { status: 405 });
-        }
+        if (request.method !== 'GET' && request.method !== 'HEAD') return refuse({ error: 'Method not allowed.', status: 405 });
 
         // An API a board does not have is an error, never the app's page.
-        if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
+        if (url.pathname.startsWith('/api/')) return refuse({ error: 'Not found.', status: 404 });
 
         // Every other path is one of the board's pages, whatever it holds: an
         // item id or a file's path can carry a dot, and gets the page all the

@@ -64,6 +64,15 @@
       }
     },
     {
+      "files": ["app/server/http.ts"],
+      "rules": {
+        // The HTTP boundary: every body it takes and every answer it gives
+        // passes through the contract's schemas, and every route reaches the
+        // engine, so its import list is the sum of what it serves.
+        "import/max-dependencies": "off"
+      }
+    },
+    {
       "files": ["app/server/repository.ts"],
       "rules": {
         // The repository is the one serialized transaction boundary over the

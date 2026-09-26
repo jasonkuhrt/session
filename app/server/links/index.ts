@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { IssuesReport, PullRequestReport } from '../../contract.ts';
 import { capture } from '../command.ts';
+import { gitName } from '../git.ts';
 import { type PullRequestAnswer, pullRequestOf } from './github.ts';
 import { identifiersIn, issuesOf } from './linear.ts';
 
@@ -35,10 +36,10 @@ export type PullRequestReading = PullRequestAnswer & {
   readonly branch: string | null;
 };
 
-/** The branch checked out in the worktree when it is asked; null on a detached head, or when Git cannot say. */
+/** The branch checked out in the worktree when it is asked, decoded as Git names it; null on a detached head, or when Git cannot say. */
 export const checkedOutBranch = (worktree: string) =>
   capture({ command: 'git', args: ['branch', '--show-current'], cwd: worktree }).pipe(
-    Effect.map((result) => (result.exitCode === 0 && result.stdout !== '' ? result.stdout : null)),
+    Effect.map((result) => (result.exitCode === 0 ? gitName(result.stdout) : null)),
     Effect.orElseSucceed(() => null),
   );
 

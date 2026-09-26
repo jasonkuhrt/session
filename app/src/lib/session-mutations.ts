@@ -1,7 +1,7 @@
 import * as React from 'react'
 
 import type { Session } from '../../contract'
-import type { SessionMutation } from './api'
+import type { SessionMutation, SessionWriteBody } from './api'
 import { ApiError, SessionApi } from './api'
 import { useBoardPath } from './base'
 
@@ -30,13 +30,13 @@ export function useSessionMutations(input: {
   const [refreshed, setRefreshed] = React.useState(false)
 
   const mutate = React.useCallback(
-    async (path: SessionMutation, body: Record<string, unknown>) => {
+    async <P extends SessionMutation>(path: P, body: SessionWriteBody<P>) => {
       if (!session) return false
       setPending(true)
       setFailure(null)
       setRefreshed(false)
       try {
-        await onSession(await SessionApi.mutate(board, path, { ...body, revision: session.revision }))
+        await onSession(await SessionApi.mutate(board, path, body, session.revision))
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {

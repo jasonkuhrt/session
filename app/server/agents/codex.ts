@@ -5,6 +5,7 @@ import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { CodexThread } from '../../contract.ts';
 import { capture } from '../command.ts';
@@ -48,11 +49,15 @@ export const lockDirectory = Effect.gen(function*() {
   return join(yield* Config.String('HOME'), '.codex/thread-writer-locks');
 }).pipe(Effect.orElseSucceed(() => null));
 
+/** The thread ids `lsof` names by their locks, decoded. */
+const decodeHeld = Schema.decodeUnknownOption(Schema.Array(Schema.String));
+
 /**
  * `lsof` names the pid holding each lock, which a directory listing cannot: a
  * process that died leaves its file behind until the next thread is loaded. An
  * unreadable directory is not "nothing is loaded", so it answers `null` and the
- * board says nothing at all about those threads.
+ * board says nothing at all about those threads; so does an answer whose ids
+ * do not decode.
  */
 const loadedIds = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem;
@@ -68,12 +73,12 @@ const loadedIds = Effect.gen(function*() {
   // Nothing open under the directory is exit 1 with nothing to say; a real
   // complaint means the answer is unknown rather than empty.
   if (result.exitCode !== 0 && result.stderr !== '') return null;
-  const held = new Set<string>();
+  const held: string[] = [];
   for (const line of result.stdout.split('\n')) {
     if (!line.startsWith('n') || !line.endsWith('.lock')) continue;
-    held.add(line.slice(line.lastIndexOf('/') + 1, -'.lock'.length));
+    held.push(line.slice(line.lastIndexOf('/') + 1, -'.lock'.length));
   }
-  return held;
+  return Option.match(decodeHeld(held), { onNone: () => null, onSome: (ids) => new Set(ids) });
 }).pipe(Effect.orElseSucceed(() => null));
 
 /** A thread's own name, else the first line of what was said to it. */

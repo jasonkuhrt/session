@@ -280,7 +280,10 @@ is still before it. It takes no other option,
 and like every command it converges the session first, so a main worktree
 without one gets one and is placed. The siblings are the worktrees the daemon
 tracks, as its state file lists them, so the command reads that file whether or
-not the daemon runs, and one tracking nothing gives a worktree no siblings.
+not the daemon runs, and one tracking nothing gives a worktree no siblings. A
+state file that does not hold that list is not read as tracking nothing: the
+command refuses with the file's path and what is wrong with it, and says that
+`session open` in a worktree takes it on again and rewrites the file.
 
 The rank is the number halfway between those of the two siblings it goes
 between, or 10 past the last one's, and a worktree already between them keeps
@@ -514,6 +517,8 @@ that is another worktree's.
 One daemon serves every worktree, one process per user, on `127.0.0.1:53045`. Its
 state is `~/.local/state/session/daemon.json`, the worktrees it tracks and the
 paths it holds until Git answers, all of which the next daemon takes on again.
+One that does not hold that list is named in the log, and the daemon starts
+with nothing from it and writes the file afresh.
 A path Git refuses, such as a linked worktree moved by hand, is let go, and its
 log names it. A path Git could not answer for, because Git could not run or
 would not open its repository, is held: it stays in the state file, and every
@@ -602,7 +607,8 @@ terminal, or an agent moving items, reaches an open index at once; a change
 under `context/`,
 `ledger/`, `archive/` or `ignore/` pushes nothing, since the index shows nothing
 of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
-through.
+through; it takes the worktree by its path, `{path}`, as the terminal and Zed
+routes take it, and refuses any other body.
 
 The index at `/` draws the tracked worktrees as a stack of sections, one per
 project, rather than as a table, under a header that holds only the settings
@@ -904,8 +910,9 @@ starts an ask for every served row whose answer does not stand. The index's
 asks take turns, four at a time, and one whose turn comes after every page that
 wanted it has closed, or after a board has already asked, is dropped; a board's
 own ask never waits behind them. A page's stream carries only the events that
-page names, and an item page names only `changed`, so an open item page keeps
-nothing asking. Every ask of gh, and every ask of linear read from gh's newest
+page names, and says in a comment line, which no page reads as an event, any
+name it has no event for; an item page names only `changed`, so an open item
+page keeps nothing asking. Every ask of gh, and every ask of linear read from gh's newest
 answer, pushes a `links` event to that worktree's open boards, and every ask of
 gh a `pull-requests` event to the open index. Each ask of gh is at least one
 GitHub API request counted against the signed-in account's hourly limit, more

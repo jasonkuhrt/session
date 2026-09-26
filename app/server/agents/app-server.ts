@@ -2,6 +2,7 @@ import { join, resolve } from 'node:path';
 import type * as Cause from 'effect/Cause';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
+import * as Option from 'effect/Option';
 import * as Queue from 'effect/Queue';
 import * as Schema from 'effect/Schema';
 import * as Stream from 'effect/Stream';
@@ -56,14 +57,42 @@ const clientVersion = Effect.gen(function*() {
 
 const encoder = new TextEncoder();
 
-const parseLine = (line: string): Record<string, unknown> | null => {
-  try {
-    const parsed: unknown = JSON.parse(line);
-    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-};
+/** A line the server wrote, decoded as JSON; a line that is not JSON is nobody's reply. */
+const decodeLine = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
+/** The id a reply carries, which is how it is matched to its request. */
+const decodeReplyId = Schema.decodeUnknownOption(Schema.Struct({ id: Schema.Int }));
+
+/** Who the board is, as it names itself in the handshake. */
+const InitializeSchema = Schema.Struct({
+  id: Schema.Int,
+  method: Schema.Literal('initialize'),
+  params: Schema.Struct({
+    clientInfo: Schema.Struct({ name: Schema.String, title: Schema.String, version: Schema.String }),
+  }),
+});
+
+/** The notification that ends the handshake. */
+const InitializedSchema = Schema.Struct({ method: Schema.Literal('initialized') });
+
+/** One worktree's threads, asked for. */
+const ThreadListSchema = Schema.Struct({
+  id: Schema.Int,
+  method: Schema.Literal('thread/list'),
+  params: Schema.Struct({
+    cwd: Schema.Array(Schema.String),
+    archived: Schema.Boolean,
+    useStateDbOnly: Schema.Boolean,
+    sourceKinds: Schema.Array(Schema.String),
+    sortKey: Schema.String,
+    sortDirection: Schema.String,
+    limit: Schema.Int,
+  }),
+});
+
+/** Every line the board writes to the server, each encoded as it leaves. */
+const RequestSchema = Schema.Union([InitializeSchema, InitializedSchema, ThreadListSchema]);
+const encodeRequest = Schema.encodeEffect(Schema.fromJsonString(RequestSchema));
 
 /**
  * `useStateDbOnly` is what makes this a listing and not a repair pass: without
@@ -71,7 +100,7 @@ const parseLine = (line: string): Record<string, unknown> | null => {
  * milliseconds. `recency_at` ordering with a small limit is what keeps the
  * board a working set instead of a log that only grows.
  */
-const listRequest = (id: number, cwd: string) => ({
+const listRequest = (id: number, cwd: string): typeof ThreadListSchema.Type => ({
   id,
   method: 'thread/list',
   params: {
@@ -105,13 +134,15 @@ const connect = Effect.gen(function*() {
     ),
   );
   return {
-    send: (message: unknown) =>
-      Queue.offer(outbox, encoder.encode(`${JSON.stringify(message)}\n`)),
+    send: (message: typeof RequestSchema.Type) =>
+      encodeRequest(message).pipe(Effect.flatMap((line) => Queue.offer(outbox, encoder.encode(`${line}\n`)))),
     reply: (id: number) =>
       Effect.gen(function*() {
         while (true) {
-          const message = parseLine(yield* Queue.take(inbox));
-          if (message !== null && message['id'] === id) return message;
+          const message = decodeLine(yield* Queue.take(inbox));
+          if (Option.isNone(message)) continue;
+          const reply = decodeReplyId(message.value);
+          if (Option.isSome(reply) && reply.value.id === id) return message.value;
         }
       }),
     // Closing stdin asks the server to stop. Nothing waits for it to comply:
