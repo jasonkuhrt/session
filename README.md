@@ -47,20 +47,21 @@ its tab's name, Worktrees, and every head and card says what it is in its own
 tips. It shows every worktree the daemon knows as a stack of sections, one per
 project, each a head that is never dragged over the project's cards: a card per
 epic with its worktrees inside and a card of its own for each worktree in none.
-A repository is headed by its main worktree, marked with a house; when that has
-no session, by its name and branch as Git lists them, marked Not tracked, so its
-worktrees still have a home; and when Git lists the repository by its Git
-directory, a bare repository's or a submodule's, by that directory's name,
-marked Git directory. A folder outside Git is a project of its own, headed by
-its name, marked Outside Git. An epic whose worktrees belong to more than one
-project is drawn once, in a section of its own, Across projects. A project
-whose main worktree has a session is dragged by its head to place it in the
-stack, and a worktree within its epic's card to place it there; the ones placed
-stand first, in the order they were placed in, and keep their places when they
-go quiet. The rest, sections and the cards in each alike, stand in one order:
-the ones with a live agent first, then by their latest activity, and one with
-nothing live and nothing in five days dim and last, a project counting every
-worktree of it wherever it is drawn.
+A repository is headed by its main worktree, marked with a house and under its
+own name; when that has no session, by its name and branch as Git lists them,
+marked Not tracked, so its worktrees still have a home; and when Git lists the
+repository by its Git directory, by that directory's name, marked Git
+directory: always for a bare repository, and for a submodule or a separate Git
+directory only while the daemon does not track its main worktree. A folder
+outside Git is a project of its own, headed by its name, marked Outside Git. An
+epic whose worktrees belong to more than one project is drawn once, in a section
+of its own, Across projects. A project whose main worktree the daemon tracks is
+dragged by its head to place it in the stack, and a worktree within its epic's
+card to place it there; the ones placed stand first, in the order they were
+placed in, and keep their places when they go quiet. The rest, sections and the
+cards in each alike, stand in one order: the ones with a live agent first, then
+by their latest activity, and one with nothing live and nothing in five days
+dim and last, a project counting every worktree of it wherever it is drawn.
 A worktree is two lines, marked as the worktree picker marks them: a folder and
 its name with the agents live in it, over a branch and its branch, or a commit
 for a detached HEAD, and the pull request gh reports for it. At its top left a
@@ -210,38 +211,39 @@ is a name and the linked worktrees whose sessions name it in `meta/epic`, and
 nothing else: it has no stage, lifecycle, owner or note, nothing about it
 accrues or asks for action, and it exists exactly while some worktree names it.
 A worktree is in at most one epic, since one file holds one name, and a main
-worktree is never in one: Git keeps the repository there, lists it first and
-will not move, lock or remove it, and the index draws it at the head of its
-repository's section. Above the epic the index draws the repository, which is
-Git's rather than the tool's: the worktrees that share one Git directory, named
-by what Git lists first for it, read from `git worktree list` whenever the index
-reads its rows, and stored nowhere; when Git cannot list it, its name falls back
-to the main worktree Git listed when the worktree was taken on, which the daemon
-holds only while it tracks the worktree. A folder outside Git is a project of
-its own. An epic whose worktrees all belong to one project is drawn in that
-project's section, and one whose worktrees belong to more than one is drawn
-once, in a section of its own ordered with the others. Membership changes by a
-drag or a rename on the index, or by `session join` and `session leave`;
-deleting a worktree takes its membership with it, nothing is pruned, no path is
-stored, and nothing stores a fold. The one order stored is a worktree's rank
-among its siblings, a number in its `meta/rank`: a main worktree's orders its
-project among the projects, any other worktree's orders it among the worktrees
-of its epic, and a change of epic removes it, but for a rename on the index to a
-name no other epic has, which is the same epic under another name and keeps
-every rank. Ranked siblings stand first, by rank, and the rest after them by
-what is happening in them. A placement, by a drag on the index or by `session
-order`, ranks the worktree placed, and on the index the unranked siblings drawn
-above where it was dropped, so it lands there, and renumbers the others only
-where there is no room between two; only that write gives a rank, and every epic
-write but a rename to a new name takes a linked worktree's away. Everything else
-about a worktree is read where it is kept: its session, `.session/`, which it
-has at most one of and which puts it on the index; its branch, from `git
-worktree list`, and none when detached; that branch's pull request, from `gh pr
-view`, taken as the one while one is open; and the agents in it, by the working
-directory their harness reports. An agent reaches an epic only through the
-worktree it works in, and no fact ties an agent to an epic, because none could
-be derived or verified. Linear issues are what the branch and the pull request
-name, and are not modeled.
+worktree is never in one: its Git directory is the repository's own, which the
+linked worktrees share, Git lists it first, by that directory when it is kept
+apart from it, and will not move, lock or remove it, and the index draws it at
+the head of its repository's section. Above the epic the index draws the
+repository, which is Git's rather than the tool's: the worktrees that share one
+Git directory, named by what Git lists first for it, read from `git worktree
+list` whenever the index reads its rows, and stored nowhere; when Git cannot
+list it, its name falls back to what Git listed first when the worktree was
+taken on, which the daemon holds only while it tracks the worktree. A folder
+outside Git is a project of its own. An epic whose worktrees all belong to one
+project is drawn in that project's section, and one whose worktrees belong to
+more than one is drawn once, in a section of its own ordered with the others.
+Membership changes by a drag or a rename on the index, or by `session join` and
+`session leave`; deleting a worktree takes its membership with it, nothing is
+pruned, no path is stored, and nothing stores a fold. The one order stored is a
+worktree's rank among its siblings, a number in its `meta/rank`: a main
+worktree's orders its project among the projects, any other worktree's orders it
+among the worktrees of its epic, and a change of epic removes it, but for a
+rename on the index to a name no other epic has, which is the same epic under
+another name and keeps every rank. Ranked siblings stand first, by rank, and the
+rest after them by what is happening in them. A placement, by a drag on the
+index or by `session order`, ranks the worktree placed, and on the index the
+unranked siblings drawn above where it was dropped, so it lands there, and
+renumbers the others only where there is no room between two; only that write
+gives a rank, and every epic write but a rename to a new name takes a linked
+worktree's away. Everything else about a worktree is read where it is kept: its
+session, `.session/`, which it has at most one of and which puts it on the
+index; its branch, from `git worktree list`, and none when detached; that
+branch's pull request, from `gh pr view`, taken as the one while one is open;
+and the agents in it, by the working directory their harness reports. An agent
+reaches an epic only through the worktree it works in, and no fact ties an agent
+to an epic, because none could be derived or verified. Linear issues are what
+the branch and the pull request name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It renders in its dark theme, which is Tokyo Night's night
