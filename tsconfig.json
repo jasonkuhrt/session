@@ -227,6 +227,7 @@
               "app/server/agents/claude.ts",
               "app/server/agents/codex.ts",
               "app/server/daemon.ts",
+              "app/server/git.ts",
               "app/server/http.ts",
               "app/server/portless.ts",
               "app/server/repository.ts",

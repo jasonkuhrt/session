@@ -17,6 +17,7 @@ import { dashboardOf, stageRangeOf } from './lib/dashboard'
 import { dragSensors, holdingOf, pointerOf, sameHolding } from './lib/drag'
 import type { DropOutcome, EpicWriting, Holding } from './lib/epics'
 import { dropOutcome, withEpics } from './lib/epics'
+import { unresolvedNotice } from './lib/index-meanings'
 import type { Placement } from './lib/order'
 import { withPlacement } from './lib/order'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
@@ -26,6 +27,10 @@ const skeletonCards = [1, 2, 3, 4, 5, 6]
 /** One line for the whole page: a source that failed, failed for every row. */
 const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
   [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
+
+/** Every row Git could not answer for, which stands in no section, named with Git's line. */
+const unresolvedNotices = (rows: readonly WorktreeSummary[] | null) =>
+  (rows ?? []).filter((row) => !row.resolved).map((row) => unresolvedNotice(row))
 
 /**
  * One worktree's new epic, as a write sends it: the worktree by its path, the
@@ -106,7 +111,11 @@ export function WorktreeIndex() {
   const rows = drawn === null ? null : withPlacement({ rows: withEpics({ rows: drawn, epics: writes }), placement: placing })
   const drawnRows = rows ?? []
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
-  const sourceNotices = [...agentNotices(rows), ...(pullRequestsNotice === null ? [] : [pullRequestsNotice])]
+  const sourceNotices = [
+    ...unresolvedNotices(rows),
+    ...agentNotices(rows),
+    ...(pullRequestsNotice === null ? [] : [pullRequestsNotice]),
+  ]
 
   /**
    * Make a write and draw what it is to do until the rows read afterwards,
