@@ -1379,7 +1379,11 @@ export const runDaemon = async () => {
     syncParentWatchers();
   };
 
-  /** Git knows the siblings; a worktree joins the index once it has a session. */
+  /**
+   * Git knows the siblings, but for a main worktree it lists by its Git
+   * directory, which only a command run in it takes on; a worktree joins the
+   * index once it has a session.
+   */
   const discover = async () => {
     const known = [...tracked.values()];
     const [probed, listings] = await Promise.all([

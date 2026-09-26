@@ -22,15 +22,18 @@ export type WorktreeMetadata = Checkout & {
   readonly name: string;
   readonly path: string;
   /**
-   * Whether this is its repository's main worktree, which Git lists first:
-   * the one that holds the repository, which `git worktree` will not move,
-   * lock or remove. False outside Git.
+   * Whether this is its repository's main worktree, which `git worktree` will
+   * not move, lock or remove: the one whose Git directory is the repository's
+   * own, which every linked worktree shares. Git lists it first, by its own
+   * path, or by that Git directory's when the directory is kept apart from it,
+   * as a submodule's or a separate one is. False outside Git.
    */
   readonly main: boolean;
   /**
-   * Where its repository's main worktree is, as Git listed it first when this
-   * worktree was taken on: its own path when it is main, and null outside
-   * Git. It names the repository when Git cannot list it later.
+   * What Git listed first for its repository when this worktree was taken
+   * on: the main worktree's path, which is its own when it is main, or the
+   * Git directory Git lists in its place; null outside Git. It names the
+   * repository when Git cannot list it later.
    */
   readonly mainPath: string | null;
 };
@@ -121,6 +124,19 @@ export const listRepositories = (input: {
 };
 
 /**
+ * A worktree's own entry in its repository's listing. Git lists the main
+ * worktree first, by its own path or by its Git directory's, so the main's
+ * entry is the first whatever path it carries. Any other is found by its path,
+ * and is missing when the repository's record of it names another, as it does
+ * once the worktree is moved by hand.
+ */
+const entryIn = (
+  worktrees: ReadonlyArray<GitWorktree>,
+  worktree: { readonly main: boolean; readonly path: string },
+): GitWorktree | undefined =>
+  worktree.main ? worktrees[0] : worktrees.find((candidate) => candidate.path === worktree.path);
+
+/**
  * What a session's worktree has checked out, as its repository's listing
  * says: nothing outside Git, and an error when Git could not list the
  * repository or no longer lists the worktree.
@@ -134,7 +150,7 @@ export const checkoutIn = (input: {
   const listing = input.listings.get(git.common) ??
     Result.fail(new WorktreeError({ message: 'Git was not asked about this worktree’s repository.' }));
   return listing.pipe(Result.flatMap((worktrees) => {
-    const current = worktrees.find((candidate) => candidate.path === worktree.path);
+    const current = entryIn(worktrees, worktree);
     return current === undefined
       ? Result.fail(new WorktreeError({ message: 'The served path is no longer a registered Git worktree.' }))
       : Result.succeed({ branch: current.branch, detached: current.detached });
@@ -146,7 +162,9 @@ export const checkoutIn = (input: {
  * it, from the same listing as the worktree's own checkout, or, when Git could
  * not list it, by what it listed when the worktree was taken on, with nothing
  * known checked out there. That entry is the Git directory the worktrees
- * share, `bare`, where no main worktree stands. Null outside Git.
+ * share, `bare`, where Git lists that in the main worktree's place: a bare
+ * repository's, which has none, and a submodule's or a separate one's, whose
+ * main worktree is elsewhere. Null outside Git.
  */
 export const repositoryIn = (input: {
   readonly listings: ReadonlyMap<string, RepositoryListing>;
@@ -197,10 +215,13 @@ const locateGit = (start: string) =>
 
 /**
  * The worktree a path belongs to, its session, and the name the daemon keys
- * it by. Git lists the main worktree first, so the first entry is the main:
- * it keeps its folder's name, a linked worktree whose folder shares that name
- * takes its parent's before it, it is the one never in an epic, and it names
- * the repository every one of them belongs to.
+ * it by. The main worktree is the one whose own Git directory is the one its
+ * repository's worktrees share, as `git rev-parse` says, since the listing
+ * cannot: Git lists the main first, but by that directory's path rather than
+ * its own when the directory is kept apart from it, as a submodule's or a
+ * separate one is. The main keeps its folder's name and is the one never in
+ * an epic. What Git lists first names the repository, and a linked worktree
+ * whose folder shares that name takes its parent's before it.
  */
 export const resolveWorktreeSession = (input: string) =>
   Effect.gen(function*() {
@@ -219,15 +240,15 @@ export const resolveWorktreeSession = (input: string) =>
     }
 
     const worktreePath = resolve(located.topLevel);
+    const main = resolve(located.git.directory) === resolve(located.git.common);
     const worktrees = yield* listGitWorktrees(worktreePath);
     const mainWorktree = worktrees[0];
-    const current = worktrees.find((worktree) => worktree.path === worktreePath);
+    const current = entryIn(worktrees, { main, path: worktreePath });
     if (mainWorktree === undefined || current === undefined) {
       return yield* new WorktreeError({
-        message: 'Git did not list the requested worktree.',
+        message: `Git lists no worktree at ${worktreePath}; \`git worktree repair\` run there mends one that was moved by hand.`,
       });
     }
-    const main = worktreePath === mainWorktree.path;
     const leaf = basename(worktreePath);
     const name =
       main

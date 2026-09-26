@@ -606,10 +606,12 @@ export const PullRequestReportsSchema = Schema.Record(Schema.String, PullRequest
 /**
  * The repository a worktree belongs to, as Git names it for every worktree of
  * it: by what Git lists first for it, its main worktree, which holds the
- * repository, or its Git directory where no main worktree stands. Every row of
- * one repository carries the same one, read in the same listing as the row's
- * own branch, so the index heads each repository's section with it whether or
- * not a session is there.
+ * repository, or the Git directory the worktrees share, which Git lists in the
+ * main worktree's place when there is none, as in a bare repository, and when
+ * the directory is kept apart from it, as a submodule's or a separate one is.
+ * Every row of one repository carries the same one, read in the same listing
+ * as the row's own branch, so the index heads each repository's section with
+ * it whether or not a session is there.
  */
 export type Repository = {
   /** The name of what Git lists first, its folder's, which names the repository. */
@@ -621,7 +623,9 @@ export type Repository = {
    * worktree would be: a bare repository's, which Git marks bare, and the Git
    * directory of a submodule or a separate one, which it lists in the main
    * worktree's place unmarked. That directory is no worktree and holds no
-   * session, so the index heads the repository with its name alone.
+   * session, so the index heads the repository with its name alone, until
+   * the main worktree of a submodule or a separate Git directory has a
+   * session: that worktree's row heads it then, under the same name.
    */
   bare: boolean;
   /**
@@ -692,9 +696,9 @@ export type WorktreeSummary = {
    * is served all the same, unranked.
    */
   rankProblem: string | null;
-  /** Whether this is its repository's main worktree, which Git lists first and the index draws at the head of the repository's section. */
+  /** Whether this is its repository's main worktree, the one whose Git directory is the repository's own: the index draws it at the head of the repository's section. */
   main: boolean;
-  /** The repository the worktree belongs to, named by its main worktree; null for a folder outside Git, which the index gives a section of its own. */
+  /** The repository the worktree belongs to, named by what Git lists first for it; null for a folder outside Git, which the index gives a section of its own. */
   repository: Repository | null;
 };
 

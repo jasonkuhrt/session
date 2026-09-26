@@ -52,7 +52,7 @@ export const quietCardMeaning = 'Nothing is live here and nothing has happened i
 
 /** What the house before a main worktree says, whether or not it has a session. */
 export const mainMeaning =
-  'The main worktree of its repository: Git keeps the repository here and lists it first, so it stands at the head of the repository’s cards and is never in an epic.'
+  'The main worktree of its repository: its Git directory is the repository’s own, which the linked worktrees share, and Git will not move, lock or remove it, so it stands at the head of the repository’s cards and is never in an epic.'
 
 /** What the mark before a head's name says: what heads the section, what stands below it, how it is placed and how the sections are ordered. */
 export const trackedHeadMeaning = (row: WorktreeSummary) =>
@@ -69,7 +69,7 @@ export const notTrackedMeaning =
   'This main worktree has no session, so the daemon does not track it and it has no board. A session command run in it, such as session init, gives it one and puts it on this page.'
 
 export const bareHeadMeaning =
-  `The repository’s Git directory, which Git lists first where a main worktree would be: the repository is bare, or keeps its Git directory apart from its main worktree, as a submodule or a separate Git directory does. It is no worktree and holds no session, so it heads the repository by name alone: below it stand the repository’s epics and its worktrees in no epic. ${unplaced} ${sectionOrder}`
+  `The repository’s Git directory, which Git lists first where a main worktree would be: the repository is bare, or keeps its Git directory apart from its main worktree, as a submodule or a separate Git directory does. It is no worktree and holds no session, so it heads the repository by name alone: below it stand the repository’s epics and its worktrees in no epic. A session command run in a main worktree kept apart this way gives it a session, and it heads the repository here instead. ${unplaced} ${sectionOrder}`
 
 export const folderHeadMeaning =
   `A folder outside Git, which belongs to no repository and so is a project of its own: its card stands below this head, unless it is in an epic across projects. It has no main worktree to keep the project’s place, so it stands after the repositories placed by hand. ${sectionOrder}`

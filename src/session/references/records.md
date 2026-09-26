@@ -234,8 +234,9 @@ Back burner
 - `check` and the index read it, and so do `join` and `leave`, to say which
   epic the worktree left. A command about the items does not: nothing about
   them depends on it.
-- A main worktree is never in an epic, since Git keeps the repository there and
-  lists it first: `session join` refuses one, and the index draws it at the
+- A main worktree is never in an epic, since its Git directory is the
+  repository's own, which the linked worktrees share, and Git will not move,
+  lock or remove it: `session join` refuses one, and the index draws it at the
   head of its repository's section whatever its file says.
 - It is ignored with the rest of `.session/`, so it never enters a repository,
   and it goes with the worktree when the worktree is removed.
