@@ -33,17 +33,27 @@ import type {
   EpicWrite,
   IssuesReport,
   Links,
+  OrderWrite,
   PullRequestReports,
   Stage,
   TrailerProblem,
   WorktreeEpic,
+  WorktreeRank,
   WorktreeSummary,
 } from '../contract.ts';
 import { DaemonInfoSchema, daemonPort } from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
-import { epicResponse, eventStream, focusResponse, makeRequestHandler, namedChannels, openResponse } from './http.ts';
+import {
+  epicResponse,
+  eventStream,
+  focusResponse,
+  makeRequestHandler,
+  namedChannels,
+  openResponse,
+  orderResponse,
+} from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
   checkedOutBranch,
@@ -52,6 +62,7 @@ import {
   pullRequestFor,
   pullRequestReport,
 } from './links/index.ts';
+import { setRank } from './order.ts';
 import { aliasHostnames } from './portless.ts';
 import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
 import { cmuxOnPath, openTerminal } from './terminal.ts';
@@ -154,12 +165,30 @@ const readState = (settings: DaemonSettings) =>
     return yield* Schema.decodeEffect(DaemonStateJson)(encoded);
   }).pipe(Effect.orElseSucceed(() => null));
 
+/**
+ * Written whole, through a neighbour renamed into place, so a reader, the next
+ * daemon or a command asking which worktrees are tracked, never reads half a
+ * file, which it would take for none.
+ */
 const writeState = (settings: DaemonSettings, state: DaemonState) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.makeDirectory(settings.directory, { recursive: true });
-    yield* fs.writeFileString(settings.statePath, yield* Schema.encodeEffect(DaemonStateJson)(state));
+    const temp = join(settings.directory, `.daemon.json.${process.pid}.tmp`);
+    yield* fs.writeFileString(temp, yield* Schema.encodeEffect(DaemonStateJson)(state));
+    yield* fs.rename(temp, settings.statePath);
   });
+
+/**
+ * The worktrees the daemon tracks, as its state file lists them: what a
+ * running daemon wrote on its last change, and what the next one tracks again.
+ * A command reads it to know a worktree's siblings, which are tracked ones;
+ * none when no daemon has written it.
+ */
+export const trackedPaths = Effect.gen(function*() {
+  const state = yield* readState(yield* daemonSettings);
+  return state?.worktrees ?? [];
+});
 
 // --- the client half: what `session open` needs -----------------------------
 
@@ -602,7 +631,8 @@ const watchDirectory = (directory: string, events: SessionEventSource) =>
  * The parts of a session the index shows nothing of: what agents keep in
  * `context/`, the ledger's entries, and the history under `archive/` and
  * `ignore/`. A change anywhere else can change a row: an item file moves its
- * counts, its batch and its newest item, and `meta/epic` its epic.
+ * counts, its batch and its newest item, `meta/epic` its epic, and
+ * `meta/rank` its place.
  */
 const indexQuiet: ReadonlySet<string> = new Set([contextDirectory, ledgerDirectory, archiveDirectory, ignoreDirectory]);
 
@@ -829,6 +859,23 @@ const activityOf = (overlay: AgentsSummary, lastChange: string | null): Activity
   consider(lastChange, 'items');
   return best;
 };
+
+/**
+ * A row's facts, each read on its own from its file in `meta/`, so a row whose
+ * items or Git cannot be read keeps its epic and its place, and a file the
+ * rules reject puts the row in no epic, or leaves it unranked, with the
+ * sentence `check` gives, and the row is served all the same: the files are
+ * about the index, not about the work.
+ */
+const rowFacts = (repository: SessionRepository) =>
+  Effect.all({ epic: repository.epic.pipe(Effect.result), rank: repository.rank.pipe(Effect.result) }).pipe(
+    Effect.map(({ epic, rank }) => ({
+      epic: Result.isSuccess(epic) ? epic.success : null,
+      epicProblem: Result.isFailure(epic) ? epic.failure.message : null,
+      rank: Result.isSuccess(rank) ? rank.success : null,
+      rankProblem: Result.isFailure(rank) ? rank.failure.message : null,
+    })),
+  );
 
 /** Why a worktree has no board: another tracked worktree owns the key its name gives it. */
 const keyConflict = (input: { readonly path: string; readonly key: string; readonly owner: string }) =>
@@ -1305,20 +1352,17 @@ export const runDaemon = async () => {
    * One row of the index. What the worktree has checked out, and the
    * repository it belongs to with what that repository's main worktree has
    * checked out, come from its repository's listing, which the route asked
-   * once for all of that repository's rows. Its epic is read on its own, from
-   * its file, so a row whose items or Git cannot be read stays in its epic,
-   * and a file the rules reject puts the row in no epic with the sentence
-   * `check` gives, and serves it all the same: the file is about the index,
-   * not about the work. Whether it is main was settled by Git when it was
-   * taken on, since a path that is its repository's main worktree stays one
-   * for as long as it exists.
+   * once for all of that repository's rows. Its epic and its rank are read on
+   * their own, as `rowFacts` has it. Whether it is main was settled by Git
+   * when it was taken on, since a path that is its repository's main worktree
+   * stays one for as long as it exists.
    */
   const summarize = async (entry: Tracked, listings: ReadonlyMap<string, RepositoryListing>): Promise<WorktreeSummary> => {
     const counts: Record<Stage, number> = { Triage: 0, Design: 0, Batch: 0, Queue: 0, Execute: 0 };
     // The overlay comes from the listing the route just ran, so every row on
     // one index answer describes the same moment.
     const overlay = agents.byPath.get(entry.path) ?? await runNode(notListed);
-    const epic = await runNode(entry.repository.epic.pipe(Effect.result));
+    const facts = await runNode(rowFacts(entry.repository));
     const base = {
       key: entry.key,
       name: entry.session.worktree.name,
@@ -1327,8 +1371,7 @@ export const runDaemon = async () => {
       detached: entry.session.worktree.detached,
       agents: overlay,
       trailerProblems: entry.trailerProblems,
-      epic: Result.isSuccess(epic) ? epic.success : null,
-      epicProblem: Result.isFailure(epic) ? epic.failure.message : null,
+      ...facts,
       main: entry.session.worktree.main,
       repository: repositoryIn({ listings, session: entry.session }),
     };
@@ -1486,6 +1529,30 @@ export const runDaemon = async () => {
     return { epic: input.epic === null ? null : input.epic.trim() };
   };
 
+  /** One placement at a time, so two drags, in two tabs, never number one set of siblings at once. */
+  const orderWrites = Semaphore.makeUnsafe(1);
+
+  /**
+   * Place a worktree among its siblings for the index's drags, as `session
+   * order` places it, by the worktree's path, as its epic is set: a path the
+   * daemon does not track, or whose session has gone, is not written, and a
+   * sibling is one of the worktrees it tracks, so `before` must name one of
+   * them. The rank's file depends on no stage, so nothing is converged first.
+   * The watch on each session it writes is what tells the index.
+   */
+  const setRankAt = async (input: OrderWrite): Promise<WorktreeRank> => {
+    const entry = await liveWorktree(input.path);
+    if (entry === null) {
+      throw new RepositoryError({ kind: 'not-found', message: 'The daemon tracks no worktree at that path; reload the index.' });
+    }
+    const placed = await runNode(orderWrites.withPermit(setRank({
+      worktree: entry,
+      tracked: [...tracked.values()],
+      before: input.before === null ? null : resolve(input.before),
+    })));
+    return { rank: placed.rank };
+  };
+
   /**
    * The index's stream. It subscribes as it is made, so an index that listens
    * for pull requests hears every answer to the asks it starts.
@@ -1504,6 +1571,24 @@ export const runDaemon = async () => {
     return stream;
   };
 
+  /**
+   * The writes the root takes, by their path: the ones a board and the index
+   * both make, and the index's drags, each for a worktree named by its path.
+   * - The index has no board to scope a focus to, and the session it acts on
+   *   may be in any worktree it lists, so the root serves the board's own route.
+   * - A board and the index both ask for a terminal, and for Zed, by the
+   *   worktree's path.
+   * - The index's drags set a worktree's epic, and its place, by its path, as a
+   *   terminal is asked for.
+   */
+  const rootWrites: ReadonlyMap<string, (request: Request) => Promise<Response>> = new Map([
+    ['/api/agents/focus', (request) => focusResponse({ request, focus: (pid) => runNode(focus(pid)) })],
+    ['/api/terminal', (request) => openResponse({ request, open: terminalAt })],
+    ['/api/zed', (request) => openResponse({ request, open: zedAt })],
+    ['/api/worktrees/epic', (request) => epicResponse({ request, write: setEpicAt })],
+    ['/api/worktrees/order', (request) => orderResponse({ request, write: setRankAt })],
+  ]);
+
   const handle = async (request: Request): Promise<Response> => {
     try {
       if (!(await answersTo(request.headers.get('host')))) {
@@ -1520,22 +1605,8 @@ export const runDaemon = async () => {
         await freshenAgents();
         return json(await summaries());
       }
-      // The index has no board to scope this to, and the session it acts on may
-      // be in any worktree it lists, so the root serves the board's own route.
-      if (request.method === 'POST' && url.pathname === '/api/agents/focus') {
-        return await focusResponse({ request, focus: (pid) => runNode(focus(pid)) });
-      }
-      // A board and the index both ask for a terminal, and for Zed, by the worktree's path.
-      if (request.method === 'POST' && url.pathname === '/api/terminal') {
-        return await openResponse({ request, open: terminalAt });
-      }
-      if (request.method === 'POST' && url.pathname === '/api/zed') {
-        return await openResponse({ request, open: zedAt });
-      }
-      // The index's drags set a worktree's epic, by its path, as a terminal is asked for.
-      if (request.method === 'POST' && url.pathname === '/api/worktrees/epic') {
-        return await epicResponse({ request, write: setEpicAt });
-      }
+      const write = request.method === 'POST' ? rootWrites.get(url.pathname) : undefined;
+      if (write !== undefined) return await write(request);
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
         const body = await request.json().catch(() => ({}));
         const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;

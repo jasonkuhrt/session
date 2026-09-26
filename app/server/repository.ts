@@ -28,6 +28,7 @@ import {
   ledgerDirectory,
   metaDirectory,
   parseStageDirectory,
+  rankFact,
   renderStageDirectory,
   type StageFileEntry,
   type StageTreeEntry,
@@ -61,6 +62,8 @@ import {
   metaLinkProblem,
   misnamedStages,
   parseEpicFile,
+  parseRankFile,
+  rankLinkProblem,
   rootEntryProblem,
 } from './root.ts';
 
@@ -711,34 +714,60 @@ export const makeRepository = (directory: string) =>
     }).pipe(Effect.mapError(asRepositoryError));
 
     /**
+     * What a fact's file in `meta/` holds, or null when the session sets no
+     * such fact: no `meta/`, no file in it, or a `meta` that is a file, which
+     * the root's rules report. A link, at either level, and a fact that is not
+     * a file are refused with the sentence `check` gives. `load` reads no fact:
+     * no item depends on one.
+     */
+    const readFactFile = (fact: string, linkProblem: string) =>
+      Effect.gen(function*() {
+        const meta = absolute(metaDirectory);
+        if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
+        if ((yield* pathType(meta)) !== 'Directory') return null;
+        const path = join(meta, fact);
+        if (yield* isLink(path)) return yield* new RepositoryError({ kind: 'validation', message: linkProblem });
+        const type = yield* pathType(path);
+        if (type === null) return null;
+        if (type !== 'File') {
+          const kind = metaEntryProblem({ name: fact, type: type === 'Directory' ? 'directory' : 'other' });
+          return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${fact} must be a file.` });
+        }
+        return yield* fs.readFileString(path);
+      }).pipe(Effect.mapError(asRepositoryError));
+
+    /**
      * The epic this worktree's session names in `meta/epic`, or null when it
-     * names none: no `meta/`, no file in it, or a `meta` that is a file, which
-     * the root's rules report. A file the rules reject is refused with the
-     * sentence `check` gives rather than read as no epic, because the file is
-     * the membership, and a reader that guessed would place the worktree where
-     * its file does not. `load` does not read it: no item depends on it.
+     * names none. A file the rules reject is refused with the sentence `check`
+     * gives rather than read as no epic, because the file is the membership,
+     * and a reader that guessed would place the worktree where its file does
+     * not.
      */
     const readEpic = Effect.gen(function*() {
-      const meta = absolute(metaDirectory);
-      if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
-      if ((yield* pathType(meta)) !== 'Directory') return null;
-      const path = join(meta, epicFact);
-      if (yield* isLink(path)) return yield* new RepositoryError({ kind: 'validation', message: epicLinkProblem });
-      const type = yield* pathType(path);
-      if (type === null) return null;
-      if (type !== 'File') {
-        const kind = metaEntryProblem({ name: epicFact, type: type === 'Directory' ? 'directory' : 'other' });
-        return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${epicFact} must be a file.` });
-      }
-      const parsed = parseEpicFile(yield* fs.readFileString(path));
+      const content = yield* readFactFile(epicFact, epicLinkProblem);
+      if (content === null) return null;
+      const parsed = parseEpicFile(content);
       if ('problem' in parsed) return yield* new RepositoryError({ kind: 'validation', message: parsed.problem });
       return parsed.epic;
-    }).pipe(Effect.mapError(asRepositoryError));
+    });
+
+    /**
+     * The rank in this worktree's `meta/rank`, or null when it has none. A file
+     * the rules reject is refused with the sentence `check` gives, as a broken
+     * epic's is, and every reader that places the worktree reads it as none.
+     */
+    const readRank = Effect.gen(function*() {
+      const content = yield* readFactFile(rankFact, rankLinkProblem);
+      if (content === null) return null;
+      const parsed = parseRankFile(content);
+      if ('problem' in parsed) return yield* new RepositoryError({ kind: 'validation', message: parsed.problem });
+      return parsed.rank;
+    });
 
     /**
      * What `load` reads past: leftover stage files, the closed root and what
-     * `meta/` holds, the epic's file among it, self-ignoring, the sections each
-     * stage requires, and the ledger.
+     * `meta/` holds, the epic's and the rank's files among it, self-ignoring,
+     * the sections each stage requires, and the ledger.
      */
     const check = semaphore.withPermit(
       Effect.gen(function*() {
@@ -760,7 +789,7 @@ export const makeRepository = (directory: string) =>
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
         }
         // `meta/` holds only the facts the session defines, each its own kind,
-        // and the epic's file its one line. The epic's file is judged by the
+        // and each fact's file its one line. A fact's file is judged by the
         // read every reader makes, links and all, so `check` and the index
         // give one sentence for it. A `meta` that is not a directory was
         // reported with the root; one that is a link is reported here, since a
@@ -769,11 +798,12 @@ export const makeRepository = (directory: string) =>
           const meta = absolute(metaDirectory);
           if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
           for (const name of (yield* fs.readDirectory(meta).pipe(Effect.mapError(asRepositoryError))).toSorted()) {
-            if (name === epicFact) continue;
+            if (name === epicFact || name === rankFact) continue;
             const problem = metaEntryProblem({ name, type: yield* entryType(join(meta, name)) });
             if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: problem });
           }
           yield* readEpic;
+          yield* readRank;
         }
         const gitignore = yield* pathType(absolute(gitignorePath)).pipe(Effect.mapError(asRepositoryError));
         if (gitignore === null) {
@@ -1554,45 +1584,67 @@ export const makeRepository = (directory: string) =>
       );
 
     /**
+     * Where a fact of `meta/` is written, once nothing stands in the way: the
+     * session is a real directory that exists, `meta` is a directory of its
+     * own or nothing yet, which the write makes, and the fact is no directory.
+     * Nothing is written through a `meta` that is a link or not a directory,
+     * and nothing replaces a directory. `present` says whether the fact's name
+     * is taken, by a file or by a link, which removing it takes away.
+     */
+    const factTarget = (fact: string) =>
+      Effect.gen(function*() {
+        if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
+        if ((yield* pathType(root)) !== 'Directory') {
+          return yield* new RepositoryError({
+            kind: 'not-found',
+            message: `${root} does not exist; run any session command to create it.`,
+          });
+        }
+        const meta = absolute(metaDirectory);
+        if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
+        const metaType = yield* pathType(meta);
+        if (metaType !== null && metaType !== 'Directory') {
+          const kind = rootEntryProblem({ name: metaDirectory, type: metaType === 'File' ? 'file' : 'other' }, new Set());
+          return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory} must be a directory.` });
+        }
+        const path = join(meta, fact);
+        const linked = yield* isLink(path);
+        const type = yield* pathType(path);
+        if (type === 'Directory' && !linked) {
+          const kind = metaEntryProblem({ name: fact, type: 'directory' });
+          return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${fact} must be a file.` });
+        }
+        return { path, present: linked || type !== null };
+      }).pipe(Effect.mapError(asRepositoryError));
+
+    /**
      * Put this worktree in the epic of that name, or in none with null: the one
      * write of membership. The name is trimmed, as a group's is, and follows an
      * epic's rules. The file is written whole, so a lead's parallel joins, each
      * in its own worktree, never touch one file, and null removes it. `meta/`
-     * is made when nothing holds its name; nothing is written through a `meta`
-     * that is a link or not a directory, or over an `epic` that is a directory.
-     * `from`, when given, is the epic the writer last read, a file the rules
-     * reject reading as none: a file that names anything else refuses the
-     * write, as a stale revision refuses a move. It answers the epic the file
-     * named before, for the caller to say what changed, and whether a leave
-     * removed a file, which one the rules reject names no epic to have left.
+     * is made when nothing holds its name, as `factTarget` has it. `from`, when
+     * given, is the epic the writer last read, a file the rules reject reading
+     * as none: a file that names anything else refuses the write, as a stale
+     * revision refuses a move. `dropsRank` says the worktree's rank orders it
+     * within its epic, as every worktree's but a main one's does: a write that
+     * changes the epic then removes `meta/rank` first, so a worktree joins an
+     * epic unranked, at the end of it, and one that leaves keeps no place, and
+     * an interrupted write can only leave it unranked where it was. It
+     * answers the epic the file named before, for the caller to say what
+     * changed, and whether a leave removed a file, which one the rules reject
+     * names no epic to have left.
      */
-    const setEpic = (input: { readonly epic: string | null; readonly from?: string | null | undefined }) =>
+    const setEpic = (input: {
+      readonly epic: string | null;
+      readonly from?: string | null | undefined;
+      readonly dropsRank?: boolean | undefined;
+    }) =>
       semaphore.withPermit(
         Effect.gen(function*() {
           const name = input.epic === null ? null : input.epic.trim();
           const problem = name === null ? null : epicNameProblem(name);
           if (problem !== null) return yield* new RepositoryError({ kind: 'validation', message: `Not joined: ${problem}.` });
-          if ((yield* sessionLink) !== 'directory') return yield* symlinkRefusal;
-          if ((yield* pathType(root)) !== 'Directory') {
-            return yield* new RepositoryError({
-              kind: 'not-found',
-              message: `${root} does not exist; run any session command to create it.`,
-            });
-          }
-          const meta = absolute(metaDirectory);
-          if (yield* isLink(meta)) return yield* new RepositoryError({ kind: 'validation', message: metaLinkProblem });
-          const metaType = yield* pathType(meta);
-          if (metaType !== null && metaType !== 'Directory') {
-            const kind = rootEntryProblem({ name: metaDirectory, type: metaType === 'File' ? 'file' : 'other' }, new Set());
-            return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory} must be a directory.` });
-          }
-          const path = join(meta, epicFact);
-          const linked = yield* isLink(path);
-          const type = yield* pathType(path);
-          if (type === 'Directory' && !linked) {
-            const kind = metaEntryProblem({ name: epicFact, type: 'directory' });
-            return yield* new RepositoryError({ kind: 'validation', message: kind ?? `${metaDirectory}/${epicFact} must be a file.` });
-          }
+          const target = yield* factTarget(epicFact);
           const previous = yield* readEpic.pipe(Effect.orElseSucceed(() => null));
           if (input.from !== undefined && input.from !== previous) {
             return yield* new RepositoryError({
@@ -1600,10 +1652,34 @@ export const makeRepository = (directory: string) =>
               message: `${metaDirectory}/${epicFact} changed on disk since it was read; try again.`,
             });
           }
-          const removed = name === null && (linked || type !== null);
+          const removed = name === null && target.present;
+          if (input.dropsRank === true && (name !== previous || removed)) {
+            // A directory under the rank's name is `check`'s to name, and is left as it is.
+            const rank = join(absolute(metaDirectory), rankFact);
+            if ((yield* isLink(rank)) || (yield* pathType(rank)) === 'File') yield* fs.remove(rank);
+          }
           if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, `${name}\n`);
-          else if (removed) yield* fs.remove(path);
+          else if (removed) yield* fs.remove(target.path);
           return { previous, removed };
+        }).pipe(Effect.mapError(asRepositoryError)),
+      );
+
+    /**
+     * Set this worktree's rank, or take it away with null: the one write of
+     * `meta/rank`, made whole through a neighbour renamed into place, as the
+     * epic's file is, with `meta/` made when nothing holds its name. Which
+     * rank a placement gives, and which of its siblings' ranks it moves, is
+     * `setRank`'s to decide; this writes one file.
+     */
+    const writeRank = (rank: number | null) =>
+      semaphore.withPermit(
+        Effect.gen(function*() {
+          if (rank !== null && !(Number.isSafeInteger(rank) && rank >= 0)) {
+            return yield* new RepositoryError({ kind: 'validation', message: `Not ordered: ${rank} is not a non-negative integer.` });
+          }
+          const target = yield* factTarget(rankFact);
+          if (rank !== null) yield* replaceFile(`${metaDirectory}/${rankFact}`, `${rank}\n`);
+          else if (target.present) yield* fs.remove(target.path);
         }).pipe(Effect.mapError(asRepositoryError)),
       );
 
@@ -1749,6 +1825,9 @@ export const makeRepository = (directory: string) =>
       /** The epic this worktree's session names, read as `check` reads it; null for none. */
       epic: semaphore.withPermit(readEpic),
       setEpic,
+      /** This worktree's rank among its siblings, read as `check` reads it; null for none. */
+      rank: semaphore.withPermit(readRank),
+      writeRank,
       check,
       addItem,
       moveItem,

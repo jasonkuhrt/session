@@ -231,7 +231,7 @@ export const ArchiveListingSchema = Schema.Struct({
  * - `links`: gh or linear was asked about the worktree's links again
  * - `worktrees`: the set of tracked worktrees changed, a trailer report
  *   changed, or a tracked worktree's `.session` changed where a row shows it:
- *   its items or its epic
+ *   its items, its epic or its rank
  * - `pull-requests`: gh was asked about a tracked worktree's pull request again
  */
 export type StreamEvent = 'changed' | 'agents' | 'trailers' | 'links' | 'worktrees' | 'pull-requests';
@@ -679,6 +679,19 @@ export type WorktreeSummary = {
    * The row is served all the same, in no epic.
    */
   epicProblem: string | null;
+  /**
+   * The rank its session's `meta/rank` holds, which places it among its
+   * siblings: a main worktree's orders its project among the projects, and
+   * any other worktree's orders it among the worktrees of its epic, ranked
+   * ones first. Null when it has none, and when the file breaks the rules.
+   */
+  rank: number | null;
+  /**
+   * Why `meta/rank` could not be read as a rank, in the sentence `session
+   * check` gives with its fix; null when the file is sound or absent. The row
+   * is served all the same, unranked.
+   */
+  rankProblem: string | null;
   /** Whether this is its repository's main worktree, which Git lists first and the index draws at the head of the repository's section. */
   main: boolean;
   /** The repository the worktree belongs to, named by its main worktree; null for a folder outside Git, which the index gives a section of its own. */
@@ -707,6 +720,26 @@ export const WorktreeEpicSchema = Schema.Struct({
   epic: Schema.NullOr(Schema.String),
 });
 
+/**
+ * What `POST /api/worktrees/order` takes: the worktree by its path, as the
+ * epic route takes it, and the sibling it goes before, by its path, or null to
+ * go last among the ranked ones. A sibling that is not ranked stands after
+ * every ranked one, so going before it is going last among the ranked.
+ */
+export type OrderWrite = { path: string; before: string | null };
+
+export const OrderWriteSchema = Schema.Struct({
+  path: Schema.String,
+  before: Schema.NullOr(Schema.String),
+});
+
+/** What the order route answers: the rank the worktree holds now. */
+export type WorktreeRank = { rank: number };
+
+export const WorktreeRankSchema = Schema.Struct({
+  rank: Schema.Int,
+});
+
 export const WorktreeSummarySchema = Schema.Struct({
   key: Schema.String,
   name: Schema.String,
@@ -728,6 +761,8 @@ export const WorktreeSummarySchema = Schema.Struct({
   trailerProblems: Schema.Array(TrailerProblemSchema),
   epic: Schema.NullOr(Schema.String),
   epicProblem: Schema.NullOr(Schema.String),
+  rank: Schema.NullOr(Schema.Int),
+  rankProblem: Schema.NullOr(Schema.String),
   main: Schema.Boolean,
   repository: Schema.NullOr(RepositorySchema),
 });

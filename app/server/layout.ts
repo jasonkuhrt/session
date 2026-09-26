@@ -60,6 +60,14 @@ export const metaDirectory = 'meta';
 /** The fact of `meta/` that names the epic this worktree is in: one line, the epic's name. */
 export const epicFact = 'epic';
 
+/**
+ * The fact of `meta/` that places this worktree among its siblings on the
+ * index: one line, a non-negative integer. A main worktree's orders its
+ * project among the projects; any other worktree's orders it among the
+ * worktrees of its epic.
+ */
+export const rankFact = 'rank';
+
 /** The session's shared log, one immutable entry per file. */
 export const ledgerDirectory = 'ledger';
 

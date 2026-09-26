@@ -16,8 +16,10 @@ import {
   ensureDaemon,
   openInBrowser,
   restartDaemon,
+  trackedPaths,
   trackWorktree,
 } from '../../../app/server/daemon.ts';
+import { type Rankable, setRank } from '../../../app/server/order.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
 import { quote } from '../../../app/server/model.ts';
 import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
@@ -52,6 +54,7 @@ const commands = {
   log: { operands: '"<by>" "<title>"', least: 2, most: 2 },
   join: { operands: '"<epic>"', least: 1, most: 1 },
   leave: { operands: '', least: 0, most: 0 },
+  order: { operands: '', least: 0, most: 0 },
   open: { operands: '', least: 0, most: 0 },
   daemon: { operands: '<status|restart>', least: 1, most: 1 },
 } as const;
@@ -79,6 +82,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   log "<by>" "<title>"                  write a ledger entry, body on stdin if piped
   join "<epic>"                         put this worktree in the named epic, out of any other
   leave                                 take this worktree out of its epic
+  order [--before <worktree>]           place this worktree among its siblings, before one or last
   open                                  ensure the daemon and open this worktree's board
   daemon status                         say whether the daemon runs and was started from these sources
   daemon restart                        stop the daemon and start it again from these sources`;
@@ -514,6 +518,67 @@ const leave = (repository: SessionRepository, resolved: WorktreeSession) =>
     yield* Console.log(previous === null ? none : `Left ${quote(previous)}`);
   });
 
+/**
+ * The worktree a path names, as Git spells it, so `--before` may name a
+ * worktree from anywhere inside it, or through a link, and still find it
+ * among the siblings.
+ */
+const worktreeAt = (value: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const target = path.resolve(value);
+    if (!(yield* fs.exists(target))) {
+      return yield* new SessionCliError({ message: `--before names ${target}, which does not exist; name a sibling worktree.` });
+    }
+    return (yield* resolveWorktreeSession(target)).worktree.path;
+  });
+
+/**
+ * Every worktree the daemon tracks, as its state file lists them, each
+ * resolved through Git as the daemon resolves it when it takes one on. A path
+ * whose `.session` has gone, or that Git no longer knows, is no sibling of
+ * anything and is left out.
+ */
+const trackedWorktrees = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem;
+  const paths = yield* trackedPaths;
+  const resolved = yield* Effect.forEach(
+    paths,
+    (path) =>
+      Effect.gen(function*() {
+        const session = yield* resolveWorktreeSession(path);
+        const info = yield* fs.stat(session.directory);
+        if (info.type !== 'Directory' || Option.isSome(yield* fs.readLink(session.directory).pipe(Effect.option))) return [];
+        return [{ session, repository: yield* makeRepository(session.directory) } satisfies Rankable];
+      }).pipe(Effect.orElseSucceed((): Rankable[] => [])),
+    { concurrency: 4 },
+  );
+  return resolved.flat();
+});
+
+/** A sibling as a line names it. */
+const nameOf = (sibling: Rankable) => sibling.session.worktree.name;
+
+/**
+ * Place this worktree among its siblings by writing its `meta/rank`, and the
+ * renumbering the placement needs: before the worktree `--before` names, or
+ * last among the ranked ones. A main worktree is placed among the other main
+ * worktrees the daemon tracks, which orders its project on the index; any
+ * other worktree among the others of its epic. It says the rank and where
+ * that puts it among the ranked ones.
+ */
+const order = (options: Options, repository: SessionRepository, resolved: WorktreeSession) =>
+  Effect.gen(function*() {
+    const before = options.before === undefined ? null : yield* worktreeAt(options.before);
+    const placed = yield* setRank({ worktree: { session: resolved, repository }, tracked: yield* trackedWorktrees, before });
+    const where = placed.siblings.kind === 'projects' ? 'among the projects' : `in ${quote(placed.siblings.epic)}`;
+    const next = placed.before === null
+      ? placed.after === null ? 'the only one ranked' : `after ${nameOf(placed.after)}`
+      : `before ${nameOf(placed.before)}`;
+    yield* Console.log(`${placed.written ? 'Ranked' : 'Already ranked'} ${resolved.worktree.name} ${placed.rank} ${where}, ${next}`);
+  });
+
 const check = (repository: SessionRepository) =>
   Effect.gen(function*() {
     const session = yield* repository.check;
@@ -564,6 +629,7 @@ const runCommand = (options: Options) =>
       case 'log': { yield* log(options, repository, resolved); break; }
       case 'join': { yield* join(options, repository, resolved); break; }
       case 'leave': { yield* leave(repository, resolved); break; }
+      case 'order': { yield* order(options, repository, resolved); break; }
     }
   });
 

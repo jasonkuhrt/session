@@ -1,6 +1,6 @@
 import type { Stage } from '../contract.ts';
 import { stageDirectory, stageNames } from '../contract.ts';
-import { contextDirectory, entryName, epicFact, metaDirectory, rootEntries } from './layout.ts';
+import { contextDirectory, entryName, epicFact, metaDirectory, rankFact, rootEntries } from './layout.ts';
 import { nameRuleBroken, quote } from './model.ts';
 
 /**
@@ -11,10 +11,11 @@ import { nameRuleBroken, quote } from './model.ts';
 
 /**
  * The facts `meta/` may hold, each by its name and kind, as the root's entries
- * are: `epic`, the file naming the epic this worktree is in. Whatever else it
- * holds is reported.
+ * are: `epic`, the file naming the epic this worktree is in, and `rank`, the
+ * file placing it among its siblings on the index. Whatever else it holds is
+ * reported.
  */
-const metaFacts: ReadonlyMap<string, 'directory' | 'file'> = new Map([[epicFact, 'file']]);
+const metaFacts: ReadonlyMap<string, 'directory' | 'file'> = new Map([[epicFact, 'file'], [rankFact, 'file']]);
 
 /** The epic's file as a refusal names it. */
 const epicPath = `${metaDirectory}/${epicFact}`;
@@ -57,6 +58,37 @@ export const metaLinkProblem =
 
 /** Why `meta/epic` may not be a link: each worktree names its epic in a file of its own. */
 export const epicLinkProblem = `${epicPath} is a link; each worktree names its epic in a file of its own, so ${epicFix}.`;
+
+/** The rank's file as a refusal names it. */
+const rankPath = `${metaDirectory}/${rankFact}`;
+
+/**
+ * How a broken rank's file is mended: by the command that places the
+ * worktree, which writes it whole, or by deleting it, which leaves the
+ * worktree unranked, where it stands by what is happening in it.
+ */
+const rankFix = 'place the worktree again with `session order`, or delete the file to leave it unranked';
+
+/**
+ * The rank a `meta/rank` file holds, or the rule it breaks, with its fix: the
+ * file is one line, a non-negative integer in decimal digits, ending in a
+ * newline, and nothing else. The digits may lead with zeros, as an item's
+ * prefix may, and the number must be small enough to be counted exactly.
+ */
+export const parseRankFile = (content: string): { readonly rank: number } | { readonly problem: string } => {
+  const end = content.indexOf('\n');
+  if (end === -1 || end !== content.length - 1 || !/^\d+$/u.test(content.slice(0, end))) {
+    return { problem: `${rankPath} holds one line, a non-negative integer, ending in a newline; ${rankFix}.` };
+  }
+  const line = content.slice(0, end);
+  const rank = Number(line);
+  return Number.isSafeInteger(rank)
+    ? { rank }
+    : { problem: `${rankPath} holds ${line}, which is too large for a rank; ${rankFix}.` };
+};
+
+/** Why `meta/rank` may not be a link: each worktree keeps its place in a file of its own. */
+export const rankLinkProblem = `${rankPath} is a link; each worktree keeps its rank in a file of its own, so ${rankFix}.`;
 
 /** The one-file-per-stage layout's file for a stage, `TRIAGE.md`, from before stages were directories. */
 export const leftoverStageFile = (stage: Stage): string => `${stage.toUpperCase()}.md`;

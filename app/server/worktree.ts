@@ -266,8 +266,10 @@ const mainWorktreeRefusal = (name: string) =>
  * one rule both the CLI and the daemon join by: a main worktree is never in an
  * epic. Leaving is always allowed, so a hand-made file in a main worktree can
  * be taken out the same way. `from` is the epic the writer last read, which
- * the index sends and a command does not. Answers the epic its file named
- * before.
+ * the index sends and a command does not. Any other worktree's rank orders it
+ * within its epic, so a change of epic takes its rank away: it joins the next
+ * one unranked, and leaves with no place kept. A main worktree's rank orders
+ * its project, which no epic touches. Answers the epic its file named before.
  */
 export const setWorktreeEpic = (input: {
   readonly session: WorktreeSession;
@@ -277,7 +279,7 @@ export const setWorktreeEpic = (input: {
 }) =>
   input.epic !== null && input.session.worktree.main
     ? Effect.fail(new RepositoryError({ kind: 'conflict', message: mainWorktreeRefusal(input.session.worktree.name) }))
-    : input.repository.setEpic({ epic: input.epic, from: input.from });
+    : input.repository.setEpic({ epic: input.epic, from: input.from, dropsRank: !input.session.worktree.main });
 
 /**
  * Route key for a worktree: its name, encoded segment by segment so a nested
