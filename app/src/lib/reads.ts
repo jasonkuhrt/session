@@ -5,11 +5,13 @@ import { DaemonApi, IndexApi, readPlace, SessionApi } from './api'
 /**
  * Every read a page makes, as TanStack Query holds it: one query per source,
  * keyed by the board's prefix where the source is a board's, so each is read
- * on its own and read again only when its own answer changed. A query is read
- * when its page mounts it and again when the page's stream says its answer
- * changed; nothing is read on focus, on reconnect or on a timer. The item and
- * file pages compose their reads where they draw them, under the keys
- * `[board, 'item', id]` and `[board, 'file', path]`.
+ * on its own. A query is read when its page mounts it and, where its answer
+ * can change, again on the stream's event that names it. The daemon's
+ * capabilities, on the index and a board, and a board's picker list are read
+ * once, since no stream there says either changed. Nothing is read on
+ * focus, on reconnect or on a timer. The item and file pages compose their
+ * reads where they draw them, under the keys `[board, 'item', id]` and
+ * `[board, 'file', path]`.
  */
 export const reads = {
   /** Every tracked worktree: the index's rows, and the boards a board's picker can switch to. */

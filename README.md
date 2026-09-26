@@ -246,18 +246,21 @@ to an epic, because none could be derived or verified. Linear issues are what
 the branch and the pull request name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
-Nova neutral preset. It is a TanStack Start app in SPA mode: every page is a
-file route at the address the daemon serves, every read is a TanStack Query
-query that the page's event stream reads again, and moving between pages loads
-a document. `bun run build` prerenders one shell and writes it, with the one
-script and the one stylesheet it names, into `app/dist/client`, which the daemon
-serves; no Start server code runs in the daemon. It renders in its dark theme,
-which is Tokyo Night's night variant, defined in `app/src/styles.css`. Keep that
-theme and the stock component appearance. Card placement uses the native
-behavior of the established sortable library. Keep custom code limited to the
-board, Markdown workflow, and file boundary. Do not add separate mobile
-behavior, accessibility work, or concurrent-edit coordination unless Jason
-changes this contract.
+Nova neutral preset. It is a TanStack Start app in SPA mode. Every page is a
+file route at the address the daemon serves, and moving between pages loads a
+document. Every read is a TanStack Query query, read when its page mounts and,
+where its answer can change, again on the event that names it; the daemon's
+capabilities and a board's picker list are read once. On the board and the
+index a drag or a write holds the events it names until it ends; the item
+page's writes hold nothing. `bun run build` prerenders one shell and writes it,
+with the one script and the one stylesheet it names, into `app/dist/client`,
+which the daemon serves; no Start server code runs in the daemon. It renders in
+its dark theme, which is Tokyo Night's night variant, defined in
+`app/src/styles.css`. Keep that theme and the stock component appearance. Card
+placement uses the native behavior of the established sortable library. Keep
+custom code limited to the board, Markdown workflow, and file boundary. Do not
+add separate mobile behavior, accessibility work, or concurrent-edit
+coordination unless Jason changes this contract.
 
 Where data crosses a boundary, its shape is an Effect Schema, and the code's
 type for it is that schema's `Type`, never written by hand. This is an axiom,

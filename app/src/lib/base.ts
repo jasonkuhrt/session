@@ -1,4 +1,5 @@
 import { useParams } from '@tanstack/react-router'
+import { Option, Schema } from 'effect'
 
 import { encodeWorktreeKey } from '../../contract'
 
@@ -42,6 +43,18 @@ export const foldBoardKey = (pathname: string): string => {
 /** The address the router writes, as the browser shows it: the key's slashes unfolded again. */
 export const unfoldBoardKey = (pathname: string): string =>
   pathname.replace(/^\/w\/([^/]+)/u, (_, key: string) => `/w/${key.replaceAll('%2F', '/')}`)
+
+/**
+ * A route's params as its schema decodes them, or false when they are not the
+ * schema's. The address is a boundary, so every page's params pass through a
+ * schema, and a decode that fails answers false, which the router takes for no
+ * route here: the address draws the root's not-found page, as one no route
+ * matches does, never an error.
+ */
+export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) => {
+  const decode = Schema.decodeUnknownOption(schema)
+  return (raw: unknown): S['Type'] | false => Option.getOrElse(decode(raw), () => false as const)
+}
 
 /** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */
 export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`

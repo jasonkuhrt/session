@@ -1,4 +1,4 @@
-import { extname } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { file } from 'bun';
 import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
@@ -94,7 +94,7 @@ const json = (value: unknown, init?: ResponseInit) =>
  * page the address names. It goes out `no-store`, as every API answer does,
  * because it names the build's hashed assets, which the next build deletes.
  */
-export const shellResponse = async ({ shell, method }: {
+const shellResponse = async ({ shell, method }: {
   /** The shell's path on disk. */
   readonly shell: string;
   readonly method: string;
@@ -104,6 +104,31 @@ export const shellResponse = async ({ shell, method }: {
   return new Response(method === 'HEAD' ? null : page, {
     headers: { 'cache-control': 'no-store', 'content-type': 'text/html; charset=utf-8' },
   });
+};
+
+/**
+ * What the root serves outside its API: a file of the build, and the shell
+ * for a path without a dot, which is one of the app's pages. An API the root
+ * does not have is an error, never the app's page, as it is under a board, so
+ * the two answer an unknown API path alike. Nothing outside the build is served.
+ */
+export const staticResponse = async ({ directory, shell, url, method }: {
+  /** Where the build's files are, which is everything the root serves from disk. */
+  readonly directory: string;
+  /** The shell's path on disk. */
+  readonly shell: string;
+  readonly url: URL;
+  readonly method: string;
+}): Promise<Response> => {
+  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, { status: 405 });
+  if (url.pathname.startsWith('/api/')) return json({ error: 'Not found.' }, { status: 404 });
+  const requested = url.pathname.slice(1);
+  if (!requested.includes('.')) return await shellResponse({ shell, method });
+  const path = resolve(directory, requested);
+  if (path !== directory && !path.startsWith(`${directory}/`)) return json({ error: 'Not found.' }, { status: 404 });
+  const candidate = file(path);
+  if (!(await candidate.exists())) return json({ error: 'Not found.' }, { status: 404 });
+  return method === 'HEAD' ? new Response(null) : new Response(candidate);
 };
 
 const errorResponse = (error: unknown): Response => {

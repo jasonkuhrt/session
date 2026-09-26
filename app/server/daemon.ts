@@ -4,7 +4,7 @@ import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcess
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
-import { file, serve, spawn } from 'bun';
+import { serve, spawn } from 'bun';
 import * as Cause from 'effect/Cause';
 import * as Clock from 'effect/Clock';
 import * as Config from 'effect/Config';
@@ -59,7 +59,7 @@ import {
   openResponse,
   orderResponse,
   renameResponse,
-  shellResponse,
+  staticResponse,
 } from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
 import {
@@ -941,23 +941,6 @@ const rowFacts = (repository: SessionRepository) =>
 const keyConflict = (input: { readonly path: string; readonly key: string; readonly owner: string }) =>
   `${input.path} has no board: its key ${input.key} already belongs to ${input.owner}.`;
 
-/**
- * A file of the built app, and the shell for a path without an extension,
- * which is a page the app draws itself. Nothing outside the build is served.
- */
-const staticFile = async (url: URL, method: string) => {
-  if (method !== 'GET' && method !== 'HEAD') return json({ error: 'Method not allowed.' }, 405);
-  const requested = url.pathname.slice(1);
-  if (!requested.includes('.')) return await shellResponse({ shell: shellFile, method });
-  const path = resolve(distDirectory, requested);
-  if (path !== distDirectory && !path.startsWith(`${distDirectory}/`)) {
-    return json({ error: 'Not found.' }, 404);
-  }
-  const candidate = file(path);
-  if (!(await candidate.exists())) return json({ error: 'Not found.' }, 404);
-  return method === 'HEAD' ? new Response(null) : new Response(candidate);
-};
-
 // eslint-disable-next-line max-lines-per-function -- The registry, its routes and its lifecycle are one object; the closures share the map.
 export const runDaemon = async () => {
   const [settings, stamp] = await Promise.all([runNode(daemonSettings), runNode(sourceStamp)]);
@@ -1789,7 +1772,7 @@ export const runDaemon = async () => {
         return json(rows);
       }
       if (url.pathname === '/w' || url.pathname.startsWith('/w/')) return await board(request, url);
-      return await staticFile(url, request.method);
+      return await staticResponse({ directory: distDirectory, shell: shellFile, url, method: request.method });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : 'Unexpected daemon error.' }, 500);
     }
