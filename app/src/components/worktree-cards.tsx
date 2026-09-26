@@ -8,8 +8,11 @@ import type { WorktreeSummary } from '../../contract'
 import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { draggedId, movable, targetId } from '../lib/epics'
+import type { Marker } from '../lib/order'
 import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
+import { epicList } from '../lib/order'
 import { cn } from '../lib/utils'
+import { LandingLine, markedSide } from './landing-line'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -22,7 +25,8 @@ import { cardClass, WorktreeRow } from './worktree-row'
  * an epic with its worktrees in it, or one worktree in no epic. A card is held
  * by what it is, a worktree by its row and an epic by its heading, and the
  * pointer carries a plain copy of it, so the card itself stays where it is,
- * faint, until the drop.
+ * faint, until the drop. A worktree held within its own epic's card takes a
+ * place among its worktrees, drawn as a line where it would go.
  */
 
 /** What the draggable cards also need: every row, which a drop's outcome is read from, and what a drag is doing. */
@@ -32,8 +36,13 @@ export type DragContext = RowContext & {
   readonly writing: boolean
   /** The target a held card would land in if it were dropped now, by its id; null when a drop would change nothing. */
   readonly landingOn: string | null
+  /** Where a held project or worktree would take its place if it were dropped now; null when it would take none. */
+  readonly marker: Marker | null
   readonly onRename: (card: EpicCardShape) => void
 }
+
+/** Every card takes worktrees and epics; a project, held by its head, is placed among the sections instead. */
+export const cardsAccept = ['row', 'epic']
 
 /**
  * One ref for an element that is two things to the drag library at once, a
@@ -52,19 +61,32 @@ function useBothRefs(first: (element: Element | null) => void, second: (element:
 const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Normal } as const
 
 /**
- * A worktree in an epic's card, held by its row: dragged onto another epic it
- * joins it, onto a worktree in no epic the two make one, onto the `+` after its
- * repository's cards it makes an epic alone, once named, and onto the space
- * between the cards it leaves its epic and becomes a card of its own, under
- * its repository.
+ * A worktree in an epic's card, held by its row: dragged up or down within
+ * the card it takes a place among the epic's worktrees, onto another epic it
+ * joins it, onto a worktree in no epic the two make one, onto the `+` after
+ * its repository's cards it makes an epic alone, once named, and onto the
+ * space between the cards it leaves its epic and becomes a card of its own,
+ * under its repository. It takes others the same way: a worktree of its own
+ * epic dropped on it is placed before or after it, and any other joins the
+ * epic, as over the card.
  */
-function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext }) {
+function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; context: DragContext }) {
   const canMove = movable(row)
-  const { ref, isDragSource } = useDraggable({
+  const { ref: holdRef, isDragSource } = useDraggable({
     id: draggedId({ kind: 'row', path: row.path }),
     type: 'row',
     disabled: !canMove || context.writing,
   })
+  // Over a row the pointer is over the row, ahead of the card around it.
+  const { ref: dropRef } = useDroppable({
+    id: targetId({ kind: 'member', path: row.path }),
+    accept: cardsAccept,
+    collisionDetector: pointerIntersection,
+    collisionPriority: CollisionPriority.High,
+    disabled: context.writing,
+  })
+  const ref = useBothRefs(holdRef, dropRef)
+  const side = markedSide({ marker: context.marker, list: epicList(epic), id: row.path })
   return (
     <div
       ref={ref}
@@ -74,9 +96,10 @@ function EpicRow({ row, context }: { row: WorktreeSummary; context: DragContext 
       role="group"
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
-      className={cn('px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
+      className={cn('relative px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
-      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic: row.epic ?? '' })} />
+      {side === null ? null : <LandingLine side={side} gap="row" />}
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} />
     </div>
   )
 }
@@ -142,7 +165,7 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
     type: 'epic',
     disabled: context.writing,
   })
-  const { ref: dropRef } = useDroppable({ id: into, ...cardDrop, disabled: context.writing })
+  const { ref: dropRef } = useDroppable({ id: into, accept: cardsAccept, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
   const tip = useTip()
   const actionable = !context.writing
@@ -155,7 +178,7 @@ export function EpicCard({ card, context }: { card: EpicCardShape; context: Drag
     >
       <EpicHeading ref={handleRef} card={card} movable={actionable} onRename={actionable ? context.onRename : undefined} />
       <div className="divide-y">
-        {card.rows.map(row => <EpicRow key={row.path} row={row} context={context} />)}
+        {card.rows.map(row => <EpicRow key={row.path} row={row} epic={card.name} context={context} />)}
       </div>
     </Card>
   )
@@ -177,7 +200,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
     type: 'row',
     disabled: !canMove || context.writing,
   })
-  const { ref: dropRef } = useDroppable({ id: onto, ...cardDrop, disabled: context.writing })
+  const { ref: dropRef } = useDroppable({ id: onto, accept: cardsAccept, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
   const tip = useTip()
   return (
@@ -213,7 +236,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
  */
 export function NewEpicTarget({ name, context }: { name: string; context: DragContext }) {
   const onto = targetId({ kind: 'new' })
-  const { ref } = useDroppable({ id: onto, ...cardDrop, disabled: context.writing })
+  const { ref } = useDroppable({ id: onto, accept: 'row', ...cardDrop, disabled: context.writing })
   const tip = useTip()
   return (
     <div
@@ -227,23 +250,6 @@ export function NewEpicTarget({ name, context }: { name: string; context: DragCo
       <Plus aria-hidden className="size-5" />
     </div>
   )
-}
-
-/**
- * The space between and below the cards, the heads included: a worktree
- * dropped here leaves its epic and becomes a card of its own under its
- * repository, wherever it was dropped. It ranks below every card, so the
- * pointer over a card is over the card.
- */
-export function CardSpace({ context, children }: { context: DragContext; children: React.ReactNode }) {
-  const space = targetId({ kind: 'space' })
-  const { ref } = useDroppable({
-    id: space,
-    collisionDetector: pointerIntersection,
-    collisionPriority: CollisionPriority.Lowest,
-    disabled: context.writing,
-  })
-  return <div ref={ref} className={cn('flex-1 rounded-xl pb-24', context.landingOn === space && landing)}>{children}</div>
 }
 
 /**

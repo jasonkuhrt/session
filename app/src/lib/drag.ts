@@ -1,6 +1,7 @@
 import type { Draggable } from '@dnd-kit/dom'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { getInteractiveElement, isElement } from '@dnd-kit/dom/utilities'
+import type { DragMoveEvent } from '@dnd-kit/react'
 import { KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 
 /**
@@ -45,3 +46,15 @@ export const dragSensors = [
 
 /** The outline of the place a held card would be dropped into. */
 export const landing = 'outline-2 outline-primary outline-dashed outline-offset-2'
+
+type Point = { readonly x: number; readonly y: number }
+
+/**
+ * Where the pointer is going, as a move tells it before the drag has moved
+ * there: a pointer move names the point, a key move the step.
+ */
+export const pointerOf = (event: DragMoveEvent): Point => {
+  const now = event.operation.position.current
+  if (event.to !== undefined) return event.to
+  return event.by === undefined ? now : { x: now.x + event.by.x, y: now.y + event.by.y }
+}

@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import type { EpicWrite, StreamEvent } from '../../contract'
+import type { EpicWrite, OrderWrite, StreamEvent } from '../../contract'
 import {
   AgentsSummarySchema,
   ArchiveListingSchema,
@@ -17,6 +17,7 @@ import {
   OpenResultSchema,
   TrailerProblemSchema,
   WorktreeEpicSchema,
+  WorktreeRankSchema,
   WorktreeSummarySchema,
 } from '../../contract'
 import { basePath, rawFileHref } from './base'
@@ -45,6 +46,7 @@ const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
 const decodeContext = Schema.decodeUnknownEffect(ContextListingSchema)
 const decodeArchive = Schema.decodeUnknownEffect(ArchiveListingSchema)
 const decodeEpic = Schema.decodeUnknownEffect(WorktreeEpicSchema)
+const decodeRank = Schema.decodeUnknownEffect(WorktreeRankSchema)
 
 const send = <A, E>(
   request: HttpClientRequest.HttpClientRequest,
@@ -206,6 +208,16 @@ export const IndexApi = {
     run(send(
       HttpClientRequest.post('/api/worktrees/epic').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
       decodeEpic,
+    )),
+
+  /**
+   * Places a worktree before one of its siblings, or last among the ranked
+   * ones with null, both by their paths, as `session order` places it.
+   */
+  setOrder: (write: OrderWrite) =>
+    run(send(
+      HttpClientRequest.post('/api/worktrees/order').pipe(HttpClientRequest.bodyJsonUnsafe(write)),
+      decodeRank,
     )),
 }
 

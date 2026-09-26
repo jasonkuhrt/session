@@ -46,7 +46,8 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * agents live in it, then its branch and pull request under them, each line
  * marked as the worktree picker marks it. A row the daemon cannot serve has no
  * glyph and says why in place of the second line, and a `meta/epic` it cannot
- * read as a name says why on it, in the words `session check` gives.
+ * read as a name, or a `meta/rank` it cannot read as a rank, says why on it,
+ * in the words `session check` gives.
  * `meaning` is what the mark before the name says the worktree is here, and
  * `name` the name it is drawn under, where a head needs more than its own.
  */
@@ -92,6 +93,7 @@ export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.
           )
           : <NotServed reason={row.conflict} />}
         {row.epicProblem === null ? null : <span className="text-xs wrap-anywhere text-destructive">{row.epicProblem}</span>}
+        {row.rankProblem === null ? null : <span className="text-xs wrap-anywhere text-destructive">{row.rankProblem}</span>}
       </div>
     </div>
   )

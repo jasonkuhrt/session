@@ -1,7 +1,11 @@
+import { pointerDistance } from '@dnd-kit/collision'
+import { useDraggable, useDroppable } from '@dnd-kit/react'
 import { House } from 'lucide-react'
+import type * as React from 'react'
 
 import type { AcrossSection, ProjectSection as ProjectSectionShape, SectionHead } from '../lib/dashboard'
-import { acrossName } from '../lib/dashboard'
+import { acrossName, sectionRowOf } from '../lib/dashboard'
+import { draggedId, targetId } from '../lib/epics'
 import {
   acrossMeaning,
   bareHeadMeaning,
@@ -13,7 +17,9 @@ import {
   trackedHeadMeaning,
   untrackedHeadMeaning,
 } from '../lib/index-meanings'
+import { sectionsList } from '../lib/order'
 import { cn } from '../lib/utils'
+import { LandingLine, markedSide } from './landing-line'
 import { Explained, useTip } from './tip'
 import { Badge } from './ui/badge'
 import type { DragContext } from './worktree-cards'
@@ -24,9 +30,12 @@ import { Checkout, WorktreeRow } from './worktree-row'
 
 /**
  * The index's stack: a section per project, headed by what heads it, with the
- * project's cards below, and one for the epics across projects, all ordered
- * alike, busiest first. A head is drawn as the constant it is and never
- * dragged.
+ * project's cards below, and one for the epics across projects. The sections
+ * a main worktree placed by hand heads stand first, in their rank's order, and
+ * the rest after them, busiest first. A section headed by a main worktree with
+ * a session is held by its head and placed among the others; no other section
+ * has a file of its own to keep a place in, so none other is held. A head is
+ * never dragged over the project's cards.
  */
 
 /** The columns a head shares with every row, so its name lines up with the names in the cards below. */
@@ -37,16 +46,37 @@ const headRule = 'border-b px-3 pb-3 text-base'
 
 /**
  * A section's head, and where a quiet section says it is dim, in the words
- * true of what it heads; its cards are dim by what happens in each.
+ * true of what it heads; its cards are dim by what happens in each. A main
+ * worktree's head is what holds its section, by `holdRef`.
  */
-function Head({ section, context }: { section: ProjectSectionShape; context: RowContext }) {
+function Head({ section, context, holdRef }: {
+  section: ProjectSectionShape
+  context: RowContext
+  holdRef: (element: Element | null) => void
+}) {
   const tip = useTip()
   const { head, name, quiet } = section
+  const title = quiet ? tip(quietHeadMeaning({ head, ranked: (sectionRowOf(section)?.rank ?? null) !== null })) : undefined
+  if (head.kind !== 'tracked') {
+    return (
+      <div title={title} className={cn(headRule, quiet && 'opacity-60')}>
+        <NamedHead head={head} name={name} />
+      </div>
+    )
+  }
   return (
-    <div title={quiet ? tip(quietHeadMeaning(head)) : undefined} className={cn(headRule, quiet && 'opacity-60')}>
-      {head.kind === 'tracked'
-        ? <WorktreeRow row={head.row} context={context} meaning={trackedHeadMeaning} name={name} />
-        : <NamedHead head={head} name={name} />}
+    <div
+      ref={holdRef}
+      // A role of its own, so the drag library does not make the head a button,
+      // whose content would stop being controls: it holds a link and buttons.
+      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
+      role="group"
+      aria-roledescription="Draggable project"
+      aria-label={`Drag ${name}`}
+      title={title}
+      className={cn(headRule, 'cursor-grab outline-none', quiet && 'opacity-60')}
+    >
+      <WorktreeRow row={head.row} context={context} meaning={trackedHeadMeaning(head.row)} name={name} />
     </div>
   )
 }
@@ -98,10 +128,44 @@ function NamedHead({ head, name }: { head: Exclude<SectionHead, { kind: 'tracked
 }
 
 /**
+ * Where a held project lands among the sections: the section nearest the
+ * pointer, the gaps between them included, is the one it goes before or
+ * after, by which half of it the pointer is in. It takes nothing else.
+ */
+function useSectionDrop(key: string, context: DragContext) {
+  return useDroppable({
+    id: targetId({ kind: 'section', key }),
+    accept: 'head',
+    collisionDetector: pointerDistance,
+    disabled: context.writing,
+  })
+}
+
+/** A section's frame: the line where a held project would go before or after it, and faint while it is the one held. */
+function SectionFrame({ label, sectionKey, context, held, dropRef, children }: {
+  label: string
+  sectionKey: string
+  context: DragContext
+  held: boolean
+  dropRef: (element: Element | null) => void
+  children: React.ReactNode
+}) {
+  const side = markedSide({ marker: context.marker, list: sectionsList, id: sectionKey })
+  return (
+    <section ref={dropRef} aria-label={label} className={cn('relative flex flex-col gap-3', held && 'opacity-40')}>
+      {side === null ? null : <LandingLine side={side} gap="section" />}
+      {children}
+    </section>
+  )
+}
+
+/**
  * One project's section: its head, then its cards, busiest first, and,
  * while one of its worktrees is held, the `+` after them that starts an epic
  * of that worktree alone. A project whose worktrees are all in epics across
- * projects is its head alone, the home its worktrees go back to.
+ * projects is its head alone, the home its worktrees go back to. Held by the
+ * head of its main worktree, while that has a session, it takes a place among
+ * the sections.
  */
 export function ProjectSection({ section, context, newEpicOf }: {
   section: ProjectSectionShape
@@ -110,9 +174,16 @@ export function ProjectSection({ section, context, newEpicOf }: {
   newEpicOf: string | null
 }) {
   const { cards } = section
+  const main = sectionRowOf(section)
+  const { ref: holdRef, isDragSource } = useDraggable({
+    id: draggedId({ kind: 'head', path: main?.path ?? section.key }),
+    type: 'head',
+    disabled: main === null || context.writing,
+  })
+  const { ref: dropRef } = useSectionDrop(section.key, context)
   return (
-    <section aria-label={section.name} className="flex flex-col gap-3">
-      <Head section={section} context={context} />
+    <SectionFrame label={section.name} sectionKey={section.key} context={context} held={isDragSource} dropRef={dropRef}>
+      <Head section={section} context={context} holdRef={holdRef} />
       {cards.length === 0 && newEpicOf === null ? null : (
         <div className="worktree-cards">
           {cards.map((card) =>
@@ -123,21 +194,23 @@ export function ProjectSection({ section, context, newEpicOf }: {
           {newEpicOf === null ? null : <NewEpicTarget name={newEpicOf} context={context} />}
         </div>
       )}
-    </section>
+    </SectionFrame>
   )
 }
 
 /**
  * The epics whose worktrees belong to more than one project, each drawn once,
  * in a section of their own, since an epic across projects is the one thing
- * higher than a project. It stands among the projects by what is happening in
- * it, dim and last when nothing is, and its heading lines up with the names
- * in the heads.
+ * higher than a project. It stands after the projects placed by hand, among
+ * the rest by what is happening in it, dim and last when nothing is, and its
+ * heading lines up with the names in the heads. It has no file to keep a
+ * place in, so it is never held, but a held project goes before or after it.
  */
 export function AcrossProjects({ section, context }: { section: AcrossSection; context: DragContext }) {
   const tip = useTip()
+  const { ref: dropRef } = useSectionDrop(section.key, context)
   return (
-    <section aria-label={acrossName} className="flex flex-col gap-3">
+    <SectionFrame label={acrossName} sectionKey={section.key} context={context} held={false} dropRef={dropRef}>
       <div
         title={section.quiet ? tip(quietAcrossMeaning) : undefined}
         className={cn(headGrid, headRule, section.quiet && 'opacity-60')}
@@ -149,6 +222,6 @@ export function AcrossProjects({ section, context }: { section: AcrossSection; c
       <div className="worktree-cards">
         {section.cards.map((card) => <EpicCard key={`epic:${card.name}`} card={card} context={context} />)}
       </div>
-    </section>
+    </SectionFrame>
   )
 }
