@@ -66,6 +66,7 @@ import {
   focusResponse,
   makeRequestHandler,
   namedChannels,
+  noBoardResponse,
   openResponse,
   orderResponse,
   refuse,
@@ -1604,7 +1605,7 @@ export const runDaemon = async () => {
     const entry = [...tracked.values()]
       .toSorted((left, right) => right.key.length - left.key.length)
       .find((candidate) => rest === candidate.key || rest.startsWith(`${candidate.key}/`));
-    if (entry === undefined) return refuse({ error: 'No such worktree.', status: 404 });
+    if (entry === undefined) return await noBoardResponse({ request, shell: shellFile });
     if (entry.conflict !== null) return refuse({ error: entry.conflict, status: 409 });
     // Relative, so the address the browser used (a proxy's, or the raw port) is kept.
     if (rest === entry.key) return new Response(null, { status: 307, headers: { location: `/w/${entry.key}/` } });
@@ -1634,7 +1635,11 @@ export const runDaemon = async () => {
     return aliases.has(hostname);
   };
 
-  /** Who the daemon is, which the CLI checks, and what it can do for a page, which a page checks. */
+  /**
+   * Who the daemon is, which the CLI checks, and what it can do for a page,
+   * which a page checks: the actions it can take, and the boards it serves,
+   * which a board's page is gated on.
+   */
   const describe = async (): Promise<DaemonDescription> => ({
     pid: process.pid,
     port: settings.port,
@@ -1642,6 +1647,9 @@ export const runDaemon = async () => {
     sourceStamp: stamp,
     terminal: await runNode(cmuxOnPath),
     zed: await runNode(zedOnPath),
+    // The keys `board` routes by, from the tracked set alone: no session is
+    // read and no agent listed, so a page can ask before it draws a board.
+    boards: [...new Set([...tracked.values()].map((entry) => entry.key))].toSorted(),
   });
 
   /**

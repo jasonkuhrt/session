@@ -1,5 +1,5 @@
 import type { TrailerProblem } from '../../contract'
-import { problemCount, problemSentence, trailerMeaning } from '../lib/trailers'
+import { problemCount, problemKey, problemSentence, trailerMeaning } from '../lib/trailers'
 import { Explained } from './tip'
 import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Badge } from './ui/badge'
@@ -22,7 +22,7 @@ export function TrailerProblems({ problems }: { problems: readonly TrailerProble
         <AlertDescription>
           <ul className="space-y-1">
             {problems.map((problem) => (
-              <li key={`${problem.commit}:${problem.id}:${problem.kind}`} className="wrap-anywhere">
+              <li key={problemKey(problem)} className="wrap-anywhere">
                 {problemSentence(problem)}
               </li>
             ))}
@@ -46,7 +46,7 @@ export function TrailerCount({ problems }: { problems: readonly TrailerProblem[]
         <span className="block space-y-2">
           <span className="block">{trailerMeaning}</span>
           {problems.map((problem) => (
-            <span key={`${problem.commit}:${problem.id}:${problem.kind}`} className="block">
+            <span key={problemKey(problem)} className="block">
               {problemSentence(problem)}
             </span>
           ))}

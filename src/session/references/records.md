@@ -32,8 +32,10 @@ one word `None`, exactly so and alone on its line, which the stage accepts as
 intentionally empty wherever its sections are checked; beside anything else in
 the section `None` is ordinary content, and a section with nothing under its
 heading still fails. IDs are unique across all five stages and survive moves.
-Add only useful evidence and constraints. There is no universal eight-field
-form.
+A commit's `Session-Done:` value is IDs separated by commas or spaces, and it
+is filed whole or not at all: when any of them names no item of the session,
+open or archived, none of them is filed. Add only useful evidence and
+constraints. There is no universal eight-field form.
 
 ## Triage
 

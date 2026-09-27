@@ -277,8 +277,20 @@ export const DaemonCapabilitiesSchema = Schema.Struct({
 });
 export type DaemonCapabilities = typeof DaemonCapabilitiesSchema.Type;
 
-/** What `GET /api/daemon` answers: who the daemon is, and what it can do for a page. */
-export const DaemonDescriptionSchema = Schema.Struct({ ...DaemonInfoSchema.fields, ...DaemonCapabilitiesSchema.fields });
+/**
+ * What `GET /api/daemon` answers: who the daemon is, what it can do for a
+ * page, and the boards it serves.
+ */
+export const DaemonDescriptionSchema = Schema.Struct({
+  ...DaemonInfoSchema.fields,
+  ...DaemonCapabilitiesSchema.fields,
+  /**
+   * The key of every board the daemon serves under `/w/`, one per tracked
+   * worktree, from what it tracks and nothing it has to read. A board's page
+   * is drawn only at a key it names.
+   */
+  boards: Schema.Array(Schema.String),
+});
 export type DaemonDescription = typeof DaemonDescriptionSchema.Type;
 
 /**
@@ -428,26 +440,52 @@ export const doneTrailer = 'Session-Done';
  * A `Session-Done` trailer the daemon could not act on.
  *
  * A commit that finishes an item ends its message with `Session-Done: <ID>`,
- * and the daemon files that item as done when the commit lands. Only commits
- * no remote has yet are read, because those are the ones a trailer can still
- * be fixed on; a problem stops being reported once its commit is pushed.
+ * and the daemon files that item as done when the commit lands. A value is ids
+ * separated by commas or spaces, and a line is filed whole or not at all. Only
+ * commits no remote has yet are read, because those are the ones a trailer can
+ * still be fixed on; a problem stops being reported once its commit is pushed.
  *
- * - `unknown`: no item in the session has this id, live or archived
+ * - `unknown`: a `Session-Done:` line, in the trailers or outside them, has
+ *   words that name no item in the session, live or archived, so nothing on
+ *   the line is filed
+ * - `empty`: a `Session-Done:` line names nothing at all
  * - `outside-trailers`: the message has a `Session-Done:` line that is not in
  *   its final paragraph, so Git does not read it as a trailer at all
  * - `close-failed`: the item exists and filing it away failed; `detail` says why
  */
-export const TrailerProblemSchema = Schema.Struct({
-  /** Full hash of the commit carrying the trailer. */
-  commit: Schema.String,
-  /** The commit's subject line. */
-  subject: Schema.String,
-  /** The id the line named. */
-  id: Schema.String,
-  kind: Schema.Literals(['unknown', 'outside-trailers', 'close-failed']),
-  /** What the engine said, for `close-failed`; null otherwise. */
-  detail: Schema.NullOr(Schema.String),
-});
+export const TrailerProblemSchema = Schema.Union([
+  Schema.Struct({
+    /** Full hash of the commit carrying the line. */
+    commit: Schema.String,
+    /** The commit's subject line. */
+    subject: Schema.String,
+    kind: Schema.Literal('unknown'),
+    /** The line, key and value, as Git reads it: a value folded onto following lines is joined onto one. */
+    line: Schema.String,
+    /** The words on it that name no item, in the order written. */
+    words: Schema.NonEmptyArray(Schema.String),
+  }),
+  Schema.Struct({
+    /** Full hash of the commit carrying the line. */
+    commit: Schema.String,
+    /** The commit's subject line. */
+    subject: Schema.String,
+    kind: Schema.Literal('empty'),
+    /** The line, as Git reads it. */
+    line: Schema.String,
+  }),
+  Schema.Struct({
+    /** Full hash of the commit carrying the trailer. */
+    commit: Schema.String,
+    /** The commit's subject line. */
+    subject: Schema.String,
+    kind: Schema.Literals(['outside-trailers', 'close-failed']),
+    /** The id the line named. */
+    id: Schema.String,
+    /** What the engine said, for `close-failed`; null otherwise. */
+    detail: Schema.NullOr(Schema.String),
+  }),
+]);
 export type TrailerProblem = typeof TrailerProblemSchema.Type;
 
 /**

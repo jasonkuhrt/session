@@ -80,7 +80,10 @@ commit's note written into the item's text. It reads only unpushed commits and
 derives every pass from the history and the files, holding no state of its own;
 the note travelling with the item is what keeps a restored one from being filed
 again. Trailers it cannot act on are reported on their own event stream, never
-dropped.
+dropped. A `Session-Done:` value is item ids separated by commas or spaces, and
+a line is filed whole or not at all: a line with any word naming no item of the
+session, open or archived, files nothing and is one problem naming the line and
+those words.
 
 The daemon builds its services once, from only the ones it uses: Node's full set
 includes a terminal, which hooks stdin every time it is built. Run server effects
@@ -159,15 +162,18 @@ does under a board; no Start server code runs in the daemon, and nothing a route
 module or the root route imports reads a browser global when it loads, since the
 prerender loads them all. A page is a file route whose worktree key the router's
 rewrite folds into one segment; its params decode through Effect Schemas, and
-params a schema rejects are no route, so the address draws the not-found page;
-moving between pages loads a document. Every read is a TanStack Query query,
-read when its page mounts and, where its answer can change, again on the event
-that names it, one read per event since the stream carries no payload; a board's
-picker list is read once, and what the daemon says about itself when a page
-mounts and when a stream comes back, a changed `sourceStamp` reloading the page,
-drag and all. On the board and the index a drag or a write holds the events it
-names until it ends, and the item page's writes hold nothing; a write's answer
-lands only over reads that predate it.
+params a schema rejects are no route, so the address draws the not-found page; a
+board's page reads the daemon's description once, before it mounts, and a key
+the description does not name draws the not-found page; the daemon answers an
+unknown key's page load with the shell, anything else with JSON 404; moving
+between pages loads a document. Every read is a TanStack Query query, read when
+its page mounts and, where its answer can change, again on the event that names
+it, one read per event since the stream carries no payload; a board's picker
+list is read once, and what the daemon says about itself when a page mounts and
+when a stream comes back, a changed `sourceStamp` reloading the page, drag and
+all. On the board and the index a drag or a write holds the events it names
+until it ends, and the item page's writes hold nothing; a write's answer lands
+only over reads that predate it.
 
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
