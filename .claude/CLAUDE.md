@@ -11,7 +11,13 @@ directory of numbered item files, named for its place in the flow and its name,
 lifecycle. The board is a viewer with workflow actions and never writes an
 item's content. The ledger is the session's log: dated, immutable entries under
 `ledger/`, written with `session log` or by hand; the engine never writes one of
-its own, and the board only shows them.
+its own, and the board only shows them. A required section with nothing to hold
+says so with the one word `None`, exactly so, alone on its line and all the
+section holds: `app/stage-rules.ts` has the one reading of a required section,
+as empty, none or content, which the engine, the board's moves, the item page
+and a card's line share, so `None` passes wherever a section is required,
+nothing reads it as content, and the item page draws it very dim with its
+sentence as the tip; no other keyword exists.
 
 Commands scaffold the session as they go, its `meta/` of per-worktree facts
 included, so nothing depends on an imperative setup step, and the CLI never
@@ -112,15 +118,18 @@ document to read. Tips are shown only while the Tips setting is on, and it is
 off by default, because a sentence under every passing pointer gets in the way
 more than it helps; every tooltip and explanatory `title` goes through `Tip`,
 `Explained` or `useTip`, so the one setting governs all of them, and the
-settings menu says what each setting does in the menu itself. A control that
+settings menu says what each setting does in the menu itself. The card a
+`@reference` to a term opens shows the meaning the document's `Term | Meaning`
+table gives it, which is the document's own content rather than a tip, so it
+shows whether or not Tips is on and does not go through `Tip`. A control that
 cannot act is not drawn, rather than drawn disabled with a reason, unless it
-belongs to a fixed set that shows the shape of the flow, such as the five
-stages on an item's page: then it is drawn very dim, with the reason as its
-tip, because hiding it would make the reader remember the flow instead of
-seeing it. An item's page stays with the item when it is archived, all five
-stages dim. The overlay adds no state and no verb: the files remain the work,
-the CLI is unchanged, and the `### Agent` convention in the records stays a
-convention the board does not interpret.
+belongs to a fixed set that shows the shape of the flow, such as the five stages
+on an item's page: then it is drawn very dim, as dim under the pointer as beside
+it, with the reason as its tip, because hiding it would make the reader remember
+the flow instead of seeing it. An item's page stays with the item when it is
+archived, all five stages dim. The overlay adds no state and no verb: the files
+remain the work, the CLI is unchanged, and the `### Agent` convention in the
+records stays a convention the board does not interpret.
 
 Where data crosses a boundary, its shape is an Effect Schema and the code's type
 for it is that schema's `Type`, never written by hand; this is an axiom, not a
@@ -147,17 +156,24 @@ rewrite folds into one segment; its params decode through Effect Schemas, and
 params a schema rejects are no route, so the address draws the not-found page;
 moving between pages loads a document. Every read is a TanStack Query query,
 read when its page mounts and, where its answer can change, again on the event
-that names it, one read per event since the stream carries no payload; the
-daemon's capabilities and a board's picker list are read once. On the board and
-the index a drag or a write holds the events it names until it ends, and the
-item page's writes hold nothing; a write's answer lands only over reads that
-predate it.
+that names it, one read per event since the stream carries no payload; a board's
+picker list is read once, and what the daemon says about itself when a page
+mounts and when a stream comes back, a changed `sourceStamp` reloading the page,
+drag and all. On the board and the index a drag or a write holds the events it
+names until it ends, and the item page's writes hold nothing; a write's answer
+lands only over reads that predate it.
 
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
 nothing in them reaches the daemon. A new setting is a field of the schema with
 its default, which is all its storage needs, and an item in the settings menu
 that says what it does.
+
+React Doctor never checks an entry's exports. Its entries are the files
+`tsconfig.json`'s `files` names, each one a command or tool starts from that no
+file imports, and every script file a package script names, with all it imports.
+So no package script names an app module or passes a tsconfig to `-p`:
+`check:types` runs a bare `tsc`, and `dev` runs `bin/session open`.
 
 Keep stage names identical in the stage directories, the CLI's output and the
 UI: a directory is the stage's place in the flow, a hyphen and its name,

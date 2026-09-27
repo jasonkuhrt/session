@@ -4,7 +4,7 @@ import * as Schema from 'effect/Schema';
 import * as Struct from 'effect/Struct';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, ItemSchema, stageDirectory } from '../contract.ts';
-import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
+import { emptySections, lineEnding, noneLines, scanFences } from '../stage-rules.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
@@ -53,6 +53,13 @@ export const recordDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schem
 const decodeItem = recordDecoder(ItemSchema);
 const encodeDraft = Schema.encodeSync(ItemDraftSchema);
 
+/**
+ * A session file's lines, split at every line ending Markdown knows, which is
+ * how every reader of the files counts them: the item files, the ledger, and
+ * the notes a commit leaves in an item.
+ */
+export const linesOf = (text: string): string[] => text.split(lineEnding);
+
 /** Quote a name inside a message without reaching for JSON. */
 export const quote = (value: string): string => `"${value}"`;
 
@@ -71,10 +78,13 @@ const summaryLength = 180;
  * The text of a body's first paragraph, in a list or a quote as much as at the
  * top, as a reader sees it, without the Markdown marks around its words; empty
  * when the body has none. Headings, code, tables and HTML are not paragraphs,
- * so a body that opens with an example reads from the paragraph after it, and
- * a footnote, which the page draws at its foot, is not where the body starts.
+ * so a body that opens with an example reads from the paragraph after it; a
+ * footnote, which the page draws at its foot, is not where the body starts,
+ * and neither is the word `None` where it says a required section is
+ * intentionally empty, which the stage rules read as saying nothing.
  */
 const firstParagraph = (body: string): string => {
+  const none = noneLines(body);
   const pending: MarkdownNode[] = [markdown.parse(body)];
   for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
     if (node.type === 'footnoteDefinition') continue;
@@ -82,6 +92,8 @@ const firstParagraph = (body: string): string => {
       pending.unshift(...(node.children ?? []));
       continue;
     }
+    const line = node.position?.start.line;
+    if (line !== undefined && none.has(line)) continue;
     const text = textOf(node).replaceAll(/\s+/gu, ' ').trim();
     if (text !== '') return [...text].slice(0, summaryLength).join('');
   }
@@ -148,17 +160,15 @@ export const validateItem = (stage: Stage, item: ItemDraft): void => {
 };
 
 /**
- * Content: the sections a stage requires of the items it holds. A mutation
- * checks the stage it places an item in, and `check` checks where each item
- * sits. Loading does not, so an item file can be rewritten for its next stage
- * and moved there afterwards.
+ * Content: the sections a stage requires of the items it holds, each written,
+ * or saying `None` when it is intentionally empty. A mutation checks the stage
+ * it places an item in, and `check` checks where each item sits. Loading does
+ * not, so an item file can be rewritten for its next stage and moved there
+ * afterwards.
  */
 export const validateItemSections = (stage: Stage, item: ItemDraft): void => {
-  for (const section of requiredSections[stage]) {
-    if (!sectionHasContent(item.body, section)) {
-      fail(`${stageDirectory(stage)}/${item.id}: ### ${section} requires content.`);
-    }
-  }
+  const [empty] = emptySections(stage, item.body);
+  if (empty !== undefined) fail(`${stageDirectory(stage)}/${item.id}: ### ${empty} requires content.`);
 };
 
 export const makeItem = (input: {
@@ -191,7 +201,7 @@ export const parseItemFile = (input: {
   readonly group: string | null;
   readonly content: string;
 }): Item => {
-  const lines = input.content.replaceAll('\r\n', '\n').split('\n');
+  const lines = linesOf(input.content);
   const heading: RegExpExecArray = itemHeading.exec(lines[0] ?? '') ??
     fail(`${input.path}:1: an item file starts with \`## ${input.id} — <title>\`.`);
   if (heading[1] !== input.id) {

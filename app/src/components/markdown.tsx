@@ -1,19 +1,39 @@
+import { PreviewCard } from '@base-ui/react/preview-card'
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import type { PluggableList } from 'unified'
 import { absoluteHref, isMarkdownPath, useBoardPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
+import { remarkEvidence } from '../lib/evidence'
+import { type Glossary, glossaryOf, remarkTerms } from '../lib/terms'
 import { cn } from '../lib/utils'
+import { noneMeaning } from '../lib/workflow'
 import { copyLabel, useCopy } from './copyable'
+import { Explained, useTip } from './tip'
 import { Button } from './ui/button'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
+
+/** No line of the Markdown says None, so every paragraph is drawn as written. */
+const noNoneLines: ReadonlySet<number> = new Set()
+
+/**
+ * The lines of the Markdown being drawn, counted from 1 as its own text counts
+ * them, on which the word None says its section is intentionally empty.
+ */
+const NoneLines = React.createContext(noNoneLines)
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
-  input: (props) => <input {...props} disabled />,
+  // react-markdown hands every component its hast node; an element is given only its own props.
+  input: ({ node: _node, ...props }) => <input {...props} disabled />,
+  p: ({ node, ...props }) => <Paragraph line={node?.position?.start.line} {...props} />,
+  // Markdown draws no span of its own: each is a reference the terms plugin marked with the term it names.
+  span: ({ children, node }) => <TermReference term={node?.properties['dataTerm']}>{children}</TermReference>,
 } satisfies Components
 
-export function Markdown({ children, collapseEvidence = false, page = false }: {
+export function Markdown({ children, collapseEvidence = false, page = false, noneLines = noNoneLines }: {
   children: string
   collapseEvidence?: boolean
   /**
@@ -21,27 +41,121 @@ export function Markdown({ children, collapseEvidence = false, page = false }: {
    * window, as an item or a file is: its code then runs the window's width.
    */
   page?: boolean
+  /**
+   * The lines of the Markdown, counted from 1, on which the word None says a
+   * required section is intentionally empty, as the stage rules read them.
+   */
+  noneLines?: ReadonlySet<number>
 }) {
-  const evidenceMatch = collapseEvidence ? /^###\s+Evidence\s*$/imu.exec(children) : null
-  const primary = evidenceMatch ? children.slice(0, evidenceMatch.index) : children
-  const evidence = evidenceMatch ? children.slice(evidenceMatch.index + evidenceMatch[0].length).trim() : null
-
-  return (
+  const glossary = React.useMemo(() => glossaryOf(children), [children])
+  const reader = (
     <div className={cn('markdown-reader', page && 'markdown-page')}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {primary}
-      </ReactMarkdown>
-      {evidence ? (
-        <details className="evidence-panel">
-          <summary>Evidence</summary>
-          <div className="pt-4">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {evidence}
-            </ReactMarkdown>
-          </div>
-        </details>
-      ) : null}
+      <NoneLines value={noneLines}>
+        <Reading glossary={glossary} collapseEvidence={collapseEvidence}>{children}</Reading>
+      </NoneLines>
     </div>
+  )
+  return glossary.reference === null ? reader : <TermCards glossary={glossary}>{reader}</TermCards>
+}
+
+/**
+ * Markdown read as GitHub reads it, as one tree: the document's terms drawn
+ * when it defines any, and its Evidence collapsed when the page asks. A
+ * document without terms is read without the terms plugin.
+ */
+function Reading({ glossary, collapseEvidence, children }: {
+  glossary: Glossary
+  collapseEvidence: boolean
+  children: string
+}) {
+  const plugins: PluggableList = [remarkGfm]
+  if (glossary.reference !== null) plugins.push([remarkTerms, { glossary }])
+  if (collapseEvidence) plugins.push(remarkEvidence)
+  return (
+    <ReactMarkdown remarkPlugins={plugins} components={markdownComponents}>
+      {children}
+    </ReactMarkdown>
+  )
+}
+
+/**
+ * The card a document's references open, or none inside a card, where the
+ * terms of a meaning are coloured and open nothing.
+ */
+const CardContext = React.createContext<PreviewCard.Handle<string> | null>(null)
+
+/**
+ * A document that defines terms, with the one card its references share:
+ * resting the pointer on one shows the meaning of the term it names. The
+ * meaning is the document's content, not a tip, so it shows whether or not
+ * Tips is on.
+ */
+function TermCards({ glossary, children }: { glossary: Glossary; children: React.ReactNode }) {
+  const [card] = React.useState(() => PreviewCard.createHandle<string>())
+  return (
+    <CardContext value={card}>
+      {children}
+      <HoverCard handle={card}>
+        {/* The stock card types what a trigger hands it as unknown, so the term is read back as the string it is. */}
+        {({ payload }) => <TermCard glossary={glossary} term={typeof payload === 'string' ? payload : undefined} />}
+      </HoverCard>
+    </CardContext>
+  )
+}
+
+/**
+ * A reference to a term, drawn in the term colour. In the document it opens
+ * its term's card while the pointer rests on it; it is never a link, so a
+ * click does nothing. Inside a card it opens nothing.
+ */
+function TermReference({ term, children }: { term: unknown; children: React.ReactNode }) {
+  const card = React.use(CardContext)
+  if (typeof term !== 'string') return <span>{children}</span>
+  if (card === null) return <span className="term">{children}</span>
+  return (
+    <HoverCardTrigger handle={card} payload={term} render={<span className="term" />}>
+      {children}
+    </HoverCardTrigger>
+  )
+}
+
+/** The card of the term a reference names: its meaning, read as Markdown, over the way to its row in the table. */
+function TermCard({ glossary, term }: { glossary: Glossary; term: string | undefined }) {
+  const tip = useTip()
+  const definition = term === undefined ? undefined : glossary.terms.get(term)
+  // A meaning is prose to read, so the card is wider than the stock one's sixteen rem.
+  return (
+    <HoverCardContent className="w-80">
+      {definition === undefined ? null : (
+        <CardContext value={null}>
+          <div className="markdown-reader markdown-meaning">
+            <Reading glossary={glossary} collapseEvidence={false}>{definition.meaning}</Reading>
+          </div>
+          <a
+            className="mt-2 inline-block text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            href={`#${definition.id}`}
+            title={tip(`Go to the row of the table that defines ${term}.`)}
+          >
+            Table
+          </a>
+        </CardContext>
+      )}
+    </HoverCardContent>
+  )
+}
+
+/**
+ * A paragraph as written, but for the word None where the stage rules read it
+ * as saying its section is intentionally empty: that is drawn very dim, with
+ * what it means behind it.
+ */
+function Paragraph({ line, children, ...props }: React.ComponentProps<'p'> & { line: number | undefined }) {
+  const none = React.useContext(NoneLines)
+  if (line === undefined || !none.has(line)) return <p {...props}>{children}</p>
+  return (
+    <p {...props}>
+      <Explained meaning={noneMeaning}><span className="opacity-30">{children}</span></Explained>
+    </p>
   )
 }
 

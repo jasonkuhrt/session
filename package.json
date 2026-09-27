@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run src/session/scripts/session.ts open",
+    "dev": "bin/session open",
     "build": "rm -rf app/dist && bun --bun vite build --config app/vite.config.ts",
     "check": "bun run lint && bun run doctor && bun run build",
     "install:skill": "bash install.sh",
     "lint": "oxlint .",
     "doctor": "react-doctor . --lint --scope full --blocking error --yes --no-score",
-    "check:types": "effect-tsgo patch && tsc -p tsconfig.json"
+    "check:types": "effect-tsgo patch && tsc"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -26,17 +26,20 @@
     "cn": "0.4.0",
     "effect": "4.0.0-rc.117",
     "lucide-react": "1.48.0",
+    "mdast-util-find-and-replace": "3.0.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
-    "unified": "11.0.5"
+    "unified": "11.0.5",
+    "unist-util-visit": "5.1.0"
   },
   "devDependencies": {
     "@effect/tsgo": "0.45.0",
     "@tailwindcss/vite": "4.3.3",
     "@types/bun": "1.4.2",
+    "@types/mdast": "4.0.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "oxlint": "1.85.0",

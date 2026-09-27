@@ -27,8 +27,13 @@ differ from the new convention.
 
 Each item is one file. Its first line is `## ID — Short title`, with an em dash,
 and the rest is the body: a short lead paragraph, then the stage's meaningful
-section. IDs are unique across all five stages and survive moves. Add only useful
-evidence and constraints. There is no universal eight-field form.
+section. A section a stage requires that has nothing to hold says so with the
+one word `None`, exactly so and alone on its line, which the stage accepts as
+intentionally empty wherever its sections are checked; beside anything else in
+the section `None` is ordinary content, and a section with nothing under its
+heading still fails. IDs are unique across all five stages and survive moves.
+Add only useful evidence and constraints. There is no universal eight-field
+form.
 
 ## Triage
 
@@ -389,8 +394,11 @@ side; Queue and Execute hold batch directories only:
 
 Use normal Markdown links to relevant files under `context/<ID>/`, or put long
 technical context under `### Evidence`, which the board collapses by default.
-Keep completion criteria visible when they determine whether the work is ready
-or done.
+The panel starts at the item's first `### Evidence` heading, never at such a
+line inside a code block, and holds everything after it; the item is still one
+document, so a link reference or a footnote resolves across the panel, and the
+footnotes stay at the foot of the page, after it. Keep completion criteria
+visible when they determine whether the work is ready or done.
 
 Migrate item by item using actual approval and design state. Preserve source
 material before restructuring it, stable IDs, constraints, and intended batch

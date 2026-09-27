@@ -1,14 +1,41 @@
 import type { Stage } from './contract.ts';
 
-export const requiredSections: Record<Stage, ReadonlyArray<string>> = {
+const requiredSections = {
   Triage: ['Decision'],
   Design: ['Open questions'],
   Batch: ['Outcome', 'Acceptance'],
   Queue: ['Outcome', 'Acceptance'],
   Execute: ['Outcome', 'Acceptance'],
-};
+} as const satisfies Record<Stage, ReadonlyArray<string>>;
+
+/** A section some stage requires, by the name its `### ` heading gives it. */
+type RequiredSection = (typeof requiredSections)[Stage][number];
+
+/** Every section some stage requires, each once, in the order the stages first require them. */
+const everyRequiredSection: ReadonlyArray<RequiredSection> = [...new Set(Object.values(requiredSections).flat())];
+
+/**
+ * Every line ending Markdown knows: a line feed, a carriage return, or the two
+ * together. Every reader of a session's text splits it here, so each counts a
+ * file's lines as the page that draws it does, and as every other reader.
+ */
+export const lineEnding = /\r\n|\r|\n/u;
 
 const fenceMarker = /^\s*(`{3,}|~{3,})/u;
+
+/**
+ * A heading that ends a section: one to three `#` marks and a space or a tab,
+ * which is what CommonMark takes for a heading. Any other space after the
+ * marks, a no-break space for one, leaves the line a paragraph's.
+ */
+const sectionEnd = /^#{1,3}[ \t]/u;
+
+/**
+ * The one word that says a required section is intentionally empty. It is
+ * that only exactly so and alone on its line as all the section holds; beside
+ * anything else it is ordinary content, and no other word says it.
+ */
+const noneWord = 'None';
 
 /**
  * One line of Markdown and where it sits: a fence's opening or closing line
@@ -42,19 +69,50 @@ export const scanFences = (lines: ReadonlyArray<string>): ScannedLine[] => {
   return scanned;
 };
 
-export const sectionHasContent = (body: string, section: string): boolean => {
-  const lines = scanFences(body.split(/\r?\n/u));
-  const heading = `### ${section}`;
-  const index = lines.findIndex((line) => line.place === 'prose' && line.text.trimEnd() === heading);
-  if (index === -1) return false;
-  for (const line of lines.slice(index + 1)) {
-    if (line.place === 'marker') continue;
-    if (line.place === 'fenced') {
-      if (line.text.trim() !== '') return true;
-      continue;
-    }
-    if (/^#{1,3}\s/u.test(line.text)) return false;
-    if (line.text.trim() !== '') return true;
+/**
+ * What a required section holds, as every reader reads it. `empty`: the body
+ * has no such heading, or nothing stands under it before the next heading but
+ * blank lines and the markers of fences with nothing in them. `none`: all it
+ * holds is the one word `None` on the body's line `line`, counted from 1 as
+ * Markdown counts lines, which says the section is intentionally empty.
+ * `content`: anything else.
+ */
+type SectionReading =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'none'; readonly line: number }
+  | { readonly kind: 'content' };
+
+const readSection = (body: string, section: RequiredSection): SectionReading => {
+  const lines = scanFences(body.split(lineEnding));
+  const heading = lines.findIndex((line) => line.place === 'prose' && line.text.trimEnd() === `### ${section}`);
+  if (heading === -1) return { kind: 'empty' };
+  const end = lines.findIndex((line, at) => at > heading && line.place === 'prose' && sectionEnd.test(line.text));
+  // What the section holds, each line with its number, and none of its blank lines.
+  const held = lines
+    .slice(heading + 1, end === -1 ? lines.length : end)
+    .map(({ text, place }, offset) => ({ text, place, number: heading + 2 + offset }))
+    .filter((line) => line.text.trim() !== '');
+  const [only, ...more] = held;
+  if (only !== undefined && more.length === 0 && only.place === 'prose' && only.text.trimEnd() === noneWord) {
+    return { kind: 'none', line: only.number };
   }
-  return false;
+  return held.some((line) => line.place !== 'marker') ? { kind: 'content' } : { kind: 'empty' };
 };
+
+/**
+ * The sections a stage requires that a body leaves empty, in the order the
+ * stage names them. A section that says `None` is not one of them: the stage
+ * takes it as intentionally empty, and it is content to nobody.
+ */
+export const emptySections = (stage: Stage, body: string): ReadonlyArray<RequiredSection> =>
+  requiredSections[stage].filter((section) => readSection(body, section).kind === 'empty');
+
+/**
+ * The lines of a body, counted from 1 as Markdown counts them, on which the
+ * one word `None` says a required section is intentionally empty.
+ */
+export const noneLines = (body: string): ReadonlySet<number> =>
+  new Set(everyRequiredSection.flatMap((section) => {
+    const reading = readSection(body, section);
+    return reading.kind === 'none' ? [reading.line] : [];
+  }));

@@ -555,7 +555,10 @@ without opening a board. No other command restarts it: a stale daemon keeps
 serving until `open` or `restart` replaces it, so a command about the records
 never drops the boards' streams or fails on a build that does not start. Both
 read `SESSION_PORT` and `SESSION_STATE_DIR` as `open` does and ignore `-C`,
-since the daemon is the user's and not a worktree's.
+since the daemon is the user's and not a worktree's. A page left open reloads
+itself once when its stream comes back to a daemon started from other sources
+than the page was loaded from, so a rebuild reaches the tabs already open; a
+restart from the same sources reloads none.
 
 The daemon starts with the environment of the command that started it, less
 what Claude Code, Codex, cmux and Git set for the processes they run, because
@@ -838,12 +841,29 @@ the same address; they say only how the board draws, and nothing in them
 reaches the daemon or the files. A setting missing from what is stored reads as
 its default; a stored value the schema cannot read leaves the defaults
 standing, and a write the browser refuses holds on the page until it reloads,
-and the menu says so either way. The one setting is Tips, off by default. With
-Tips on, every word and control says what it means when it is hovered or
-focused: the sentences this reference calls a tooltip, or says are on hover,
-are tips. With Tips off nothing comes up under the pointer, and a word that
-only carried a tip is plain text. A title that reports what just happened,
-such as a copy the clipboard refused, is not a tip and shows either way.
+and the menu says so either way. The settings are Tips, Code colour and Term
+colour.
+
+Tips is off by default. With Tips on, every word and control says what it
+means when it is hovered or focused: the sentences this reference calls a
+tooltip, or says are on hover, are tips. With Tips off nothing comes up under
+the pointer, and a word that only carried a tip is plain text. A title that
+reports what just happened, such as a copy the clipboard refused, is not a tip
+and shows either way.
+
+Code colour is the hue inline code is drawn in wherever the board reads
+Markdown, on an item's page, a file's and the ledger's cards, over the muted
+ground behind it; a code block keeps the text's colour. It is one of the
+theme's hues, `blue`, `red`, `yellow`, `green`, `teal` or `magenta`, and green
+by default, the one that stands out most on that ground. The menu draws it as
+a row of swatches, one per hue, each with its name as its tip and the chosen
+one pressed, and a press changes it at once on every open page of the address.
+
+Term colour is the hue a document's terms are drawn in, below: the Term cells
+of its `Term | Meaning` table and every reference to them. It takes the same
+hues from the same row of swatches, and is magenta by default, a hue that is
+neither the code colour nor one the board already means something by: blue is
+a link, yellow someone waited on, and red danger.
 
 The pull request is one chip, and the chip is a link to it: its number, gh's
 state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
@@ -992,9 +1012,10 @@ order and reads the item files directly; it never writes an item's content, and
 there is no way to type a body or create an item in it. A card shows the start of
 the item's first paragraph under its title, up to 180 characters, as a reader
 of the Markdown sees it, without the marks around its words. Headings, code,
-tables and HTML are not paragraphs and a footnote is not where a body starts,
-so a body that opens with an example shows the paragraph after it, and a body
-with no paragraph shows nothing more than the title. The item's id sits
+tables and HTML are not paragraphs, and neither a footnote nor the word `None`
+where it says a required section is intentionally empty is where a body
+starts, so a body that opens with an example shows the paragraph after it, and
+a body with no paragraph shows nothing more than the title. The item's id sits
 under that, very dim until pointed at, and a click copies it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and above
@@ -1009,12 +1030,14 @@ the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
 stage. All five stages are always drawn, because together they show the shape
-of the flow: a stage the item cannot reach is drawn very dim and says on hover
-what is needed first. "Complete work" is there for an item in Execute, and
-leaves you on the page with the item archived. Settle missing content with the
-agent or in the editor. A code block on the page is a band across the window's
-full width, its text starting where the prose starts, and a line longer than
-the room to the right scrolls inside the band.
+of the flow: a stage the item cannot reach is drawn very dim, as dim under the
+pointer as beside it, and says on hover what is needed first. "Complete work"
+is there for an item in Execute, and leaves you on the page with the item
+archived. Settle missing content with the agent or in the editor. Where the one
+word `None` is all a required section holds, the reader draws it very dim, and
+its tip says the section is intentionally empty. A code block on the page is a
+band across the window's full width, its text starting where the prose starts,
+and a line longer than the room to the right scrolls inside the band.
 
 An item filed under `archive/`, by "Complete work", `done`, `archive` or a
 commit's trailer, keeps its page. When no stage holds the id, the page reads
@@ -1039,6 +1062,23 @@ link, and neither is anything that resolves outside the session; `archive/` is
 served, and a directory named `ignore` further down is an ordinary one. What the
 route serves never runs: it is sent sandboxed and is never sniffed into another
 type.
+
+A document can define its own terms, as a ubiquitous-language glossary does: a
+table whose head is `Term | Meaning`, one term to a row, its Term cell in
+backticks or not. Its prose names a term as `@Term`, or as `@Two Words@` when
+the term holds spaces; the closing `@` is allowed on any term, and what follows
+it at once stays prose, so `@Model@s` reads "Models" with the term marked. Only
+text that names a term of the same document exactly is a reference, Evidence
+included, so a `@word` that names none, an address such as `jason@example.com`,
+and whatever is in code or in a link's words stay as written, and a document
+with no such table reads as it always has; a table headed `Term | Description`,
+or with a third column, defines nothing, and a term defined twice keeps its
+first row. The reader draws every Term cell and every reference in the Term
+colour. A reference is never a link: resting the pointer on it opens a card
+with the term's meaning, the Meaning cell's own Markdown with its terms
+coloured, and a "Table" link at its foot to the term's row, which opens the
+Evidence the row is in. The card is the document's content, not a tip, so it
+shows whether Tips is on or not. Nothing is stored and no file changes.
 
 Every lane draws its groups as they are filed: a group is a heading over its
 cards, in its place in the lane's file order among the cards in no group. The
