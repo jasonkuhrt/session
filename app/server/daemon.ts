@@ -66,6 +66,7 @@ import {
   focusResponse,
   makeRequestHandler,
   namedChannels,
+  noBoardResponse,
   openResponse,
   orderResponse,
   refuse,
@@ -1604,7 +1605,7 @@ export const runDaemon = async () => {
     const entry = [...tracked.values()]
       .toSorted((left, right) => right.key.length - left.key.length)
       .find((candidate) => rest === candidate.key || rest.startsWith(`${candidate.key}/`));
-    if (entry === undefined) return refuse({ error: 'No such worktree.', status: 404 });
+    if (entry === undefined) return await noBoardResponse({ request, shell: shellFile });
     if (entry.conflict !== null) return refuse({ error: entry.conflict, status: 409 });
     // Relative, so the address the browser used (a proxy's, or the raw port) is kept.
     if (rest === entry.key) return new Response(null, { status: 307, headers: { location: `/w/${entry.key}/` } });

@@ -2,7 +2,8 @@
 import '@fontsource-variable/geist'
 import '../styles.css'
 
-import { ClientOnly, createRootRoute, HeadContent, Link, Outlet, Scripts } from '@tanstack/react-router'
+import type { QueryClient } from '@tanstack/react-query'
+import { ClientOnly, createRootRouteWithContext, HeadContent, Link, Outlet, Scripts } from '@tanstack/react-router'
 import type * as React from 'react'
 
 /** The board's mark on its tab. */
@@ -15,7 +16,13 @@ const icon =
  * address names is drawn once the document has hydrated, never during it,
  * so the document the browser receives and the one it hydrates are the same.
  */
-export const Route = createRootRoute({
+/**
+ * What every route is handed: the document's query client, so a route can read
+ * what decides whether its address is a page before the page mounts.
+ */
+type RouterContext = { readonly queryClient: QueryClient }
+
+export const Route = createRootRouteWithContext<RouterContext>()({
   head: () => ({
     meta: [
       { charSet: 'UTF-8' },

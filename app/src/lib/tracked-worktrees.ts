@@ -1,6 +1,8 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
+import { notFound } from '@tanstack/react-router'
 import * as React from 'react'
 
+import type { WorktreeSummary } from '../../contract'
 import { reads, reread } from './reads'
 import { useStream } from './stream'
 
@@ -61,4 +63,29 @@ export function useTrackedWorktrees({ held }: { readonly held: boolean }) {
     /** Reads the rows now, whether or not reads are held: what a write does once it has landed. */
     reload: readRows,
   }
+}
+
+/**
+ * The rule for an address that names what only the index's rows hold: a board
+ * by its worktree's key, or any page named for something a row names. The rows
+ * are read before the page mounts, and an address that names nothing in them
+ * is no page: the root draws the not-found page, and nothing else is read, no
+ * session and no stream. The answer is kept for the document, which reads the
+ * rows once, so a list drawn from them, a board's picker, shows it rather than
+ * asking again. A read that fails says nothing about the address, and the page
+ * draws as it would without the rule, since no page depends on the index
+ * answering.
+ */
+export async function noPageUnless({ client, named }: {
+  readonly client: QueryClient
+  /** Whether the rows hold what the address names. */
+  readonly named: (rows: ReadonlyArray<WorktreeSummary>) => boolean
+}): Promise<void> {
+  let rows: ReadonlyArray<WorktreeSummary>
+  try {
+    rows = await client.query({ ...reads.worktrees(), gcTime: Number.POSITIVE_INFINITY })
+  } catch {
+    return
+  }
+  if (!named(rows)) throw notFound()
 }

@@ -152,6 +152,27 @@ export const staticResponse = async ({ directory, shell, url, method }: {
   return method === 'HEAD' ? new Response(null) : new Response(candidate);
 };
 
+/**
+ * What an address under `/w/` that no tracked worktree's key begins is
+ * answered with. With no key there is no telling where one would end, so the
+ * path cannot say whether it is a page or a board's API, and a file page's path
+ * can hold `api/` besides; the request says which instead. A browser loading a
+ * page asks for HTML, and gets the shell, whose router draws the not-found
+ * page; a board's reads, its stream and its writes never ask for HTML, and are
+ * refused in JSON, which is what an open board reads once its worktree is gone.
+ */
+export const noBoardResponse = async ({ request, shell }: {
+  readonly request: Request;
+  /** The shell's path on disk. */
+  readonly shell: string;
+}): Promise<Response> => {
+  const read = request.method === 'GET' || request.method === 'HEAD';
+  if (read && (request.headers.get('accept') ?? '').includes('text/html')) {
+    return await shellResponse({ shell, method: request.method });
+  }
+  return refuse({ error: 'No such worktree.', status: 404 });
+};
+
 const errorResponse = (error: unknown): Response => {
   if (error instanceof RepositoryError || error instanceof SessionError) {
     const status = error.kind === 'conflict' ? 409 : error.kind === 'not-found' ? 404 : 400;
