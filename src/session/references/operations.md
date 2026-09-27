@@ -549,7 +549,10 @@ without opening a board. No other command restarts it: a stale daemon keeps
 serving until `open` or `restart` replaces it, so a command about the records
 never drops the boards' streams or fails on a build that does not start. Both
 read `SESSION_PORT` and `SESSION_STATE_DIR` as `open` does and ignore `-C`,
-since the daemon is the user's and not a worktree's.
+since the daemon is the user's and not a worktree's. A page left open reloads
+itself once when its stream comes back to a daemon started from other sources
+than the page was loaded from, so a rebuild reaches the tabs already open; a
+restart from the same sources reloads none.
 
 The daemon starts with the environment of the command that started it, less
 what Claude Code, Codex, cmux and Git set for the processes they run, because
