@@ -159,6 +159,12 @@ nothing in them reaches the daemon. A new setting is a field of the schema with
 its default, which is all its storage needs, and an item in the settings menu
 that says what it does.
 
+React Doctor never checks an entry's exports. Its entries are the files
+`tsconfig.json`'s `files` names, each one a command or tool starts from that no
+file imports, and every script file a package script names, with all it imports.
+So no package script names an app module or passes a tsconfig to `-p`:
+`check:types` runs a bare `tsc`, and `dev` runs `bin/session open`.
+
 Keep stage names identical in the stage directories, the CLI's output and the
 UI: a directory is the stage's place in the flow, a hyphen and its name,
 `2-Design`. The CLI also accepts a name in any case, and archive records keep
