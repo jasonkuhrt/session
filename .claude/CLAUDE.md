@@ -1,4 +1,10 @@
-# Session
+# Session A required section with nothing to hold says so with the one word
+`None`, exactly so, alone on its line and all the section holds:
+`app/stage-rules.ts` has the one reading of a required section, as empty, none
+or content, which the engine, the board's moves, the item page and a card's line
+share, so `None` passes wherever a section is required, nothing reads it as
+content, and the item page draws it very dim with its sentence as the tip; no
+other keyword exists.
 
 Before editing this project, read and follow the durable
 [Project contracts](../README.md#project-contracts). Preserve them unless Jason
@@ -114,13 +120,13 @@ more than it helps; every tooltip and explanatory `title` goes through `Tip`,
 `Explained` or `useTip`, so the one setting governs all of them, and the
 settings menu says what each setting does in the menu itself. A control that
 cannot act is not drawn, rather than drawn disabled with a reason, unless it
-belongs to a fixed set that shows the shape of the flow, such as the five
-stages on an item's page: then it is drawn very dim, with the reason as its
-tip, because hiding it would make the reader remember the flow instead of
-seeing it. An item's page stays with the item when it is archived, all five
-stages dim. The overlay adds no state and no verb: the files remain the work,
-the CLI is unchanged, and the `### Agent` convention in the records stays a
-convention the board does not interpret.
+belongs to a fixed set that shows the shape of the flow, such as the five stages
+on an item's page: then it is drawn very dim, as dim under the pointer as beside
+it, with the reason as its tip, because hiding it would make the reader remember
+the flow instead of seeing it. An item's page stays with the item when it is
+archived, all five stages dim. The overlay adds no state and no verb: the files
+remain the work, the CLI is unchanged, and the `### Agent` convention in the
+records stays a convention the board does not interpret.
 
 Where data crosses a boundary, its shape is an Effect Schema and the code's type
 for it is that schema's `Type`, never written by hand; this is an axiom, not a
