@@ -118,7 +118,10 @@ document to read. Tips are shown only while the Tips setting is on, and it is
 off by default, because a sentence under every passing pointer gets in the way
 more than it helps; every tooltip and explanatory `title` goes through `Tip`,
 `Explained` or `useTip`, so the one setting governs all of them, and the
-settings menu says what each setting does in the menu itself. A control that
+settings menu says what each setting does in the menu itself. The card a
+`@reference` to a term opens shows the meaning the document's `Term | Meaning`
+table gives it, which is the document's own content rather than a tip, so it
+shows whether or not Tips is on and does not go through `Tip`. A control that
 cannot act is not drawn, rather than drawn disabled with a reason, unless it
 belongs to a fixed set that shows the shape of the flow, such as the five stages
 on an item's page: then it is drawn very dim, as dim under the pointer as beside
