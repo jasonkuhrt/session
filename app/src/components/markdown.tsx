@@ -8,21 +8,32 @@ import { openOnceOnClick } from '../lib/open-once'
 import { remarkEvidence } from '../lib/evidence'
 import { type Glossary, glossaryOf, remarkTerms } from '../lib/terms'
 import { cn } from '../lib/utils'
+import { noneMeaning } from '../lib/workflow'
 import { copyLabel, useCopy } from './copyable'
-import { useTip } from './tip'
+import { Explained, useTip } from './tip'
 import { Button } from './ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
+
+/** No line of the Markdown says None, so every paragraph is drawn as written. */
+const noNoneLines: ReadonlySet<number> = new Set()
+
+/**
+ * The lines of the Markdown being drawn, counted from 1 as its own text counts
+ * them, on which the word None says its section is intentionally empty.
+ */
+const NoneLines = React.createContext(noNoneLines)
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
-  // The syntax tree react-markdown passes along is not an attribute of the box it draws.
+  // react-markdown hands every component its hast node; an element is given only its own props.
   input: ({ node: _node, ...props }) => <input {...props} disabled />,
+  p: ({ node, ...props }) => <Paragraph line={node?.position?.start.line} {...props} />,
   // Markdown draws no span of its own: each is a reference the terms plugin marked with the term it names.
   span: ({ children, node }) => <TermReference term={node?.properties['dataTerm']}>{children}</TermReference>,
 } satisfies Components
 
-export function Markdown({ children, collapseEvidence = false, page = false }: {
+export function Markdown({ children, collapseEvidence = false, page = false, noneLines = noNoneLines }: {
   children: string
   collapseEvidence?: boolean
   /**
@@ -30,11 +41,18 @@ export function Markdown({ children, collapseEvidence = false, page = false }: {
    * window, as an item or a file is: its code then runs the window's width.
    */
   page?: boolean
+  /**
+   * The lines of the Markdown, counted from 1, on which the word None says a
+   * required section is intentionally empty, as the stage rules read them.
+   */
+  noneLines?: ReadonlySet<number>
 }) {
   const glossary = React.useMemo(() => glossaryOf(children), [children])
   const reader = (
     <div className={cn('markdown-reader', page && 'markdown-page')}>
-      <Reading glossary={glossary} collapseEvidence={collapseEvidence}>{children}</Reading>
+      <NoneLines value={noneLines}>
+        <Reading glossary={glossary} collapseEvidence={collapseEvidence}>{children}</Reading>
+      </NoneLines>
     </div>
   )
   return glossary.reference === null ? reader : <TermCards glossary={glossary}>{reader}</TermCards>
@@ -123,6 +141,21 @@ function TermCard({ glossary, term }: { glossary: Glossary; term: string | undef
         </CardContext>
       )}
     </HoverCardContent>
+  )
+}
+
+/**
+ * A paragraph as written, but for the word None where the stage rules read it
+ * as saying its section is intentionally empty: that is drawn very dim, with
+ * what it means behind it.
+ */
+function Paragraph({ line, children, ...props }: React.ComponentProps<'p'> & { line: number | undefined }) {
+  const none = React.useContext(NoneLines)
+  if (line === undefined || !none.has(line)) return <p {...props}>{children}</p>
+  return (
+    <p {...props}>
+      <Explained meaning={noneMeaning}><span className="opacity-30">{children}</span></Explained>
+    </p>
   )
 }
 

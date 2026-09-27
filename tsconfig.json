@@ -247,5 +247,18 @@
       }
     ]
   },
+  // `include` is what TypeScript checks, and `files` adds nothing to it.
+  // React Doctor never checks an entry's exports. Its entries are the files
+  // tsconfig.json's `files` names, each one a command or tool starts from that
+  // no file imports, and every script file a package script names, with all
+  // it imports. So no package script names an app module or passes a tsconfig
+  // to `-p`: `check:types` runs a bare `tsc`, and `dev` runs `bin/session open`.
+  "files": [
+    "app/src/router.tsx",
+    "app/vite.config.ts",
+    "install.ts",
+    "scripts/rename-stage-directories.ts",
+    "src/session/scripts/session.ts"
+  ],
   "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "scripts/**/*.ts", "install.ts"]
 }
