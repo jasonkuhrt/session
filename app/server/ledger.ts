@@ -7,7 +7,7 @@ import * as Struct from 'effect/Struct';
 import { type LedgerEntry, LedgerEntrySchema } from '../contract.ts';
 import { ledgerDirectory } from './layout.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
-import { recordReading } from './model.ts';
+import { linesOf, recordReading } from './model.ts';
 
 /**
  * The ledger's entry format. An entry is one file under `ledger/`: YAML
@@ -59,7 +59,7 @@ export const ledgerFileName = (input: { readonly date: string; readonly title: s
 
 /** An entry's fields before it has a file. */
 export const LedgerFieldsSchema = LedgerEntrySchema.mapFields(Struct.omit(['name', 'path']));
-export type LedgerFields = typeof LedgerFieldsSchema.Type;
+type LedgerFields = typeof LedgerFieldsSchema.Type;
 
 const encodeFields = Schema.encodeSync(LedgerFieldsSchema);
 
@@ -218,7 +218,7 @@ const decodeEntry = recordReading(LedgerEntrySchema);
  * then is the problem it names.
  */
 export const parseLedgerEntry = (input: { readonly name: string; readonly content: string }): LedgerParse => {
-  const lines = input.content.replace(/^\uFEFF/u, '').replaceAll('\r\n', '\n').split('\n');
+  const lines = linesOf(input.content.replace(/^\uFEFF/u, ''));
   if (lines[0]?.trimEnd() !== '---') {
     return problem(1, 'an entry opens with frontmatter: a `---` line, one `key: value` line per key, and a closing `---` line.');
   }

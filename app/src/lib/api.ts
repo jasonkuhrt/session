@@ -180,7 +180,7 @@ export const SessionApi = {
  * the archive and a file are read without the items. A daemon that cannot be
  * reached still fails the read.
  */
-export type Place =
+type Place =
   | { readonly kind: 'read'; readonly worktree: string | null; readonly directory: string }
   | { readonly kind: 'unread'; readonly problem: string }
 
