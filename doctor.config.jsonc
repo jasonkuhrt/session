@@ -48,18 +48,21 @@
     "react-doctor/circular-dependency": "error",
     "react-doctor/unused-dependency": "error",
     "react-doctor/unused-dev-dependency": "error",
-    // React Doctor 0.9.14 never checks an entry's exports. Its entries here are
-    // what tsconfig.json's `files` names, every file a package script runs,
-    // and all that file imports, which is the CLI and everything it reaches.
-    // So the export rules check the board's modules and nothing the CLI
-    // imports.
+    // React Doctor 0.9.14 checks the exports of every module that is not an
+    // entry. tsconfig.json says what its entries are and how the package
+    // scripts keep them to those; a module another one names by its file name
+    // in quotes, even in a comment, is an entry too. After any React Doctor
+    // upgrade, plant an export and a type export that nothing imports in a
+    // board module and in a server module that no other module names, and
+    // check that `bun run doctor` reports all four.
     "react-doctor/unused-export": "error",
     "react-doctor/unused-type": "error",
     // React Doctor 0.9.14 reports an unreachable file only in a package whose
-    // graph it has verified, and it verifies one only from entry patterns that
+    // graph it has verified. It verifies one only from entry patterns that
     // neither its config nor its command line can set, or from a Create React
-    // App or Next.js entry. A TanStack Start app never passes, so the rule
-    // cannot fire here whatever the entries are.
+    // App or Next.js entry, and only while every bare import names a declared
+    // dependency or a Node builtin, which the server's imports of `bun` do
+    // not. So the rule cannot fire here whatever the entries are.
     "react-doctor/unused-file": "off"
   },
   "surfaces": {

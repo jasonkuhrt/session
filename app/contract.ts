@@ -32,7 +32,7 @@ export const stageDirectory = (stage: Stage): string => `${stageNames.indexOf(st
  * group that gets started as a unit. Elsewhere a group is optional.
  */
 export const BatchedStageSchema = Schema.Literals(['Queue', 'Execute']);
-export type BatchedStage = typeof BatchedStageSchema.Type;
+type BatchedStage = typeof BatchedStageSchema.Type;
 export const isBatchedStage: (stage: Stage) => stage is BatchedStage = Schema.is(BatchedStageSchema);
 
 /** One item, as its file holds it. */
@@ -837,4 +837,3 @@ export const RefreshSchema = Schema.Struct({
   }),
   skipped: Schema.Array(SkippedEntrySchema),
 });
-export type Refresh = typeof RefreshSchema.Type;
