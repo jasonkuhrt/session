@@ -11,6 +11,7 @@ import {
   validateGroupName,
   validateItem,
 } from './model.ts';
+import { numberEntries } from './numbering.ts';
 
 /**
  * Directory-layout rules. The session root holds a closed set of entries, and
@@ -21,8 +22,6 @@ import {
  * is the order, so the files alone answer "what comes next".
  */
 
-/** Gap between generated prefixes, leaving room to insert without renumbering. */
-const numberStep = 10;
 /** A numbered entry of a stage directory: its prefix, then an item file's `<ID>.md` or a group's name. */
 export const entryName = /^(\d+)-(.+)$/u;
 
@@ -178,45 +177,6 @@ export const parseStageDirectory = (
   return { items, files };
 };
 
-/**
- * Prefixes for entries in their target order. Existing prefixes survive while
- * they stay strictly increasing and every new entry fits between its
- * neighbours; otherwise the whole directory is renumbered.
- */
-export const numberEntries = (existing: ReadonlyArray<number | null>): number[] => {
-  const kept = existing.filter((value): value is number => value !== null);
-  const usable = kept.every((value, index) => value >= 1 && (index === 0 || value > kept[index - 1]!));
-  const preserved = usable ? insertBetween(existing) : undefined;
-  return preserved ?? existing.map((_, index) => (index + 1) * numberStep);
-};
-
-const insertBetween = (existing: ReadonlyArray<number | null>): number[] | undefined => {
-  const result: number[] = [];
-  let index = 0;
-  while (index < existing.length) {
-    const value = existing[index]!;
-    if (value !== null) {
-      result.push(value);
-      index += 1;
-      continue;
-    }
-    let end = index;
-    while (end < existing.length && existing[end] === null) end += 1;
-    const count = end - index;
-    const lower = index === 0 ? 0 : existing[index - 1]!;
-    const upper = existing[end] ?? null;
-    if (upper === null) {
-      for (let offset = 1; offset <= count; offset += 1) result.push(lower + offset * numberStep);
-    } else {
-      const step = Math.floor((upper - lower) / (count + 1));
-      if (step < 1) return undefined;
-      for (let offset = 1; offset <= count; offset += 1) result.push(lower + offset * step);
-    }
-    index = end;
-  }
-  return result;
-};
-
 /** One entry of a stage directory to render: an item file, or a group's directory with its items. */
 type TopLevelEntry =
   | { readonly kind: 'item'; readonly item: ItemDraft }
@@ -275,6 +235,30 @@ const itemFile =(directory: string, prefix: number, item: ItemDraft): StageFileE
 });
 
 /**
+ * The prefix each entry keeps: an item's and a group's own, and, for a group
+ * with no directory yet, the one its first item had as a file of its own,
+ * while that still falls between the prefixes kept before and after it. A
+ * group gathered where that item stood so takes its number, and one gathered
+ * anywhere else is numbered as any new entry is.
+ */
+const keptPrefixes = (
+  entries: ReadonlyArray<TopLevelEntry>,
+  known: ReturnType<typeof currentPrefixes>,
+): Array<number | null> => {
+  const own = entries.map((entry) =>
+    (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null
+  );
+  const kept: Array<number | null> = [];
+  for (const [index, entry] of entries.entries()) {
+    const first = entry.kind === 'group' && own[index] === null ? known.items.get(entry.items[0]!.id) : undefined;
+    const before = kept.findLast((value) => value !== null) ?? 0;
+    const after = own.slice(index + 1).find((value) => value !== null);
+    kept.push(first !== undefined && first > before && (after === undefined || first < after) ? first : own[index] ?? null);
+  }
+  return kept;
+};
+
+/**
  * The item files a stage directory should hold for these items, in this order:
  * item files and group directories share one sequence of prefixes.
  */
@@ -286,9 +270,7 @@ export const renderStageDirectory = (input: {
   const { stage } = input;
   const known = currentPrefixes(input.current);
   const entries = topLevelEntries(stage, input.items);
-  const prefixes = numberEntries(
-    entries.map((entry) => (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null),
-  );
+  const prefixes = numberEntries(keptPrefixes(entries, known));
   const parent = stageDirectory(stage);
   return entries.flatMap((entry, index) => {
     const prefix = prefixes[index]!;

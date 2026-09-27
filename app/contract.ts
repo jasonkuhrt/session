@@ -730,6 +730,14 @@ export type MoveItem = typeof MoveItemSchema.Type;
 export const GroupItemsSchema = Schema.Struct({
   ids: Schema.Array(Schema.String),
   name: Schema.String,
+  /**
+   * One of `ids`, in no group, in whose place a group the stage does not hold
+   * yet starts, as a card dropped on another on the board starts one where
+   * that card stood, the card first and numbered as its file was; left out,
+   * it starts at the end of the stage, as `session group` starts one. A group
+   * the stage holds keeps its place either way.
+   */
+  at: Schema.String.pipe(Schema.optionalKey),
   revision: Schema.String,
 });
 

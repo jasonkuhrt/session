@@ -224,7 +224,8 @@ const placeName = (stage: Stage, group: string | null): string =>
  * at the end of its group, and an item in no group at the end of the stage. A
  * group the other items do not hold starts at `start`: the end of the stage,
  * unless the caller keeps the place of a group it has just emptied, which is
- * also where an item goes in front of the group it alone held.
+ * also where an item goes in front of the group it alone held, or starts a
+ * group where one of the items gathered into it stands.
  */
 const placeItem = (input: {
   readonly stage: Stage;
@@ -992,13 +993,16 @@ export const makeRepository = (directory: string) =>
 
     /**
      * Gather items of one flat stage into the group of that name. A group the
-     * stage does not hold yet starts at its end; one it holds takes the items
-     * at its own end, in the order given. An item already in it stays where it
+     * stage does not hold yet starts at its end, or in the place of the item
+     * `at` names, one of them and in no group; one it holds takes the items at
+     * its own end, in the order given. An item already in it stays where it
      * is, so gathering is about belonging and `mv --before` about order.
      */
     const groupItems = (input: {
       readonly name: string;
       readonly ids: ReadonlyArray<string>;
+      /** The item, of those gathered and in no group, in whose place a group the stage does not hold yet starts. */
+      readonly at?: string | undefined;
       readonly revision: string;
     }) =>
       mutate(input.revision, (loaded) =>
@@ -1022,6 +1026,21 @@ export const makeRepository = (directory: string) =>
                 : 'Execute is frozen; its batch stays as it started.',
             });
           }
+          const { at } = input;
+          const anchor = at === undefined ? undefined : found.find((entry) => entry.item.id === at);
+          if (at !== undefined && anchor === undefined) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `A new group starts in the place of one of its items, and ${at} is not among them.`,
+            });
+          }
+          if (anchor !== undefined && anchor.item.group !== null) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message:
+                `A new group starts in the place of an item in no ${groupNoun(stage)}, and ${anchor.item.id} is in ${placeName(stage, anchor.item.group)}; ${groupNoun(stage)}s do not nest.`,
+            });
+          }
           const state = stageOf(loaded, stage);
           const items = yield* attempt(() => {
             validateGroupName(stage, name);
@@ -1031,7 +1050,16 @@ export const makeRepository = (directory: string) =>
               const joined = draftOf(item, name);
               validateItem(stage, joined);
               validateItemSections(stage, joined);
-              placed = placeItem({ stage, items: placed.filter((candidate) => candidate.id !== item.id), item: joined });
+              // Where `at` stands before this item leaves its place: the item
+              // `at` names stays in it, and any other goes right beside it, so
+              // the group, once the rest have joined it, stands where `at` did.
+              const where = at === undefined ? -1 : placed.findIndex((candidate) => candidate.id === at);
+              placed = placeItem({
+                stage,
+                items: placed.filter((candidate) => candidate.id !== item.id),
+                item: joined,
+                start: where === -1 ? undefined : where,
+              });
             }
             return placed;
           });

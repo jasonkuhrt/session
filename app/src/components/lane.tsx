@@ -1,12 +1,13 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
+import { pointerIntersection } from '@dnd-kit/collision'
 import { useDroppable } from '@dnd-kit/react'
 import type * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
 import { landing } from '../lib/drag'
-import type { Lane as LaneLayout, Placement } from '../lib/lanes'
-import { listId } from '../lib/lanes'
+import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
+import { dragOf, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { groupMeta, stageHint } from '../lib/workflow'
 import { Explained, Tip, useTip } from './tip'
@@ -42,15 +43,16 @@ function useLaneDrop(stage: Stage, at: 'start' | 'end' | 'half', { accepts, pend
   })
 }
 
-export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneActions & {
+export function Lane({ lane, count, dragging, executeOccupied, ...actions }: LaneActions & {
   lane: LaneLayout
   /** How many items the stage holds on disk; a drag under way does not change it. */
   count: number
-  /** Where the card being dragged would land if it were dropped now. */
-  held: Placement | null
+  /** The card being dragged, and what dropping it now would do. */
+  dragging: Dragging | null
   executeOccupied: boolean
 }) {
   const { stage } = lane
+  const held = dragging?.landing ?? null
   const { ref: wholeRef } = useLaneDrop(stage, 'half', actions)
   const { ref: startRef } = useLaneDrop(stage, 'start', actions)
   const { ref: endRef } = useLaneDrop(stage, 'end', actions)
@@ -74,8 +76,8 @@ export function Lane({ lane, count, held, executeOccupied, ...actions }: LaneAct
       </div>
       <div className={cn('min-h-32 space-y-3 rounded-lg', held?.to === stage && held.group === null && landing)}>
         {lane.entries.map(entry => (entry.kind === 'item'
-          ? <WorkflowCard key={entry.item.id} {...actions} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
-          : <GroupBlock key={`group:${entry.name}`} {...actions} stage={stage} name={entry.name} items={entry.items} landing={held?.to === stage && held.group === entry.name} />))}
+          ? <WorkflowCard key={entry.item.id} {...actions} {...dragOf({ dragging, id: entry.item.id })} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
+          : <GroupBlock key={`group:${entry.name}`} {...actions} stage={stage} name={entry.name} items={entry.items} dragging={dragging} landing={held?.to === stage && held.group === entry.name} />))}
         {/* The space under the last entry is the lane's own: a card dropped
             there lands at the end of the lane, in no group. */}
         <div ref={endRef} className="h-24" />
@@ -220,26 +222,44 @@ function LaneControls({ stage, choosing, selected, count, executeOccupied, pendi
  * file order. In Batch a group is a proposed batch and can be queued as one;
  * in the lanes where an item may be in no group it can be taken apart. Queue
  * and Execute hold only batches, which change only by starting and finishing.
+ * A card dropped on its heading joins it last, and one dropped on its edges
+ * joins it at its start or its end, by which half of it the card is over.
  */
-function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActions & {
+function GroupBlock({ stage, name, items, dragging, landing: lands, ...actions }: LaneActions & {
   stage: Stage
   name: string
   items: readonly Item[]
+  dragging: Dragging | null
   /** Whether a card being dragged would be dropped into this group. */
   landing: boolean
 }) {
+  const accept = (source: { readonly id: unknown }) => actions.accepts(source.id, { stage, group: name })
   const { ref } = useDroppable({
     id: `group:${listId({ stage, group: name })}`,
     type: 'group',
     data: { stage, group: name },
-    accept: source => actions.accepts(source.id, { stage, group: name }),
+    accept,
     // A card under the pointer is what a held card is over; otherwise the
     // group under the pointer is, ahead of any card the held card merely
     // overlaps and of the lane. Its pointer collision ranks with cards' overlap
-    // collisions and above them, so its heading and its edges take a card
-    // even with cards around them, and a group a drag has emptied still does.
+    // collisions and above them, so its edges take a card even with cards
+    // around them, and a group a drag has emptied still does.
     collisionPriority: CollisionPriority.Normal,
     disabled: actions.pending,
+  })
+  // The heading is a place of its own, the group's end, as the index's epic
+  // card takes a worktree dropped on it: the pointer alone decides it, and it
+  // outranks the group around it. Keys step a card among places by rank
+  // before distance, so a heading that outranks them would take every step;
+  // it is no place for a card they carry.
+  const { ref: headingRef } = useDroppable({
+    id: `heading:${listId({ stage, group: name })}`,
+    type: 'group',
+    data: { stage, group: name, at: 'end' },
+    accept,
+    collisionDetector: pointerIntersection,
+    collisionPriority: CollisionPriority.High,
+    disabled: actions.pending || dragging?.keyboard === true,
   })
   const ids = items.map(item => item.id)
   // A drag can empty a group before the move is written; there is nothing in
@@ -248,7 +268,7 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
   const canUngroup = !isBatchedStage(stage) && ids.length > 0
   return (
     <div ref={ref} className={cn('space-y-2 rounded-xl border p-2', lands && landing)}>
-      <div className="flex items-start gap-1">
+      <div ref={headingRef} className="flex items-start gap-1">
         <h3 className="min-w-0 flex-1 py-1 text-xs font-medium tracking-wide break-words text-foreground">
           <Explained meaning={groupMeta[stage].heading} className="block">{name}</Explained>
         </h3>
@@ -269,7 +289,7 @@ function GroupBlock({ stage, name, items, landing: lands, ...actions }: LaneActi
           </Tip>
         ) : null}
       </div>
-      {items.map((item, index) => <WorkflowCard key={item.id} {...actions} item={item} index={index} stage={stage} />)}
+      {items.map((item, index) => <WorkflowCard key={item.id} {...actions} {...dragOf({ dragging, id: item.id })} item={item} index={index} stage={stage} />)}
     </div>
   )
 }
