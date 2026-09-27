@@ -33,6 +33,7 @@ export function getRouter() {
   })
   return createRouter({
     routeTree,
+    context: { queryClient },
     trailingSlash: 'preserve',
     // A worktree's key and a project's may hold a slash, and a route's parameter is one segment.
     rewrite: {

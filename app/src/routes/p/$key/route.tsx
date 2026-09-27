@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Schema, SchemaTransformation } from 'effect'
 
-import { paramsOf } from '../../../lib/base'
+import { noPageUnless, paramsOf } from '../../../lib/base'
+import { hasMembers } from '../../../lib/filter'
+import { reads } from '../../../lib/reads'
 
 /**
  * A project's path as its board's address carries it: the path's segments
@@ -28,4 +30,14 @@ const ProjectParams = Schema.Struct({ key: ProjectPath })
 
 export const Route = createFileRoute('/p/$key')({
   params: { parse: paramsOf(ProjectParams) },
+  // A project is its repository's worktrees, or the one folder outside Git it
+  // is, as the rows the board draws from say; a path no tracked worktree is
+  // under is no project's, and its address draws the not-found page before the
+  // page mounts.
+  beforeLoad: ({ context, params }) =>
+    noPageUnless({
+      client: context.queryClient,
+      read: reads.worktrees(),
+      named: (rows) => hasMembers({ filter: { kind: 'project', path: params.key }, rows }),
+    }),
 })

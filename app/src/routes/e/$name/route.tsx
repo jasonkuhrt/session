@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { Schema } from 'effect'
 
-import { paramsOf } from '../../../lib/base'
+import { noPageUnless, paramsOf } from '../../../lib/base'
+import { hasMembers } from '../../../lib/filter'
+import { reads } from '../../../lib/reads'
 
 /**
  * Every page of an epic's board is under this route, which decodes the name
@@ -13,4 +15,13 @@ const EpicParams = Schema.Struct({ name: Schema.NonEmptyString })
 
 export const Route = createFileRoute('/e/$name')({
   params: { parse: paramsOf(EpicParams) },
+  // An epic is the linked worktrees whose sessions name it, as the rows the
+  // board draws from say; a name no tracked worktree's session names is no
+  // epic's, and its address draws the not-found page before the page mounts.
+  beforeLoad: ({ context, params }) =>
+    noPageUnless({
+      client: context.queryClient,
+      read: reads.worktrees(),
+      named: (rows) => hasMembers({ filter: { kind: 'epic', name: params.name }, rows }),
+    }),
 })

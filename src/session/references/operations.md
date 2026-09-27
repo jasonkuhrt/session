@@ -157,6 +157,11 @@ Session-Done: BE-12
 Session-Done: BE-13, BE-14
 ```
 
+A value is ids separated by commas or spaces, and a line is filed whole or not
+at all: when any word on it names no item of the session, open or archived,
+nothing on it is filed, so `Session-Done: SES-1, SES-99` with no item SES-99
+files neither SES-1 nor SES-99, and the report names the line and SES-99.
+
 The daemon watches every tracked worktree's reflog, so it sees the commit the
 moment it is made, and the engine files each named item as done from whatever
 stage it is in: the commit is the evidence of completion, so the route through
@@ -180,14 +185,17 @@ note; added again, its archived record does.
 A trailer that cannot be acted on is reported on that worktree's board, in one
 sentence per commit, and as a count beside its name on the index:
 
-- the id is not in the session, open or archived;
+- a word on a `Session-Done:` line, in the trailers or outside them, names no
+  item in the session, open or archived, as prose written after an id does, so
+  nothing on the line was filed; the report names the line and those words;
+- a `Session-Done:` line names nothing at all;
 - the `Session-Done:` line is outside the last paragraph, so Git does not read
   it as a trailer and nothing was closed;
 - filing the item away failed, for instance because a record of that name
   already exists that day; this is tried again whenever the session changes
   outside `context/`, `ledger/` and `meta/`, or the branch changes.
 
-The fix for the first two is to amend the commit. A report lasts while the
+The fix for the first three is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
 amended without rewriting published history.
 

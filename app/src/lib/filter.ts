@@ -79,14 +79,21 @@ const projectName = ({ rows, path, now }: { readonly rows: readonly WorktreeSumm
   dashboardOf({ rows, now }).sections.find((section): section is ProjectSection => section.kind === 'project' && section.key === path)
     ?.name ?? path
 
+/**
+ * Whether any tracked worktree is in the union a filter names: what makes its
+ * address a page, which the route asks before the page mounts.
+ */
+export const hasMembers = ({ filter, rows }: { readonly filter: UnionFilter; readonly rows: readonly WorktreeSummary[] }) =>
+  rows.some((row) => inUnion(filter, row))
+
 /** The union a filter names among these rows, or null when no tracked worktree is in it, which is an address nothing serves. */
 export function unionOf({ filter, rows, now }: {
   readonly filter: UnionFilter
   readonly rows: readonly WorktreeSummary[]
   readonly now: number
 }): Union | null {
+  if (!hasMembers({ filter, rows })) return null
   const members = rows.filter((row) => inUnion(filter, row))
-  if (members.length === 0) return null
   return filter.kind === 'epic'
     ? { name: filter.name, rows: members.toSorted(epicOrder) }
     : { name: projectName({ rows, path: filter.path, now }), rows: members.toSorted(projectOrder) }
