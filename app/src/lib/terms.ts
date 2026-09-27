@@ -15,14 +15,12 @@ import { visit } from 'unist-util-visit'
  * is written, and a document without such a table reads as it always has.
  */
 
-/** A term a document defines: its meaning, the id its row is given, and where that row starts. */
+/** A term a document defines: its meaning, and the id its row is given. */
 type Definition = {
   /** The Meaning cell's own Markdown, as the document writes it between the cell's pipes. */
   readonly meaning: string
   /** The id of the term's row, which a reference's card links to. */
   readonly id: string
-  /** Where the term's row starts in the document, which says which part of the document holds it. */
-  readonly at: number
 }
 
 /** The terms one document defines, by term, and the pattern a reference to one of them matches. */
@@ -136,12 +134,11 @@ export const glossaryOf = (document: string): Glossary => {
   if (!document.includes('Meaning')) return noTerms
   const terms = new Map<string, Definition>()
   const ids = new Set<string>()
-  for (const { row, term, meaning } of termRows(parser.parse(document))) {
-    const at = row.position?.start.offset
-    if (term === '' || terms.has(term) || at === undefined) continue
+  for (const { term, meaning } of termRows(parser.parse(document))) {
+    if (term === '' || terms.has(term)) continue
     const id = idOf(term, ids)
     ids.add(id)
-    terms.set(term, { meaning: sourceOf(document, meaning), id, at })
+    terms.set(term, { meaning: sourceOf(document, meaning), id })
   }
   return terms.size === 0 ? noTerms : { terms, reference: referenceTo([...terms.keys()]) }
 }
@@ -162,24 +159,23 @@ const definitionMark = (term: string): Text => ({
 
 /**
  * The remark plugin that draws a document's terms. It marks each reference
- * with the term it names, draws each Term cell as its term, and gives each
- * term's row its id. The glossary is the whole document's, from `glossaryOf`,
- * and the tree may be only the part of the document whose text starts at
- * `offset`, as what an item holds after its Evidence heading is: a row is
- * given its term's id when it is the row the glossary names, found where it
- * starts in the document. A reference inside a link stays as it is written,
- * since the link is what the reader acts on there.
+ * with the term it names, draws each Term cell as its term, and gives the
+ * first row of each term its id, the row the glossary took the term from. The
+ * glossary is the document's, from `glossaryOf`, which the card reads too. A
+ * reference inside a link stays as it is written, since the link is what the
+ * reader acts on there.
  */
-export function remarkTerms({ glossary, offset }: { readonly glossary: Glossary; readonly offset: number }) {
+export function remarkTerms({ glossary }: { readonly glossary: Glossary }) {
   return (tree: Root) => {
     const { terms, reference } = glossary
     if (reference === null) return
     const rows = termRows(tree).filter(({ term }) => terms.has(term))
+    const given = new Set<string>()
     for (const { row, term } of rows) {
-      const definition = terms.get(term)
-      const at = row.position?.start.offset
-      if (definition === undefined || at === undefined || offset + at !== definition.at) continue
-      row.data = { ...row.data, hProperties: { ...row.data?.hProperties, id: definition.id } }
+      const id = terms.get(term)?.id
+      if (id === undefined || given.has(term)) continue
+      given.add(term)
+      row.data = { ...row.data, hProperties: { ...row.data?.hProperties, id } }
     }
     findAndReplace(
       tree,
