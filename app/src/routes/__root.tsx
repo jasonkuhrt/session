@@ -3,10 +3,10 @@ import '@fontsource-variable/geist'
 import '../styles.css'
 
 import type { QueryClient } from '@tanstack/react-query'
-import { ClientOnly, createRootRouteWithContext, HeadContent, Link, Outlet, Scripts } from '@tanstack/react-router'
+import { ClientOnly, createRootRouteWithContext, HeadContent, Outlet, Scripts } from '@tanstack/react-router'
 import type * as React from 'react'
 
-import { toIndex } from '../lib/base'
+import { NoPage } from '../components/no-page'
 
 /** The board's mark on its tab. */
 const icon =
@@ -59,17 +59,5 @@ function Page() {
     <ClientOnly>
       <Outlet />
     </ClientOnly>
-  )
-}
-
-/** An address no page of the board is at, and the way back to one. */
-function NoPage() {
-  return (
-    <main className="p-6">
-      <p className="text-sm text-muted-foreground">
-        No board page is at this address.{' '}
-        <Link {...toIndex} className="underline underline-offset-4">All projects</Link>
-      </p>
-    </main>
   )
 }

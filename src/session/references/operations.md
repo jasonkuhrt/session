@@ -672,18 +672,19 @@ its Git directory being the repository's own rather than by where Git lists it:
 once the daemon tracks it, which `session open` in it does, it heads the
 repository as its row, under its own name, with its Git directory in the tip of
 the mark before that name. A folder outside Git is headed by its name, marked
-Outside Git. A section carries its head's name, and two sections whose heads
-would carry the same name carry each the name of the folder what its head names
-is in before it, as a linked worktree is named whose folder shares its main
-worktree's name. Below its head a section
-holds the project's cards: a card per epic whose worktrees all belong to it,
-headed by the epic's name, how many worktrees are in it and an icon that renames
-it, with its worktrees inside, and a card of its own for each of its worktrees
-in no epic. An epic whose worktrees belong to more than one project is drawn
-once, in a section of its own, Across projects, since it is the one thing higher
-than a project, and a project whose worktrees are all in such epics is its head
-alone. So every worktree the index lists is drawn once: as a head, in an epic's
-card, or as a card of its own.
+Outside Git. Every head carries a book, a repository's mark, after its name,
+which opens the project's board, below. A section carries its head's name, and
+two sections whose heads would carry the same name carry each the name of the
+folder what its head names is in before it, as a linked worktree is named whose
+folder shares its main worktree's name. Below its head a section holds the
+project's cards: a card per epic whose worktrees all belong to it, headed by
+the epic's name, which opens the epic's board, below, how many worktrees are in
+it and an icon that renames it, with its worktrees inside, and a card of its
+own for each of its worktrees in no epic. An epic whose worktrees belong to
+more than one project is drawn once, in a section of its own, Across projects,
+since it is the one thing higher than a project, and a project whose worktrees
+are all in such epics is its head alone. So every worktree the index lists is
+drawn once: as a head, in an epic's card, or as a card of its own.
 
 The sections whose main worktree was placed by hand come first, in the order of
 their ranks, and keep their places when they go quiet, dim but not last. The
@@ -709,7 +710,7 @@ above it; elsewhere each starts at the top of its row. No script lays them out.
 A worktree is two lines wherever it is drawn, beside the glyph of what its
 session holds at its top left: a folder and its name, a terminal icon and a Zed
 icon, and a pill per live agent, then a branch mark and its branch and the pull
-request gh reports for it. The marks are the worktree picker's, a folder, a
+request gh reports for it. The marks are the board picker's, a folder, a
 branch, and a commit in place of the branch for a detached HEAD, so a name and a
 branch are told apart wherever a worktree is drawn. The folder's tip says what
 the worktree is here: on the page while it has a session, at the head of its
@@ -823,20 +824,37 @@ keeps every rank unless it merges, as above.
 
 ## Use the board
 
-A board's header starts with "All worktrees", which links back to the index,
-then the worktree picker with the terminal and Zed icons beside it, since both
-open that worktree, then the branch's pull request, the Linear issues the
-worktree names, an icon for the session's rules when it has `RULES.md`, which
-opens it on the file page, and one icon apiece for its Ledger, Context and
-Archive pages; the settings icon is at the far end. The picker is
-where the worktree and its branch are named: the control shows the worktree's
-name over the branch checked out in it, and opens a list of every worktree the
-daemon serves, each as the same two lines, its name over its branch, cut short
-rather than wrapped. Each line is marked with what it is: a folder for the
-worktree, and a branch for the branch, or a commit when the worktree has a
-detached HEAD. Typing in the list narrows it by name or branch, and
-picking one opens that worktree's board. Until the index answers, and if it
-never does, the name and branch are plain text. The page icons carry no count
+A board shows the worktrees of a filter: one worktree's at `/w/<key>/`, an
+epic's at `/e/<name>/`, every worktree whose session names the epic, and a
+project's at `/p/<path>/`, every worktree of its repository, or the one folder
+outside Git that is a project of its own. A project goes by the path the index
+heads its section with, encoded segment by segment as a worktree's key is, so
+`/Users/me/projects/session` is `/p/Users/me/projects/session/`. Nothing about a
+filter is stored: every row `GET /api/worktrees` serves names its worktree's
+epic and repository, and an epic's or a project's board reads them there. The
+index opens each board: a worktree's name its own, an epic's name the epic's,
+and the book on a project's head the project's. The picker, below, switches
+between all three.
+
+A board's header starts with "All projects", which links back to the index,
+then the picker with the terminal and Zed icons beside it, since both open that
+worktree, then the branch's pull request, the Linear issues the worktree names,
+an icon for the session's rules when it has `RULES.md`, which opens it on the
+file page, and one icon apiece for its Ledger, Context and Archive pages; the
+settings icon is at the far end. The picker is where the board says what it
+shows: on a worktree's board the control shows the worktree's name over the
+branch checked out in it, and on an epic's or a project's the epic's or the
+project's name over how many worktrees are in it. It opens a list of every
+board there is, under a heading for each kind: every worktree the daemon serves,
+each as the same two lines, its name over its branch, then every epic and every
+project, each its name over its count of worktrees, every line cut short rather
+than wrapped. Each line is marked with what it is: a folder for a worktree, a
+branch for its branch, or a commit when the worktree has a detached HEAD, boxes
+for an epic and a book for a project. Typing in the list narrows it by a
+worktree's name or branch, an epic's name, or a project's name or path, and
+picking one opens that board. Until the index answers, and if it never does,
+the control is plain text, a worktree's name and branch from its own board's
+read. The page icons carry no count
 and no age; each names its page as its tip. A non-Git folder uses its own
 `.session` and has no branch, so it has no pull request and names no issue
 either.
@@ -1193,7 +1211,7 @@ the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
 
 The header's icons for those three listings open a page apiece, and a fourth
-page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All worktrees / worktree / page,
+page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All projects / worktree / page,
 with the settings at its far end, reads at the item page's width, and follows
 the files as the board does. The ledger page, `/w/<key>/ledger`, shows the
 entries newest first as cards: the title, the age with the exact moment on
@@ -1229,6 +1247,73 @@ places, which `check` reports as a duplicate ID.
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
 
+### An epic's board and a project's
+
+An epic's board and a project's are the union of the sessions of every worktree
+in view, and draw them as a worktree's board draws one. The header carries "All
+projects", the picker, which names the epic or the project over how many
+worktrees are in it, and one icon, for the ledger of every worktree in view.
+Nothing that belongs to one worktree alone is drawn there, neither its pull
+request and issues nor its agents, trailers, rules, context, archive, terminal
+or Zed, since every worktree's name in the lanes opens its own board, where they
+are. Each worktree stands in a row across the five lanes, under its name in
+each, so its work reads across its stages and a batch and a group stay whole,
+and each lane's heading counts every worktree's items. The rows stand in one
+order that no activity moves, since every write on the board is activity: a
+project's main worktree first, as it heads the project on the index, an epic's
+worktrees placed by hand first, in their ranks' order, and the rest by name.
+
+A card moves only among its own worktree's lanes, which are the only ones whose
+session a move could be written to. Held over another worktree's lanes, it goes
+back to where it was picked up, and released there it moves nothing, in either
+worktree: another worktree is no place it can be, so releasing there is
+releasing on nothing, as a drop on nothing is on the index. A lane of its own
+worktree that refuses it is a place it can be near, and over one it keeps the
+place it last had, as on a worktree's board. Dropped onto the middle of another
+card, or onto a group's heading, it acts in its own worktree alone, since
+neither takes a card of another worktree's, and only its own worktree's lanes
+draw its outline and its words. While it is held, every worktree in view is
+drawn as it was at pickup, and its move is written against its own worktree's
+revision then. Choosing, a group, a batch, the next batch's start and an item's
+completion each act within one worktree, and every write goes to that
+worktree's own board, the routes under `/w/<key>/api/`, carrying its own
+session's revision, so one made on a stale read is refused there alone: the
+board reads that session again and says it caught up. An item is known by its
+worktree and its id, so two worktrees can each file an item under one id and
+neither's card answers for the other's. A worktree whose key reaches another
+worktree's board, the later of two tracked under one name, is not served, and
+says so above the lanes; a session that could not be read says why there too.
+An address no tracked worktree is in, an epic nothing names or a path no
+worktree is under, draws the not-found page with its link to All projects
+before the page mounts, from the rows at hand and, when those do not name it,
+from the rows asked for again, so it draws no header, no lanes and no stream.
+
+The ledger of an epic's board or a project's, at `/e/<name>/ledger` and
+`/p/<path>/ledger`, merges the entries of every worktree in view, newest first
+by date and then by name, each named beside its age for the worktree it was
+written in, which that name opens. Each entry's Markdown links resolve in its
+own worktree's session, and a file a ledger leaves out is named above the cards
+with its worktree's name. A worktree whose items cannot be read still has its
+entries merged, as its own ledger page lists them, with the reason above the
+cards; only a worktree whose key reaches another's board is left out, and says
+so there. Its trail is All projects / the epic or the project /
+Ledger.
+
+A page of an epic or a project follows one stream, the root's, however many
+worktrees are in view, so it has one subscription and one hold. `changed` there
+is every change under any tracked worktree's `.session`, `context/` and
+`ledger/` included, fed by the same watch that feeds `worktrees` and settled as
+`worktrees` is, once the writes of every worktree have settled for half a
+second and at least every two seconds while they keep coming; on it the page
+reads every session or ledger in view again. It carries nothing but its name,
+and a stream that does not name it, as the index's does not, never carries it.
+`worktrees` says the rows changed, which is how a worktree joining or leaving
+the epic, or taken on or dropped, joins or leaves the view. A drag or a write
+holds both, and one read of the sessions and the rows catches up when it ends.
+A worktree's own board keeps its own stream, as before. The root answers every
+path under `/e/` and `/p/` with the app, dots included, since an epic's name and
+a folder's can carry one.
+
 ## Keys
 
 The index and every board answer to keys, and `?` says which: it opens a
@@ -1236,8 +1321,9 @@ dialog, the legend, that lists each key the page answers to at that moment
 with the sentence of what it does, and Escape closes it as it closes every
 dialog. The legend is read from the keys registered while it is open, the
 page's and the open dialog's, so a key the page cannot offer then is not in
-it. The pages under a board, an item's, the listings and a file's, answer to
-no keys, and `?` does nothing there.
+it. The pages under a board, an item's, the listings, an epic's or a
+project's ledger among them, and a file's, answer to no keys, and `?` does
+nothing there.
 
 The legend's sentences, word for word:
 
@@ -1261,7 +1347,10 @@ colour, and nothing is selected until a key selects something, so a page no
 key has touched is drawn as it always was. A board's cards stand in its
 lanes, and the index's worktrees in its sections, each read the way the page
 draws it: an item in a group in its place in the lane, and a section's head
-before its cards, an epic's worktrees in its card's order. `j` and `k` step
+before its cards, an epic's worktrees in its card's order. On an epic's or a
+project's board a lane is every worktree's part of it, one under another in
+the order the board stands the worktrees in, so `j` and `k` step from the
+last card of one worktree's part to the first of the next's. `j` and `k` step
 within a lane or a section, and `h` and `l` go to the nearest lane or section
 either side that holds anything, at the same place in it or its last. The
 first step selects the first card of the first lane or section that holds
@@ -1269,9 +1358,10 @@ one. On the index `j` and `k` go by the order the section draws its
 worktrees in, which in a section of several columns can be beside or above,
 and the left and right arrows are not bound there: the sections stand one
 above another, so no arrow says which way the next one is. A selection is
-kept by the item's id or the worktree's path, so it
-follows an item a bracket moves into another lane, and an item or a worktree
-that leaves the page takes the selection with it. A step brings the selected
+kept by the item's worktree and id or the worktree's path, so it follows an
+item a bracket moves into another lane, an item filed under one id in two
+worktrees is two cards, each selected alone, and an item or a worktree that
+leaves the page takes the selection with it. A step brings the selected
 card into view, and so does a bracket once its move has landed; a read that
 moves cards around never scrolls the page. A step that has nowhere
 further to go does nothing, and an arrow then scrolls the page as it always
@@ -1279,15 +1369,17 @@ did; `h` and `l` are listed only while two lanes or sections hold anything.
 
 Enter is listed while something is selected, and on the index only for a
 worktree the daemon serves. The brackets move the selected item through the
-same route the stage control on its page uses, one stage back or forward in
-the flow, and each is listed only while the rules let the item go there, the
-way the stage control draws a stage it cannot reach dim: from Triage there is
-no stage back, Queue and Execute are entered only by composing and starting a
-batch, and an Execute item leaves only by being completed. A bracket does
+same route the stage control on its page uses, its own worktree's on an
+epic's or a project's board, one stage back or forward in the flow, and each
+is listed only while the rules let the item go there, the way the stage
+control draws a stage it cannot reach dim: from Triage there is no stage back,
+Queue and Execute are entered only by composing and starting a batch, and an
+Execute item leaves only by being completed. A bracket does
 nothing while another write is under way, and a write the engine refuses
 reads as a failed drag does, in the daemon's words above the lanes. `t` is
 listed while `cmux` is on the daemon's PATH, as the terminal icon is drawn,
-and on the index only for a selected worktree; it presses that icon, on a
+on the index only for a selected worktree, and never on an epic's or a
+project's board, which draws no terminal; it presses that icon, on a
 board the header's and on the index the selected worktree's, so cmux's line
 shows beside the icon when it refuses. Each key's sentence is its control's
 tip where it presses one: the terminal icon's, and a card title's for Enter.
@@ -1320,11 +1412,14 @@ document loaded: each page's stream asks the daemon again when it opens, and
 a daemon started from other sources reloads the page. A board is known by
 the daemon's list of the boards it serves, asked again when the kept list
 does not name it, so a worktree taken on after the document loaded opens
-from the index. A move to another board, item or file mounts the page afresh, with
-nothing kept from the one before. The address bar shows each page's address,
-and Back, Forward and a reload return to it scrolled where it was left, once
-its reads have landed; a page reached by a link starts at the top. A middle
-click or a click with a modifier still opens a page in a tab of its own.
+from the index. An epic's board and a project's are known by the index's
+rows, asked again the same way, so an epic a drag on the index made a moment
+ago opens from it. A move to another board, item or file mounts the page
+afresh, with nothing kept from the one before. The address bar shows each
+page's address, and Back, Forward and a reload return to it scrolled where it
+was left, once its reads have landed; a page reached by a link starts at the
+top. A middle click or a click with a modifier still opens a page in a tab of
+its own.
 
 ## Agents on the board
 

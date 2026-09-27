@@ -6,7 +6,7 @@ import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { problemOf, worktreeOf } from './lib/api'
 import { archiveStateMeaning } from './lib/archive'
-import { toFile, useBoardName, useBoardPath } from './lib/base'
+import { toBoard, toFile, useBoardName, useBoardPath } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
 import { reads } from './lib/reads'
@@ -27,13 +27,15 @@ const columnMeaning = {
  */
 export function ArchivePage() {
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands and the archive's records are read together.
   const { value, error } = useFollowed({ board, read: reads.archive(board) })
   const [place, archive] = value ?? [null, null]
   return (
     <BoardPageFrame
       title={listingMeta.archive.label}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this archive belongs to."
       crumbs={[{ label: listingMeta.archive.label, meaning: listingMeta.archive.meaning }]}
       problem={error ?? problemOf(place)}

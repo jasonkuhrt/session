@@ -1,7 +1,7 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDraggable, useDroppable } from '@dnd-kit/react'
-import { Boxes, Pencil, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
@@ -9,15 +9,14 @@ import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { draggedId, movable, targetId } from '../lib/epics'
 import type { Marker } from '../lib/order'
-import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
+import { epicRowMeaning, looseMeaning, quietCardMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
 import { selectedMark, selectionRingInside } from '../lib/selection'
 import { cn } from '../lib/utils'
+import { EpicHeading } from './epic-heading'
 import { HeldWords } from './held-words'
 import { LandingLine, markedSide } from './landing-line'
-import { Explained, Tip, useTip } from './tip'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
+import { useTip } from './tip'
 import { Card } from './ui/card'
 import type { RowContext } from './worktree-row'
 import { cardClass, WorktreeRow } from './worktree-row'
@@ -105,54 +104,6 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
     >
       {side === null ? null : <LandingLine side={side} gap="row" />}
       <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} selected={context.selected === row.path} />
-    </div>
-  )
-}
-
-/**
- * An epic's heading, which is what holds the card: its mark, its name, how
- * many worktrees are in it, and, while `onRename` is given, a way to rename
- * it. `movable` says whether it can be held now.
- */
-function EpicHeading({ card, movable: canMove, onRename, ref }: {
-  card: EpicCardShape
-  movable: boolean
-  onRename?: ((card: EpicCardShape) => void) | undefined
-  ref?: React.Ref<HTMLDivElement>
-}) {
-  const tip = useTip()
-  return (
-    <div
-      ref={ref}
-      // A role of its own, so the drag library does not make the handle a
-      // button, whose content would stop being controls: it holds the rename.
-      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
-      role="group"
-      aria-roledescription="Draggable epic"
-      aria-label={`Drag the epic ${card.name}`}
-      className={cn('flex items-center gap-2 border-b px-3 py-2 outline-none', canMove && 'cursor-grab')}
-    >
-      <Boxes aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      <h2 className="min-w-0 text-sm font-medium wrap-anywhere">
-        <Explained meaning={epicMeaning(card.name)}>{card.name}</Explained>
-      </h2>
-      <Badge variant="secondary" title={tip(worktreeCountMeaning)}>{card.rows.length}</Badge>
-      {onRename === undefined ? null : (
-        <Tip
-          meaning="Rename this epic. A name another epic already has merges the two."
-          render={
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="ml-auto"
-              aria-label={`Rename the epic ${card.name}`}
-              onClick={() => onRename(card)}
-            />
-          }
-        >
-          <Pencil />
-        </Tip>
-      )}
     </div>
   )
 }

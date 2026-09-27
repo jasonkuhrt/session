@@ -730,14 +730,18 @@ const showsOnIndex = (event: FileSystem.WatchEvent): boolean =>
   !indexQuiet.has(event.path.split(/[\\/]/u)[0] ?? '');
 
 /**
- * A tracked worktree's session, watched once for both of its readers: its
- * boards follow every change, the pages under them included, and the index
- * the ones a row shows, which the daemon settles across every worktree before
- * the index reads its rows again.
+ * A tracked worktree's session, watched once for all of its readers: its
+ * boards follow every change, the pages under them included; the index the
+ * ones a row shows, which the daemon settles across every worktree before the
+ * index reads its rows again; and the pages that draw more than one
+ * worktree's session, an epic's or a project's board and its ledger, every
+ * change, settled across every worktree, since they read each session in view
+ * again.
  */
 const watchSession = (directory: string, readers: {
   readonly boards: SessionEventSource;
   readonly index: SessionEventSource;
+  readonly sessions: SessionEventSource;
 }) =>
   keepWatching(
     directory,
@@ -747,6 +751,7 @@ const watchSession = (directory: string, readers: {
         Stream.runForEach((event) =>
           Effect.sync(() => {
             readers.boards.changed();
+            readers.sessions.changed();
             if (showsOnIndex(event)) readers.index.changed();
           })
         ),
@@ -998,6 +1003,16 @@ export const runDaemon = async () => {
    */
   const sessionChanges = makeSessionEvents({ settle: indexSettleMilliseconds, ceiling: indexCeilingMilliseconds });
   sessionChanges.subscribe(() => worktreeEvents.changed());
+  /**
+   * Any change under any tracked worktree's session, for the pages that draw
+   * the sessions of more than one worktree: an epic's or a project's board and
+   * its ledger read every session in view again on it, as `changed` on the
+   * root's stream, so such a page follows one stream however many worktrees
+   * it draws. It settles as `worktrees` does, since such a page, like the
+   * index, reads every board in view on it, and only a stream that names it
+   * carries it.
+   */
+  const everySession = makeSessionEvents({ settle: indexSettleMilliseconds, ceiling: indexCeilingMilliseconds });
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */
   const pullRequestEvents = makeSessionEvents();
   /**
@@ -1285,7 +1300,7 @@ export const runDaemon = async () => {
       conflict,
       handler: undefined,
       events,
-      watcher: forkNode(watchSession(session.directory, { boards: events, index: sessionChanges })),
+      watcher: forkNode(watchSession(session.directory, { boards: events, index: sessionChanges, sessions: everySession })),
       loops: forkNode(worktreeLoops(session, {
         pass: Effect.promise(() => reconcile(path)),
         answeredRef: (ref) => answeredRef(path, ref),
@@ -1745,13 +1760,16 @@ export const runDaemon = async () => {
   };
 
   /**
-   * The index's stream. It subscribes as it is made, so an index that listens
-   * for pull requests hears every answer to the asks it starts.
+   * The root's stream: the index's events, and `changed` for every tracked
+   * session, which an epic's or a project's page follows. It subscribes as it
+   * is made, so an index that listens for pull requests hears every answer to
+   * the asks it starts.
    */
   const indexEvents = (url: URL) => {
     const named = namedChannels({
       url,
       channels: [
+        { name: 'changed', events: everySession },
         { name: 'agents', events: agentsEvents },
         { name: 'worktrees', events: worktreeEvents },
         { name: 'pull-requests', events: pullRequestEvents },

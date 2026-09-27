@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { House } from 'lucide-react'
+import type * as React from 'react'
 
 import type { DaemonCapabilities, PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
 import { toBoard } from '../lib/base'
@@ -57,15 +58,18 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * read as a name, or a `meta/rank` it cannot read as a rank, says why on it,
  * in the words `session check` gives.
  * `meaning` is what the mark before the name says the worktree is here, and
- * `name` the name it is drawn under, where a head needs more than its own.
+ * `name` the name it is drawn under, where a head needs more than its own. A
+ * head also opens its project's board, right after the name.
  * While `selected`, the keys act on this worktree: Enter opens its board and
  * `t` its terminal.
  */
-export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name, selected = false }: {
+export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name, project = null, selected = false }: {
   row: WorktreeSummary
   context: RowContext
   meaning?: string
   name?: string
+  /** The way to the board of the project this row heads; none for a row that heads nothing. */
+  project?: React.ReactNode
   selected?: boolean
 }) {
   return (
@@ -89,6 +93,7 @@ export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.
           </Explained>
           <WorktreeName row={row} name={name} selected={selected} />
         </span>
+        {project}
         <TrailerCount problems={row.trailerProblems} />
         {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" bound={selected} /> : null}
         {context.capabilities.zed ? <ZedAction path={row.path} name={row.name} size="icon-xs" /> : null}

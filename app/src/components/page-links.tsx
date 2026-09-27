@@ -3,8 +3,9 @@ import { Archive, FolderTree, Gavel, type LucideIcon, ScrollText } from 'lucide-
 
 import { rulesFile } from '../../contract'
 import type { Destination, Listing } from '../lib/base'
-import { toFile, toListing, useBoardName } from '../lib/base'
-import { listingMeta } from '../lib/listings'
+import { toEpicLedger, toFile, toListing, toProjectLedger } from '../lib/base'
+import type { Filter } from '../lib/filter'
+import { listingMeta, unionLedgerMeaning } from '../lib/listings'
 import { Tip } from './tip'
 import { Button } from './ui/button'
 
@@ -21,10 +22,20 @@ const rulesMeaning =
  * order an agent reads it: the rules, when the session has `RULES.md`, then
  * the ledger, `context/` and the archive. Each names its page on hover and
  * carries nothing else, no count and no age, because the lanes are the one
- * place that says what needs you.
+ * place that says what needs you. An epic's board and a project's carry the
+ * ledger of every worktree in view alone: the rest are each one session's,
+ * on its own board.
  */
-export function PageLinks({ rules }: { rules: boolean }) {
-  const name = useBoardName()
+export function PageLinks({ filter, rules }: { filter: Filter; rules: boolean }) {
+  if (filter.kind !== 'worktree') {
+    const ledger = filter.kind === 'epic' ? toEpicLedger(filter.name) : toProjectLedger(filter.path)
+    return (
+      <nav aria-label="The pages of every worktree in view" className="flex items-center gap-1">
+        <PageLink icon={icons.ledger} label={listingMeta.ledger.label} meaning={unionLedgerMeaning} to={ledger} />
+      </nav>
+    )
+  }
+  const { name } = filter
   return (
     <nav aria-label="The session’s pages" className="flex items-center gap-1">
       {rules ? <PageLink icon={Gavel} label="Rules" meaning={rulesMeaning} to={toFile({ name, path: rulesFile })} /> : null}

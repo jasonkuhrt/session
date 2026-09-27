@@ -128,10 +128,17 @@ const shellResponse = async ({ shell, method }: {
 };
 
 /**
+ * The pages under an epic's board and a project's: an epic's name and a
+ * folder's can carry a dot, so these are pages whatever their path holds.
+ */
+const unionPage = /^\/[ep]\//u;
+
+/**
  * What the root serves outside its API: a file of the build, and the shell
- * for a path without a dot, which is one of the app's pages. An API the root
- * does not have is an error, never the app's page, as it is under a board, so
- * the two answer an unknown API path alike. Nothing outside the build is served.
+ * for a path without a dot, which is one of the app's pages, and for any path
+ * under an epic's board or a project's. An API the root does not have is an
+ * error, never the app's page, as it is under a board, so the two answer an
+ * unknown API path alike. Nothing outside the build is served.
  */
 export const staticResponse = async ({ directory, shell, url, method }: {
   /** Where the build's files are, which is everything the root serves from disk. */
@@ -144,7 +151,7 @@ export const staticResponse = async ({ directory, shell, url, method }: {
   if (method !== 'GET' && method !== 'HEAD') return refuse({ error: 'Method not allowed.', status: 405 });
   if (url.pathname.startsWith('/api/')) return refuse({ error: 'Not found.', status: 404 });
   const requested = url.pathname.slice(1);
-  if (!requested.includes('.')) return await shellResponse({ shell, method });
+  if (!requested.includes('.') || unionPage.test(url.pathname)) return await shellResponse({ shell, method });
   const path = resolve(directory, requested);
   if (path !== directory && !path.startsWith(`${directory}/`)) return refuse({ error: 'Not found.', status: 404 });
   const candidate = file(path);

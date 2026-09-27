@@ -1,15 +1,24 @@
-import type { LedgerEntry } from '../contract'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import * as React from 'react'
+
+import type { LedgerEntry, WorktreeSummary } from '../contract'
 import { BoardPageFrame, ListingEmpty, ListingNotices, PageLoading } from './components/board-page'
 import { Markdown } from './components/markdown'
+import { NoPage } from './components/no-page'
 import { useTip } from './components/tip'
 import { Card, CardContent } from './components/ui/card'
+import { WorktreeMark } from './components/worktree-marks'
 import { problemOf, worktreeOf } from './lib/api'
-import { useBoardPath } from './lib/base'
+import { BoardScope, toBoard, useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
+import type { UnionFilter } from './lib/filter'
+import { boardOf, keyTaken, toFilter, unionOf } from './lib/filter'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
-import { listingMeta } from './lib/listings'
-import { reads } from './lib/reads'
+import { listingMeta, unionLedgerMeaning } from './lib/listings'
+import { reads, reread, sinceMount } from './lib/reads'
+import { useStream } from './lib/stream'
 
 /** What each key of an entry says, beside its value. */
 const keyMeaning = {
@@ -38,13 +47,15 @@ const keysOf = (entry: LedgerEntry) =>
 export function LedgerPage() {
   const now = useNow()
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands and the ledger's entries are read together, so the two never disagree.
   const { value, error } = useFollowed({ board, read: reads.ledger(board) })
   const [place, ledger] = value ?? [null, null]
   return (
     <BoardPageFrame
       title={listingMeta.ledger.label}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this ledger belongs to."
       crumbs={[{ label: listingMeta.ledger.label, meaning: listingMeta.ledger.meaning }]}
       problem={error ?? problemOf(place)}
@@ -70,17 +81,136 @@ export function LedgerPage() {
   )
 }
 
-/** One entry: what it says, when it was written, its body, and the rest of what it records. */
-function EntryCard({ entry, now }: { entry: LedgerEntry; now: number }) {
+const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
+
+/** One entry of a merged ledger, with the worktree whose ledger it is in. */
+type Merged = { readonly row: WorktreeSummary; readonly entry: LedgerEntry }
+
+/**
+ * Newest first by date, then by name, as each ledger is ordered, and entries
+ * that share both stand in the order the worktrees do.
+ */
+const newestFirst = (left: Merged, right: Merged) => {
+  if (left.entry.date !== right.entry.date) return left.entry.date < right.entry.date ? 1 : -1
+  if (left.entry.name === right.entry.name) return 0
+  return left.entry.name < right.entry.name ? -1 : 1
+}
+
+/**
+ * The ledger of an epic's board or a project's: the entries of every
+ * worktree in view, merged newest first, each dated and named for the
+ * worktree it was written in, whose board its name opens, and each read as
+ * that worktree's own ledger page reads it, its Markdown links resolved in its
+ * own session. A file one of them left out is named above the cards with its
+ * worktree's name. It follows the root's one stream, as the board does:
+ * `changed` there is every tracked session's, on which it reads every ledger
+ * in view again, and `worktrees` says who is in view. It draws only what it
+ * has read since it mounted, as the board does. An address no tracked
+ * worktree is in draws the not-found page once the rows have said so.
+ */
+export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
+  const now = useNow()
+  const client = useQueryClient()
+  const rowsRead = useQuery(reads.worktrees())
+  const rows = sinceMount(rowsRead)
+  const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
+  const listedRows = rows ?? []
+  const served = union?.rows.filter((row) => !keyTaken({ row, rows: listedRows })) ?? []
+  const ledgers = useQueries({ queries: served.map((row) => reads.ledger(boardOf(row))) })
+  const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
+  useStream({
+    board: '',
+    on: {
+      changed: () => Promise.all(served.map((row) => reread({ client, queryKey: reads.ledger(boardOf(row)).queryKey }))),
+      worktrees: readRows,
+    },
+  })
+
+  if (union === null) return <NoPage />
+
+  const listed = served.flatMap((row, index) => {
+    const listing = sinceMount(ledgers[index])?.[1]
+    return listing === undefined ? [] : [{ row, listing }]
+  })
+  const entries = listed.flatMap(({ row, listing }) => listing.entries.map((entry): Merged => ({ row, entry }))).toSorted(newestFirst)
+  const notices = listed.flatMap(({ row, listing }) => listing.notices.map((notice) => `${row.name}: ${notice}`))
+  const problems = [
+    ...(rowsRead.error === null ? [] : [messageOf(rowsRead.error, 'Could not load the worktrees')]),
+    ...(union?.rows ?? []).flatMap((row) => (keyTaken({ row, rows: listedRows }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
+    ...served.flatMap((row, index) => {
+      const read = ledgers[index]
+      const error = read?.error ?? null
+      // A worktree whose items cannot be read still has its ledger listed, as its own ledger page lists it, with the daemon's reason above the cards.
+      const problem = error === null ? problemOf(sinceMount(read)?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
+      return problem === null ? [] : [`${row.name}: ${problem}`]
+    }),
+  ]
+  // As the board does: loading until a first ledger lands, and a worktree that joins the view later appears once its own does.
+  const loading = !rowsRead.isFetchedAfterMount || (ledgers.length > 0 && ledgers.every((read) => !read.isFetchedAfterMount))
+  return (
+    <BoardPageFrame
+      title={listingMeta.ledger.label}
+      boardName={union?.name ?? null}
+      boardLink={toFilter(filter)}
+      boardMeaning="The board of the worktrees whose ledgers these are."
+      crumbs={[{ label: listingMeta.ledger.label, meaning: unionLedgerMeaning }]}
+      problem={problems.length === 0 ? null : problems.join(' ')}
+      ready={!loading}
+    >
+      {loading ? <PageLoading /> : (
+        <>
+          <ListingNotices notices={notices} />
+          {entries.length === 0
+            ? <ListingEmpty>No entries.</ListingEmpty>
+            : (
+              <ol className="space-y-4">
+                {entries.map(({ row, entry }) => (
+                  <li key={`${row.key}:${entry.path}`}>
+                    <BoardScope value={boardOf(row)}>
+                      <EntryCard entry={entry} now={now} worktree={row} />
+                    </BoardScope>
+                  </li>
+                ))}
+              </ol>
+            )}
+        </>
+      )}
+    </BoardPageFrame>
+  )
+}
+
+/**
+ * One entry: what it says, when it was written, its body, and the rest of what
+ * it records. In a merged ledger it also names the worktree it was written in,
+ * beside its age.
+ */
+function EntryCard({ entry, now, worktree }: { entry: LedgerEntry; now: number; worktree?: WorktreeSummary | undefined }) {
   const tip = useTip()
+  const age = (
+    <span className="shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(entry.date)}.`)}>
+      {relativeTime(entry.date, now)}
+    </span>
+  )
   return (
     <Card>
       <CardContent className="space-y-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-pretty text-lg leading-snug font-medium">{entry.title}</h2>
-          <span className="shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(entry.date)}.`)}>
-            {relativeTime(entry.date, now)}
-          </span>
+          {worktree === undefined ? age : (
+            <span className="flex shrink-0 items-center gap-3">
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <WorktreeMark />
+                <Link
+                  {...toBoard(worktree.name)}
+                  className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                  title={tip(`Written in ${worktree.name}: open its board.`)}
+                >
+                  {worktree.name}
+                </Link>
+              </span>
+              {age}
+            </span>
+          )}
         </div>
         {entry.body === '' ? null : <Markdown>{entry.body}</Markdown>}
         <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">

@@ -113,32 +113,6 @@
       }
     },
     {
-      "files": ["app/src/App.tsx"],
-      "rules": {
-        // These effects synchronize the board with its disk-backed external
-        // store. Their pending/dragging gate intentionally defers a pushed
-        // refetch as that lifecycle changes.
-        "react/exhaustive-effect-dependencies": "off",
-        "react/set-state-in-effect": "off"
-      }
-    },
-    {
-      "files": ["app/src/item-page.tsx"],
-      "rules": {
-        // The page mirrors one worktree's session, an external store; its
-        // first read can only land in an effect.
-        "react/set-state-in-effect": "off"
-      }
-    },
-    {
-      "files": ["app/src/worktree-index.tsx"],
-      "rules": {
-        // The index mirrors the daemon's worktree registry, an external
-        // store; its first read can only land in an effect.
-        "react/set-state-in-effect": "off"
-      }
-    },
-    {
       "files": ["app/src/routes/__root.tsx"],
       "rules": {
         // Every page's document loads the font and the stylesheet for their

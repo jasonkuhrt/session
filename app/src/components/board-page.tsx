@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { type Destination, toBoard, toIndex, useBoardName } from '../lib/base'
+import { type Destination, toIndex } from '../lib/base'
+import { indexMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
 import { ScrollRestored } from './scroll-restored'
 import { SettingsMenu } from './settings-menu'
@@ -45,16 +46,22 @@ export type Crumb = {
 /**
  * A page under a board: the trail that places it, what went wrong reading it,
  * and the reading column its content fills. The item page and the session's
- * listings and files share it, so every page under a board is entered and left
- * the same way. The page is the container its content measures the window
- * by, which is what lets a code block in the column run the window's width
- * without counting a scroll bar in it.
+ * listings and files share it, and so does the ledger of an epic or a
+ * project, so every page under a board is entered and left the same way. The
+ * page is the container its content measures the window by, which is what
+ * lets a code block in the column run the window's width without counting a
+ * scroll bar in it.
  */
-export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem, notice = null, ready, children }: {
+export function BoardPageFrame({ title, boardName, boardLink, boardMeaning, crumbs, problem, notice = null, ready, children }: {
   /** What the page is, first in the tab's name. */
   title: string
-  /** The worktree's name, once the session has been read. */
-  worktree: string | null
+  /**
+   * The name of the board the page is under: its worktree's, once the session
+   * has been read, or its epic's or its project's, once the rows have been.
+   */
+  boardName: string | null
+  /** Where that board is: its worktree's board, or its epic's or its project's. */
+  boardLink: Destination
   /** What the board step of the trail means from this page. */
   boardMeaning: string
   crumbs: readonly Crumb[]
@@ -71,8 +78,8 @@ export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem,
       <div className="@container min-h-dvh bg-background text-foreground">
         <ScrollRestored ready={ready} />
         {/* One tab per page, so a row of them is readable. React hoists this into the head. */}
-        <title>{worktree === null ? `${title} · Session` : `${title} · ${worktree} · Session`}</title>
-        <PageTrail worktree={worktree} boardMeaning={boardMeaning} crumbs={crumbs} />
+        <title>{boardName === null ? `${title} · Session` : `${title} · ${boardName} · Session`}</title>
+        <PageTrail boardName={boardName} boardLink={boardLink} boardMeaning={boardMeaning} crumbs={crumbs} />
         {problem === null ? null : (
           <Alert variant="destructive" className={`${readingColumn} mt-6`}>
             <AlertDescription>{problem}</AlertDescription>
@@ -90,20 +97,20 @@ export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem,
 /**
  * Where this page sits, and the way back out of it.
  *
- * A page is one level inside a worktree's board, which is one level inside
- * every worktree the daemon tracks, and the trail is that sentence: each step
- * names the place it goes to, and the last one names where you are. It is the
- * page's only navigation, so it sits where a window's navigation sits rather
- * than inside the reading column.
+ * A page is one level inside a board, a worktree's, an epic's or a project's,
+ * which is one level inside every project the daemon tracks, and the trail is
+ * that sentence: each step names the place it goes to, and the last one names
+ * where you are. It is the page's only navigation, so it sits where a
+ * window's navigation sits rather than inside the reading column.
  */
-function PageTrail({ worktree, boardMeaning, crumbs }: {
-  worktree: string | null
+function PageTrail({ boardName, boardLink, boardMeaning, crumbs }: {
+  boardName: string | null
+  boardLink: Destination
   boardMeaning: string
   crumbs: readonly Crumb[]
 }) {
   const tip = useTip()
-  const name = useBoardName()
-  const board = worktree ?? 'Board'
+  const board = boardName ?? 'Board'
   // A step is known by the steps that lead to it, so two steps with one name,
   // such as a path's `a/a`, are still two.
   const steps = crumbs.map((crumb, position) => ({
@@ -120,17 +127,17 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
               render={
                 <Link
                   {...toIndex}
-                  aria-label="All worktrees"
-                  title={tip('Every worktree the daemon is tracking.')}
+                  aria-label="All projects"
+                  title={tip(indexMeaning)}
                 />
               }
             >
-              All worktrees
+              All projects
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink render={<Link {...toBoard(name)} aria-label={board} title={tip(boardMeaning)} />}>
+            <BreadcrumbLink render={<Link {...boardLink} aria-label={board} title={tip(boardMeaning)} />}>
               {board}
             </BreadcrumbLink>
           </BreadcrumbItem>

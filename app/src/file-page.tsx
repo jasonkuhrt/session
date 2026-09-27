@@ -6,7 +6,7 @@ import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { useTip } from './components/tip'
 import { ApiError, problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { absoluteHref, isMarkdownPath, toListing, rawFileHref, useBoardName, useBoardPath } from './lib/base'
+import { absoluteHref, isMarkdownPath, rawFileHref, toBoard, toListing, useBoardName, useBoardPath } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
 import { openOnceOnClick } from './lib/open-once'
@@ -73,7 +73,7 @@ function withFrontmatterShown(text: string) {
  */
 export function FilePage({ path }: { path: string }) {
   const board = useBoardPath()
-  const boardName = useBoardName()
+  const worktree = useBoardName()
   const markdown = isMarkdownPath(path)
   // Only a Markdown file is read here; any other file is offered as it is on disk.
   const { value, error } = useFollowed({
@@ -89,9 +89,10 @@ export function FilePage({ path }: { path: string }) {
   return (
     <BoardPageFrame
       title={name}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
+      boardLink={toBoard(worktree)}
       boardMeaning="The board of the session this file belongs to."
-      crumbs={crumbsOf(boardName, path)}
+      crumbs={crumbsOf(worktree, path)}
       problem={error ?? problemOf(place)}
       ready={value !== null || error !== null}
     >

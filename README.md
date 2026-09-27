@@ -50,36 +50,36 @@ epic with its worktrees inside and a card of its own for each worktree in none.
 A repository is headed by its main worktree, marked with a house and under its
 own name; when that has no session, by its name and branch as Git lists them,
 marked Not tracked, so its worktrees still have a home; and when Git lists the
-repository by its Git directory, by that directory's name, marked Git
-directory: always for a bare repository, and for a submodule or a separate Git
-directory only while the daemon does not track its main worktree. A folder
-outside Git is a project of its own, headed by its name, marked Outside Git. An
-epic whose worktrees belong to more than one project is drawn once, in a section
-of its own, Across projects. A project whose main worktree the daemon tracks is
-dragged by its head to place it in the stack, and a worktree within its epic's
-card to place it there; the ones placed stand first, in the order they were
-placed in, and keep their places when they go quiet. The rest, sections and the
-cards in each alike, stand in one order: the ones with a live agent first, then
-by their latest activity, and one with nothing live and nothing in five days
-dim and last, a project counting every worktree of it wherever it is drawn.
-A worktree is two lines, marked as the worktree picker marks them: a folder and
-its name with the agents live in it, over a branch and its branch, or a commit
-for a detached HEAD, and the pull request gh reports for it. At its top left a
-glyph shows how many items each stage holds, every glyph measured against the
-fewest and the most any stage on the page holds, so a height means the same on
-every card. Drag a worktree onto an epic to join it, onto a worktree in no epic
-to make an epic of the two, from any project, onto the `+` that appears after
-its project's cards while it is held to make an epic of it alone, or out of its
-epic onto empty space to leave it and go back to its project; `session join
-"<epic>"` and `session leave` do the same from a terminal, and `session order`
-places a project or a worktree as a drag does. Each board sits under
-`/w/<worktree name>/`. Activity is when the worktree last did anything: a Claude
-Code session's status change, a Codex thread's update, or an item file written.
-The index has no refresh button and needs none: any command that scaffolds a
-session registers it with a running daemon, a change to a session's items or
-epic reaches it as it is written, and a worktree whose `.session` goes away
-drops off the index by itself. The daemon also finds the other worktrees of the
-same repository that already have a `.session`.
+repository by its Git directory, by that directory's name, marked Git directory:
+always for a bare repository, and for a submodule or a separate Git directory
+only while the daemon does not track its main worktree. A folder outside Git is
+a project of its own, headed by its name, marked Outside Git. An epic whose
+worktrees belong to more than one project is drawn once, in a section of its
+own, Across projects. A project whose main worktree the daemon tracks is dragged
+by its head to place it in the stack, and a worktree within its epic's card to
+place it there; the ones placed stand first, in the order they were placed in,
+and keep their places when they go quiet. The rest, sections and the cards in
+each alike, stand in one order: the ones with a live agent first, then by their
+latest activity, and one with nothing live and nothing in five days dim and
+last, a project counting every worktree of it wherever it is drawn. A worktree
+is two lines, marked as the board's picker marks them: a folder and its name
+with the agents live in it, over a branch and its branch, or a commit for a
+detached HEAD, and the pull request gh reports for it. At its top left a glyph
+shows how many items each stage holds, every glyph measured against the fewest
+and the most any stage on the page holds, so a height means the same on every
+card. Drag a worktree onto an epic to join it, onto a worktree in no epic to
+make an epic of the two, from any project, onto the `+` that appears after its
+project's cards while it is held to make an epic of it alone, or out of its epic
+onto empty space to leave it and go back to its project; `session join "<epic>"`
+and `session leave` do the same from a terminal, and `session order` places a
+project or a worktree as a drag does. Each board sits under `/w/<worktree
+name>/`. Activity is when the worktree last did anything: a Claude Code
+session's status change, a Codex thread's update, or an item file written. The
+index has no refresh button and needs none: any command that scaffolds a session
+registers it with a running daemon, a change to a session's items or epic
+reaches it as it is written, and a worktree whose `.session` goes away drops off
+the index by itself. The daemon also finds the other worktrees of the same
+repository that already have a `.session`.
 
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
@@ -96,25 +96,30 @@ default. When the alias cannot be used, `open` prints the daemon's own port and
 says in one line why that is the address, so a proxy that has stopped is never
 mistaken for one that is working. The port stays reachable either way.
 
-A board reads that worktree's five stage directories and shows a Kanban board.
-Each card is a link to its item's own page at `/w/<worktree name>/item/<ID>`,
-which reads the Markdown at a reading width, with code blocks running the
-window's full width, and carries the same workflow actions, so a long item is a
-page you can link someone to rather than a panel. The page stays with its item
-when it is finished or set aside, and shows it as archived.
-The board is a viewer with workflow actions: move an item, compose a batch,
-start the queued batch, complete an item. It follows the files as they
-change, over a stream the daemon pushes, and pauses while a card is being
-dragged. Every mutation checks the revision, so a stale tab cannot overwrite a
-later edit on disk.
+A worktree's board, at `/w/<worktree name>/`, reads that worktree's five stage
+directories and shows a Kanban board; an epic's, at `/e/<name>/`, and a
+project's, at `/p/<path>/`, draw every worktree in view in the same lanes, each
+worktree in a row under its name, which opens its own board. It reads that
+worktree's five stage directories and shows a Kanban board. Each card is a link
+to its item's own page at `/w/<worktree name>/item/<ID>`, which reads the
+Markdown at a reading width, with code blocks running the window's full width,
+and carries the same workflow actions, so a long item is a page you can link
+someone to rather than a panel. The page stays with its item when it is finished
+or set aside, and shows it as archived. The board is a viewer with workflow
+actions: move an item, compose a batch, start the queued batch, complete an
+item. It follows the files as they change, over a stream the daemon pushes, and
+pauses while a card is being dragged. Every mutation checks the revision, so a
+stale tab cannot overwrite a later edit on disk.
 
-The board's header starts with "All worktrees" and the worktree picker, which
-shows the worktree's name over the branch checked out in it, each line marked
-with an icon for what it is, and switches to any other worktree's board. The
-gear at the top right of every page holds the board's own settings, kept in this
-browser. Tips, off by default, makes every word and control say what it means
-when it is hovered or focused. `?` on the index or a board lists the keys it
-answers to.
+The board's header starts with "All projects" and the picker, which names the
+worktree over the branch checked out in it, or an epic or a project over how
+many worktrees are in it, each line marked with an icon for what it is, and
+switches to any worktree's, epic's or project's board, which shows the
+worktree's name over the branch checked out in it, each line marked with an icon
+for what it is, and switches to any other worktree's board. The gear at the top
+right of every page holds the board's own settings, kept in this browser. Tips,
+off by default, makes every word and control say what it means when it is
+hovered or focused. `?` on the index or a board lists the keys it answers to.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules
@@ -254,21 +259,24 @@ the document: a link or a key that opens a page goes through the router, the
 page that leaves closes its stream and its dialogs, and Back returns to where
 the page was scrolled. Every read is a TanStack Query query, read when its page
 mounts and, where its answer can change, again on the event that names it; a
-board's picker list is read once, and what the daemon says about itself when a
-page mounts and when a stream comes back, a changed `sourceStamp` reloading the
-page, drag and all. A board's page reads that description before it mounts
-instead, since it names the boards the daemon serves, and an address whose key
-it does not name draws the not-found page and reads nothing else. On the board
-and the index a drag or a write holds the events it names until it ends; the
-item page's writes hold nothing. `bun run build` prerenders one shell and writes
-it, with the one script and the one stylesheet it names, into `app/dist/client`,
-which the daemon serves; no Start server code runs in the daemon. It renders in
-its dark theme, which is Tokyo Night's night variant, defined in
-`app/src/styles.css`. Keep that theme and the stock component appearance. Card
-placement uses the native behavior of the established sortable library. Keep
-custom code limited to the board, Markdown workflow, and file boundary. Do not
-add separate mobile behavior, accessibility work, or concurrent-edit
-coordination unless Jason changes this contract.
+worktree board's picker list is read once, and an epic's or a project's board
+reads its rows again on `worktrees`, since they are its membership, and what the
+daemon says about itself when a page mounts and when a stream comes back, a
+changed `sourceStamp` reloading the page, drag and all. A board's page reads
+that description before it mounts instead, since it names the boards the daemon
+serves, and an address whose key it does not name draws the not-found page and
+reads nothing else. An epic's or a project's page reads the index's rows the
+same way, and a name or path no tracked worktree is in draws the not-found page.
+On the board and the index a drag or a write holds the events it names until it
+ends; the item page's writes hold nothing. `bun run build` prerenders one shell
+and writes it, with the one script and the one stylesheet it names, into
+`app/dist/client`, which the daemon serves; no Start server code runs in the
+daemon. It renders in its dark theme, which is Tokyo Night's night variant,
+defined in `app/src/styles.css`. Keep that theme and the stock component
+appearance. Card placement uses the native behavior of the established sortable
+library. Keep custom code limited to the board, Markdown workflow, and file
+boundary. Do not add separate mobile behavior, accessibility work, or
+concurrent-edit coordination unless Jason changes this contract.
 
 Where data crosses a boundary, its shape is an Effect Schema, and the code's
 type for it is that schema's `Type`, never written by hand. This is an axiom,

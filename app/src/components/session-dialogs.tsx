@@ -18,21 +18,23 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 
 /**
- * What a board names: items chosen in one lane as a group; two cards as a
- * group, one dropped on the other in no group of their lane, `ids` and
- * `titles` the one dropped on first and the one dropped second; or Batch
- * items as a batch for Queue, either the ones chosen or the items of one
- * group there, in which case the group's name is where the name starts.
+ * What a board names, on the board of the worktree whose items they are:
+ * items chosen in one lane as a group; two cards as a group, one dropped on
+ * the other in no group of their lane, `ids` and `titles` the one dropped on
+ * first and the one dropped second; or Batch items as a batch for Queue,
+ * either the ones chosen or the items of one group there, in which case the
+ * group's name is where the name starts.
  */
 export type BoardNameRequest =
-  | { readonly kind: 'group'; readonly stage: Stage; readonly ids: readonly string[] }
+  | { readonly kind: 'group'; readonly board: string; readonly stage: Stage; readonly ids: readonly string[] }
   | {
     readonly kind: 'drop'
+    readonly board: string
     readonly stage: Stage
     readonly ids: readonly [string, string]
     readonly titles: readonly [string, string]
   }
-  | { readonly kind: 'batch'; readonly ids: readonly string[]; readonly group: string | null }
+  | { readonly kind: 'batch'; readonly board: string; readonly ids: readonly string[]; readonly group: string | null }
 
 /**
  * What the index names: a new epic, for two worktrees, one dropped onto the

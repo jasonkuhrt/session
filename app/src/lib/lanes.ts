@@ -48,11 +48,17 @@ export const laneItems = (lane: Lane): Item[] =>
 
 /**
  * The name dnd-kit knows a list of cards by: a lane's cards in no group share
- * one, and each group's cards have another. A group's name holds no `/`, so no
- * group's list can be named like a lane's.
+ * one, and each group's cards have another, each under the board of the
+ * worktree they are filed in, since the lanes of several worktrees stand side
+ * by side on an epic's board and a project's. A group's name holds no `/`, so
+ * no group's list can be named like a lane's, and a board's prefix is encoded
+ * and holds no space, so no list of one board can be named like another's.
  */
-export const listId = ({ stage, group }: { readonly stage: Stage; readonly group: string | null }) =>
-  group === null ? stage : `${stage}/${group}`
+export const listId = ({ board, stage, group }: { readonly board: string; readonly stage: Stage; readonly group: string | null }) =>
+  group === null ? `${board} ${stage}` : `${board} ${stage}/${group}`
+
+/** The name dnd-kit knows a card by: its worktree's board and its id, since two worktrees can each file one id, and a board's prefix holds no space. */
+export const cardId = ({ board, id }: { readonly board: string; readonly id: string }) => `${board} ${id}`
 
 /** A card where it is drawn: its lane, its group or null, its entry in the lane, and its place in its group. */
 type Located = {
@@ -113,9 +119,13 @@ export function placementOf({ lanes, id }: { readonly lanes: readonly Lane[]; re
 
 /**
  * A card being dragged, as the lanes draw it: the list it would land in, or
- * the card in no group it would make a group with, and the words it carries.
+ * the card in no group it would make a group with, and the words it carries,
+ * all within the lanes of the worktree it is filed in, since no other
+ * worktree's lanes are a place it can be.
  */
 export type Dragging = {
+  /** The board of the worktree the card is filed in: the only lanes that draw the drag. */
+  readonly board: string
   /** The card held. */
   readonly id: string
   /** Where it would land if it were dropped now, drawn there or not; null while it would make a group instead. */
@@ -128,11 +138,19 @@ export type Dragging = {
   readonly keyboard: boolean
 }
 
-/** What a card is told of a drag: whether a drop would make a group with it, and, for the held card, its words. */
-export const dragOf = ({ dragging, id }: { readonly dragging: Dragging | null; readonly id: string }) => ({
-  lands: dragging?.onto === id,
-  words: dragging?.id === id ? dragging.words : null,
-})
+/**
+ * What a card is told of a drag: whether a drop would make a group with it,
+ * and, for the held card, its words; nothing for a card of another worktree,
+ * which may carry the same id.
+ */
+export const dragOf = ({ dragging, board, id }: { readonly dragging: Dragging | null; readonly board: string; readonly id: string }) => {
+  const own = dragging?.board === board ? dragging : null
+  return { lands: own?.onto === id, words: own?.id === id ? own.words : null }
+}
+
+/** Where the held card would land in this worktree's lanes, if it is this worktree's; null otherwise. */
+export const landingIn = ({ dragging, board }: { readonly dragging: Dragging | null; readonly board: string }) =>
+  dragging?.board === board ? dragging.landing : null
 
 /** Where a card is drawn: its lane, and its group or none; null for a card the lanes do not draw. */
 export function placeOfCard({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }) {

@@ -1,49 +1,64 @@
 import type { QueryClient, QueryExecuteOptions, QueryKey } from '@tanstack/react-query'
 import { linkOptions, notFound, useParams } from '@tanstack/react-router'
 import { Option, Schema } from 'effect'
+import * as React from 'react'
 
 import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
 
 /**
- * The daemon serves the index at `/`, each board at `/w/<key>/`, and the
- * board's pages under it: one item at `item/<ID>`, the session's ledger,
- * context and archive at `ledger`, `context` and `archive`, and one file of
- * the session at `file/<path>`. The key is a worktree's name, encoded segment
- * by segment, and may hold more than one segment. A board's requests, its
- * Markdown links and its event stream hang off its prefix whichever of its
- * pages is open.
+ * The daemon serves the index at `/` and a board for each filter: a
+ * worktree's at `/w/<key>/`, an epic's at `/e/<name>/` and a project's at
+ * `/p/<path>/`. A worktree's board has its pages under it: one item at
+ * `item/<ID>`, the session's ledger, context and archive at `ledger`,
+ * `context` and `archive`, and one file of the session at `file/<path>`. An
+ * epic's board and a project's have one page under them, the ledger of every
+ * worktree in view. A worktree's key is its name and a project's its path,
+ * each encoded segment by segment, so either may hold more than one segment;
+ * an epic's name holds no slash. A worktree board's requests, its Markdown
+ * links and its event stream hang off its prefix whichever of its pages is
+ * open, and a part of a page that belongs to one worktree's board names its
+ * board through `BoardScope`.
  */
 
 /** The three listings a board serves beside its lanes, by the name of their page. */
 export type Listing = 'ledger' | 'context' | 'archive'
 
 /**
- * A board's address and the page under it. The key is everything before the
- * first segment that names a page, which is what the daemon's own longest-key
- * match resolves in every real name. A listing's page has no trailing slash,
- * because a board always has one: the daemon sends `/w/<key>` on to
- * `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of a worktree whose
- * name ends in a segment called `ledger`.
+ * The pages under a board whose key may hold a slash, after the key: a
+ * worktree's item, listings and file, and a project's ledger. The key is
+ * everything before the first segment that names a page, which is what the
+ * daemon's own longest-key match resolves in every real name. A listing's page
+ * has no trailing slash, because a board always has one: the daemon sends
+ * `/w/<key>` on to `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of
+ * a worktree whose name ends in a segment called `ledger`, and
+ * `/p/<path>/ledger/` the board of a project whose folder is called `ledger`.
  */
-const boardPage = /^\/w\/(.+?)\/(item\/[^/]+\/*|ledger|context|archive|file\/.+)$/u
+const keyedPages = {
+  w: /^\/w\/(.+?)\/(item\/[^/]+\/*|ledger|context|archive|file\/.+)$/u,
+  p: /^\/p\/(.+?)\/(ledger)$/u,
+} as const
+
+/** Which board an address is under, when its key may hold a slash: a worktree's, `w`, or a project's, `p`. */
+const keyedBoard = /^\/([pw])\//u
 
 /**
- * The address the browser shows, as the router matches it: a board's key
- * folded into one segment, each slash in it written `%2F`, because a route's
- * parameter is one segment. The router decodes the parameter to the
- * worktree's name. Any other address is matched as it is.
+ * The address the browser shows, as the router matches it: a worktree's or a
+ * project's key folded into one segment, each slash in it written `%2F`,
+ * because a route's parameter is one segment. The router decodes the
+ * parameter to the name or the path. Any other address is matched as it is.
  */
-export const foldBoardKey = (pathname: string): string => {
-  if (!pathname.startsWith('/w/')) return pathname
-  const page = boardPage.exec(pathname)
-  if (page !== null) return `/w/${page[1]!.replaceAll('/', '%2F')}/${page[2]!}`
-  const key = pathname.slice('/w/'.length).replace(/\/+$/u, '')
-  return key === '' ? pathname : `/w/${key.replaceAll('/', '%2F')}/`
+export const foldKey = (pathname: string): string => {
+  const board = keyedBoard.exec(pathname)?.[1]
+  if (board !== 'w' && board !== 'p') return pathname
+  const page = keyedPages[board].exec(pathname)
+  if (page !== null) return `/${board}/${page[1]!.replaceAll('/', '%2F')}/${page[2]!}`
+  const key = pathname.slice(`/${board}/`.length).replace(/\/+$/u, '')
+  return key === '' ? pathname : `/${board}/${key.replaceAll('/', '%2F')}/`
 }
 
 /** The address the router writes, as the browser shows it: the key's slashes unfolded again. */
-export const unfoldBoardKey = (pathname: string): string =>
-  pathname.replace(/^\/w\/([^/]+)/u, (_, key: string) => `/w/${key.replaceAll('%2F', '/')}`)
+export const unfoldKey = (pathname: string): string =>
+  pathname.replace(/^\/([pw])\/([^/]+)/u, (_, board: string, key: string) => `/${board}/${key.replaceAll('%2F', '/')}`)
 
 /**
  * A route's params as its schema decodes them, or false when they are not the
@@ -62,27 +77,30 @@ export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S)
  * name nothing there is. The read that says what an address may name is made
  * before the page mounts, and when its answer does not hold what this address
  * names, the root draws the not-found page and the page reads nothing, no
- * session and no stream. A board is gated on the daemon's description, which
- * names the boards it serves; a page drawn from the index's rows would be
- * gated on those. The answer is kept for the document, so the page that draws
- * the same read shows it rather than asking again. A page reached without a
- * document load can name what was taken on after the kept answer was read, so
- * an answer that does not hold the address is asked again now, by `again`,
- * before the address is called no page. A read that fails says nothing about
- * the address, and the page draws as it would without the gate.
+ * session and no stream. A worktree's board is gated on the daemon's
+ * description, which names the boards it serves, and an epic's board and a
+ * project's on the index's rows. An answer is kept as long as its read keeps
+ * it: the daemon's description for the document, so the board that draws it
+ * shows it rather than asking again, and the rows no longer than a page draws
+ * them, since a page draws only the rows it read since it mounted. A page
+ * reached without a document load can name what was taken on after the
+ * answer at hand was read, so an answer that does not hold the address is
+ * asked again now, by `again`, before the address is called no page. A read
+ * that fails says nothing about the address, and the page draws as it would
+ * without the gate.
  */
 export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ client, read, again, named }: {
   readonly client: QueryClient
   /** The read whose answer says what an address may name. */
   readonly read: QueryExecuteOptions<T, Error, T, T, K>
-  /** The same question asked now, for an address the kept answer does not hold. */
+  /** The same question asked now, for an address the answer at hand does not hold. */
   readonly again: QueryExecuteOptions<T, Error, T, T, L>
   /** Whether that answer holds what this address names. */
   readonly named: (answer: T) => boolean
 }): Promise<void> {
   let answer: T
   try {
-    answer = await client.query({ ...read, gcTime: Number.POSITIVE_INFINITY })
+    answer = await client.query(read)
     if (!named(answer)) answer = await client.query(again)
   } catch {
     return
@@ -94,27 +112,39 @@ export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ 
 export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`
 
 /**
- * The prefix of the board whose page is open, from the worktree's name the
- * address carries, or nothing on the index, which belongs to no board.
+ * The board a part of a page belongs to, where one page draws the worktrees
+ * of more than one board: an epic's or a project's board, and their ledger.
+ * Everything addressed under a worktree's board by its prefix, a Markdown link
+ * among them, reads its board here first.
+ */
+export const BoardScope = React.createContext<string | null>(null)
+
+/**
+ * The prefix of the worktree board a part of the page belongs to: its
+ * `BoardScope`, or else the board the address is under; nothing on the index
+ * and on an epic's or a project's page outside such a part, which belong to
+ * no one worktree's board.
  */
 export function useBoardPath() {
-  const { key } = useParams({ strict: false })
-  return key === undefined ? '' : boardPath(key)
+  const scoped = React.useContext(BoardScope)
+  const params = useParams({ from: '/w/$key', shouldThrow: false })
+  return scoped ?? (params === undefined ? '' : boardPath(params.key))
 }
 
 /**
  * The name of the worktree whose board the open page is under, as the address
  * carries it, for what is drawn only on a board's pages; the router refuses
- * the call anywhere else.
+ * the call anywhere else, so a part of an epic's or a project's board is
+ * given its worktree's name instead.
  */
 export const useBoardName = () => useParams({ from: '/w/$key' }).key
 
 /**
  * The board's pages as the router's destinations, so a link and a key that
- * opens a page go the same way: to the route, with the worktree's name and
- * the item or path as its parameters, which the route's schema encodes and
- * the router writes into the address the daemon serves, one segment each,
- * the file path's slashes kept.
+ * opens a page go the same way: to the route, with the worktree's name, the
+ * epic's or the project's path, and the item or path as its parameters, which
+ * the route's schema encodes and the router writes into the address the
+ * daemon serves, one segment each, the file path's slashes kept.
  * Following one moves within the document, as every move between the board's
  * pages does. A link to one is the current page's only when it goes to the
  * page that is open, never to the page it sits under.
@@ -147,6 +177,22 @@ export const toListing = ({ name, listing }: { readonly name: string; readonly l
 export const toFile = ({ name, path }: { readonly name: string; readonly path: string }) =>
   linkOptions({ to: '/w/$key/file/$', params: { key: name, _splat: path }, activeOptions: exact })
 
+/** An epic's board, by the epic's name. */
+export const toEpic = (name: string) =>
+  linkOptions({ to: '/e/$name/', params: { name }, activeOptions: exact })
+
+/** The ledger of every worktree of an epic. */
+export const toEpicLedger = (name: string) =>
+  linkOptions({ to: '/e/$name/ledger', params: { name }, activeOptions: exact })
+
+/** A project's board, by the path the index heads its section with. */
+export const toProject = (path: string) =>
+  linkOptions({ to: '/p/$key/', params: { key: path }, activeOptions: exact })
+
+/** The ledger of every worktree of a project. */
+export const toProjectLedger = (path: string) =>
+  linkOptions({ to: '/p/$key/ledger', params: { key: path }, activeOptions: exact })
+
 /** A page of the board a link can go to. */
 export type Destination =
   | typeof toIndex
@@ -154,6 +200,10 @@ export type Destination =
   | ReturnType<typeof toItem>
   | ReturnType<typeof toListing>
   | ReturnType<typeof toFile>
+  | ReturnType<typeof toEpic>
+  | ReturnType<typeof toEpicLedger>
+  | ReturnType<typeof toProject>
+  | ReturnType<typeof toProjectLedger>
 
 /** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
 const encodedPath = Schema.encodeSync(AddressPathSchema)

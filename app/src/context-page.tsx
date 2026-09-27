@@ -9,7 +9,7 @@ import { useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
 import { problemOf, worktreeOf } from './lib/api'
-import { absoluteHref, toFile, isMarkdownPath, rawFileHref, useBoardName, useBoardPath } from './lib/base'
+import { absoluteHref, isMarkdownPath, rawFileHref, toBoard, toFile, useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
@@ -60,6 +60,7 @@ function treeOf(entries: readonly ContextEntry[]): readonly Node[] {
 export function ContextPage() {
   const now = useNow()
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands, for its name and root, and `context/` for its entries, are read together.
   const { value, error } = useFollowed({ board, read: reads.context(board) })
   const [place, context] = value ?? [null, null]
@@ -77,7 +78,8 @@ export function ContextPage() {
   return (
     <BoardPageFrame
       title={listingMeta.context.label}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this context belongs to."
       crumbs={[{ label: listingMeta.context.label, meaning: listingMeta.context.meaning }]}
       problem={error ?? problemOf(place)}

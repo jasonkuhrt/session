@@ -1,8 +1,9 @@
 import * as React from 'react'
 
 import type { Session } from '../../contract'
+import { stageNames } from '../../contract'
 import type { Dashboard } from './dashboard'
-import { laneItems, lanesOf } from './lanes'
+import { cardId, laneItems, lanesOf } from './lanes'
 
 /**
  * The selection: the one card the keys act on, which the page rings. A page's
@@ -21,11 +22,20 @@ export type Step = 'next' | 'previous' | 'left' | 'right'
 type Columns = ReadonlyArray<ReadonlyArray<string>>
 
 /**
- * A board's columns: each lane's items, by id, in the order the lane draws
- * them, a group's items in its place; none until the session has been read.
+ * A board's columns: each lane's cards, by `cardId`, in the order the lane
+ * draws them, top to bottom, a group's items in its place and, on a board of
+ * several worktrees, each worktree's part of the lane under the one before;
+ * empty until a session has been read. A card is known by its worktree and
+ * its id, since two worktrees in view can file an item under one id.
  */
-export const boardColumns = (session: Session | null): string[][] =>
-  session === null ? [] : lanesOf(session.stages).map((lane) => laneItems(lane).map((item) => item.id))
+export const boardColumns = (parts: ReadonlyArray<{ readonly board: string; readonly session: Pick<Session, 'stages'> }>): string[][] =>
+  stageNames.map((stage) =>
+    parts.flatMap(({ board, session }) =>
+      lanesOf(session.stages)
+        .filter((lane) => lane.stage === stage)
+        .flatMap((lane) => laneItems(lane).map((item) => cardId({ board, id: item.id })))
+    )
+  )
 
 /**
  * The index's columns: each section's worktrees, by path, in the order it

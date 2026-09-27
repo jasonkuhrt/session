@@ -9,6 +9,9 @@ import type { SectionHead } from './dashboard'
  * placed by hand, which is what keeps it where it stands.
  */
 
+/** What the way back to the index says, from a board's header and every page's trail: where it goes, which is the stack of projects. */
+export const indexMeaning = 'The index: every project the daemon tracks, with its epics and its worktrees.'
+
 /** The order the cards in a section stand in. */
 const cardOrder = 'The cards with a live agent come first, then the newest activity.'
 
@@ -45,6 +48,16 @@ export const epicRowMeaning = ({ row, epic }: { readonly row: WorktreeSummary; r
 
 export const epicMeaning = (name: string) =>
   `An epic: the worktrees whose sessions name “${name}”, those placed by hand first, then the busiest. ${cardOrder} Drag this heading onto another epic to merge the two.`
+
+/** What an epic's name opens: its board. */
+export const epicBoardMeaning = (name: string) =>
+  `Open the board of “${name}”: the lanes of every worktree in it, each under its name.`
+
+/** What a project's head offers to open: the project's board, a repository's or a folder's outside Git. */
+export const projectBoardMeaning = ({ name, folder }: { readonly name: string; readonly folder: boolean }) =>
+  folder
+    ? `Open the board of ${name}, a folder outside Git that is a project of its own, under its name.`
+    : `Open the board of ${name}: the lanes of every worktree of this repository, each under its name, its main worktree first.`
 
 export const worktreeCountMeaning = 'How many worktrees are in this epic.'
 

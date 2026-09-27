@@ -213,16 +213,19 @@ and its file operations, read
 of work state. Do not recreate a per-task viewer, content module, or task
 database.
 
-A board's header shows the branch's pull request and the Linear issues that
-the branch and the pull request name, as chips carrying only what gh and linear
-answered, several issues sharing one chip that lists them, and the index carries
-each worktree's pull request chip on its row. Beside the worktree picker sit a
-terminal action that brings forward the worktree's cmux workspace or opens one,
-and a Zed action that brings forward the Zed window on that worktree or opens a
-new one, and beside the chips an icon for `RULES.md`, when the session has one,
-and one for each of the session's three pages. The chips and both actions open
-their target once, bringing back the tab, the workspace or the window already
-open rather than opening another.
+A worktree's board's header shows the branch's pull request and the Linear
+issues that the branch and the pull request name, as chips carrying only what gh
+and linear answered, several issues sharing one chip that lists them, and the
+index carries each worktree's pull request chip on its row. Beside the board's
+picker sit a terminal action that brings forward the worktree's cmux workspace
+or opens one, and a Zed action that brings forward the Zed window on that
+worktree or opens a new one, and beside the chips an icon for `RULES.md`, when
+the session has one, and one for each of the session's three pages. The chips
+and both actions open their target once, bringing back the tab, the workspace or
+the window already open rather than opening another. An epic's board and a
+project's carry the picker and one icon, for the ledger of every worktree in
+view, since the chips, the terminal, Zed and the session's pages each belong to
+one worktree.
 
 The pages sit beside the board, under its address `/w/<key>/`, where the key
 names the worktree; they are read-only views of the files and follow them as

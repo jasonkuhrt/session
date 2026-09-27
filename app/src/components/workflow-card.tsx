@@ -4,9 +4,9 @@ import { Check } from 'lucide-react'
 
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
-import { toItem, useBoardName } from '../lib/base'
+import { toItem } from '../lib/base'
 import { landing } from '../lib/drag'
-import { listId } from '../lib/lanes'
+import { cardId, listId } from '../lib/lanes'
 import { selectedMark, selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { moveAvailability } from '../lib/workflow'
@@ -18,30 +18,42 @@ import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
 import { Checkbox } from './ui/checkbox'
 
-/** Where a drop would put a card, as the board checks it against the rules for moving an item: a stage, and the group in it or none. */
-export type DropTarget = { readonly stage: Stage; readonly group: string | null }
+/**
+ * Where a drop would put a card, as the board checks it against the rules for
+ * moving an item: the board of the worktree whose lanes it is in, since a card
+ * moves only among its own worktree's, a stage, and the group in it or none.
+ */
+export type DropTarget = { readonly board: string; readonly stage: Stage; readonly group: string | null }
 
 /**
- * The lane whose cards are being chosen and what they will become, a group or
- * a batch; null while no lane is choosing. A card shows a way to choose it only
- * then, so nothing on a card asks for a choice nobody started.
+ * The lane whose cards are being chosen, on the board of the worktree they are
+ * filed in, and what they will become, a group or a batch; null while no lane
+ * is choosing. A card shows a way to choose it only then, so nothing on a card
+ * asks for a choice nobody started.
  */
-export type Choosing = { readonly stage: Stage; readonly purpose: 'group' | 'batch' } | null
+export type Choosing = { readonly board: string; readonly stage: Stage; readonly purpose: 'group' | 'batch' } | null
 
 /** What a card can do on the board, the same for every card in every lane. */
 export type CardActions = {
   readonly pending: boolean
   readonly choosing: Choosing
-  /** The items chosen while a lane is choosing. */
+  /** The items chosen while a lane is choosing, of the worktree whose lane it is. */
   readonly chosenIds: ReadonlySet<string>
-  /** The item the keys act on, ringed; null while none is. */
+  /**
+   * The card the keys act on, ringed, by its `cardId`, since two worktrees in
+   * view can file an item under one id; null while none is.
+   */
   readonly selectedId: string | null
   readonly accepts: (id: unknown, target: DropTarget) => boolean
   readonly onChosenChange: (id: string, chosen: boolean) => void
-  readonly onComplete: (item: Item) => void
-  /** Moves an item to another stage, as the item page's stage control does; resolves whether it moved. */
-  readonly onStage: (item: Item, to: Stage) => Promise<boolean>
+  readonly onComplete: (board: string, item: Item) => void
+  /** Moves an item to another stage of its own worktree's session, as the item page's stage control does; resolves whether it moved. */
+  readonly onStage: (board: string, item: Item, to: Stage) => Promise<boolean>
 }
+
+/** What a card may be chosen for: only the lane that is choosing, on its own worktree's board, offers its cards. */
+const purposeIn = ({ choosing, board, stage }: { readonly choosing: Choosing; readonly board: string; readonly stage: Stage }) =>
+  choosing?.board === board && choosing.stage === stage ? choosing.purpose : null
 
 /** What Enter does on the selected card, and what its title does when it is clicked. */
 const openSentence = 'Open this item’s page.'
@@ -62,22 +74,23 @@ const stageBeside = ({ item, stage, by }: { readonly item: Item; readonly stage:
  * does nothing while another write is under way, and once its move has landed
  * brings the item into view in its new lane.
  */
-function useCardKeys({ item, stage, selected, pending, onStage }: {
+function useCardKeys({ board, worktree, item, stage, selected, pending, onStage }: {
+  readonly board: string
+  readonly worktree: string
   readonly item: Item
   readonly stage: Stage
   readonly selected: boolean
   readonly pending: boolean
-  readonly onStage: (item: Item, to: Stage) => Promise<boolean>
+  readonly onStage: CardActions['onStage']
 }) {
   const navigate = useNavigate()
-  const name = useBoardName()
   const reveal = useReveal()
   // Only the selected card has keys, so only it reads its body for the rules;
   // every card draws again on each step of a drag.
   const back = selected ? stageBeside({ item, stage, by: -1 }) : null
   const forward = selected ? stageBeside({ item, stage, by: 1 }) : null
   const moveInView = async (to: Stage) => {
-    if (await onStage(item, to)) reveal()
+    if (await onStage(board, item, to)) reveal()
   }
   const move = (to: Stage) => () => {
     if (pending) return false
@@ -91,7 +104,7 @@ function useCardKeys({ item, stage, selected, pending, onStage }: {
       // With a control focused, Enter is that control's.
       act: (event) => {
         if (event.target !== document.body) return false
-        void navigate(toItem({ name, id: item.id }))
+        void navigate(toItem({ name: worktree, id: item.id }))
         return true
       },
     },
@@ -101,7 +114,11 @@ function useCardKeys({ item, stage, selected, pending, onStage }: {
   useBindings(selected ? bindings : [])
 }
 
-export function WorkflowCard({ item, index, stage, lands, words, pending, choosing, chosenIds, selectedId, accepts, onChosenChange, onComplete, onStage }: CardActions & {
+export function WorkflowCard({ board, worktree, item, index, stage, lands, words, pending, choosing, chosenIds, selectedId, accepts, onChosenChange, onComplete, onStage }: CardActions & {
+  /** The board of the worktree the item is filed in, which every write to it goes through. */
+  board: string
+  /** The name of that worktree, which the item's page is addressed by. */
+  worktree: string
   item: Item
   /** Its place in its list: the lane's cards in no group, or its group's cards. */
   index: number
@@ -114,19 +131,17 @@ export function WorkflowCard({ item, index, stage, lands, words, pending, choosi
   // Execute is frozen: its cards leave only by completing, never by dragging.
   const frozen = stage === 'Execute'
   const { ref, isDragSource } = useSortable({
-    id: item.id,
+    id: cardId({ board, id: item.id }),
     index,
-    group: listId({ stage, group: item.group }),
+    group: listId({ board, stage, group: item.group }),
     type: 'item',
-    accept: source => accepts(source.id, { stage, group: item.group }),
+    accept: source => accepts(source.id, { board, stage, group: item.group }),
     disabled: pending || frozen,
   })
-  // Only the lane that is choosing offers its cards to be chosen.
-  const purpose = choosing?.stage === stage ? choosing.purpose : null
+  const purpose = purposeIn({ choosing, board, stage })
   const tip = useTip()
-  const name = useBoardName()
-  const selected = selectedId === item.id
-  useCardKeys({ item, stage, selected, pending, onStage })
+  const selected = selectedId === cardId({ board, id: item.id })
+  useCardKeys({ board, worktree, item, stage, selected, pending, onStage })
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
     // what the sortable's keyboard sensor listens on. It carries the name a
@@ -174,7 +189,7 @@ export function WorkflowCard({ item, index, stage, lands, words, pending, choosi
               )}
             {/* A real link: the item has a page, so it opens in a tab like anything else. */}
             <Link
-              {...toItem({ name, id: item.id })}
+              {...toItem({ name: worktree, id: item.id })}
               title={tip(openSentence)}
               className="min-w-0 flex-1 rounded-sm text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             >
@@ -189,7 +204,7 @@ export function WorkflowCard({ item, index, stage, lands, words, pending, choosi
                 {item.id}
               </span>
             </Copyable>
-            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => onComplete(item)} title={tip(`Complete ${item.title}`)} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
+            {frozen ? <Button className="ml-auto" variant="ghost" size="icon-xs" onClick={() => onComplete(board, item)} title={tip(`Complete ${item.title}`)} aria-label={`Complete ${item.title}`}><Check /></Button> : null}
           </div>
         </CardContent>
       </Card>

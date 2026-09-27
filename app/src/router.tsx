@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRouter } from '@tanstack/react-router'
 
-import { foldBoardKey, unfoldBoardKey } from './lib/base'
+import { foldKey, unfoldKey } from './lib/base'
 import { routeTree } from './routeTree.gen'
 
 /**
@@ -45,22 +45,22 @@ export function getRouter() {
     routeTree,
     context: { queryClient },
     trailingSlash: 'preserve',
-    // A page is one component per address: a move to another board, item or
-    // file of the same page mounts it afresh, with its own state, reads and
-    // stream, as a document load did.
+    // A page is one component per address: a move to another board, epic,
+    // project, item or file of the same page mounts it afresh, with its own
+    // state, reads and stream, as a document load did.
     defaultRemountDeps: ({ params }) => params,
     // Back and Forward come back where the page was scrolled, as they did when
     // every move loaded a document; a page whose content arrives after it
     // mounts scrolls there once its content is drawn (`ScrollRestored`).
     scrollRestoration: true,
-    // A board's key may hold a slash, and a route's parameter is one segment.
+    // A worktree's key and a project's may hold a slash, and a route's parameter is one segment.
     rewrite: {
       input: ({ url }) => {
-        url.pathname = foldBoardKey(url.pathname)
+        url.pathname = foldKey(url.pathname)
         return url
       },
       output: ({ url }) => {
-        url.pathname = unfoldBoardKey(url.pathname)
+        url.pathname = unfoldKey(url.pathname)
         return url
       },
     },
