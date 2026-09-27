@@ -6,7 +6,7 @@ import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
 import { useTip } from './components/tip'
 import { ApiError, problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { absoluteHref, isMarkdownPath, listingHref, rawFileHref, useBoardPath } from './lib/base'
+import { absoluteHref, isMarkdownPath, toListing, rawFileHref, useBoardName, useBoardPath } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
 import { openOnceOnClick } from './lib/open-once'
@@ -16,7 +16,7 @@ import { openOnceOnClick } from './lib/open-once'
  * listings, goes to that listing's page; the directories between are names,
  * and the file is where you are.
  */
-function crumbsOf(board: string, path: string): readonly Crumb[] {
+function crumbsOf(name: string, path: string): readonly Crumb[] {
   const segments = path.split('/')
   return segments.map((segment, position): Crumb => {
     const through = segments.slice(0, position + 1).join('/')
@@ -24,7 +24,7 @@ function crumbsOf(board: string, path: string): readonly Crumb[] {
       return { label: segment, meaning: `The file ${path}, rendered from the session as it is on disk.`, literal: true }
     }
     if (position === 0 && (segment === 'ledger' || segment === 'context' || segment === 'archive')) {
-      return { label: segment, meaning: listingMeta[segment].meaning, href: listingHref({ board, listing: segment }), literal: true }
+      return { label: segment, meaning: listingMeta[segment].meaning, link: toListing({ name, listing: segment }), literal: true }
     }
     return { label: segment, meaning: `The directory ${through}/ under the session.`, literal: true }
   })
@@ -73,6 +73,7 @@ function withFrontmatterShown(text: string) {
  */
 export function FilePage({ path }: { path: string }) {
   const board = useBoardPath()
+  const boardName = useBoardName()
   const markdown = isMarkdownPath(path)
   // Only a Markdown file is read here; any other file is offered as it is on disk.
   const { value, error } = useFollowed({
@@ -90,8 +91,9 @@ export function FilePage({ path }: { path: string }) {
       title={name}
       worktree={worktreeOf(place)}
       boardMeaning="The board of the session this file belongs to."
-      crumbs={crumbsOf(board, path)}
+      crumbs={crumbsOf(boardName, path)}
       problem={error ?? problemOf(place)}
+      ready={value !== null || error !== null}
     >
       {place === null ? (error === null ? <PageLoading /> : null) : (
         <article>

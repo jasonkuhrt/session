@@ -1,5 +1,5 @@
 import type { QueryClient, QueryExecuteOptions, QueryKey } from '@tanstack/react-query'
-import { notFound, useParams } from '@tanstack/react-router'
+import { linkOptions, notFound, useParams } from '@tanstack/react-router'
 import { Option, Schema } from 'effect'
 
 import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
@@ -65,19 +65,25 @@ export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S)
  * session and no stream. A board is gated on the daemon's description, which
  * names the boards it serves; a page drawn from the index's rows would be
  * gated on those. The answer is kept for the document, so the page that draws
- * the same read shows it rather than asking again. A read that fails says
- * nothing about the address, and the page draws as it would without the gate.
+ * the same read shows it rather than asking again. A page reached without a
+ * document load can name what was taken on after the kept answer was read, so
+ * an answer that does not hold the address is asked again now, by `again`,
+ * before the address is called no page. A read that fails says nothing about
+ * the address, and the page draws as it would without the gate.
  */
-export async function noPageUnless<T, K extends QueryKey>({ client, read, named }: {
+export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ client, read, again, named }: {
   readonly client: QueryClient
   /** The read whose answer says what an address may name. */
   readonly read: QueryExecuteOptions<T, Error, T, T, K>
+  /** The same question asked now, for an address the kept answer does not hold. */
+  readonly again: QueryExecuteOptions<T, Error, T, T, L>
   /** Whether that answer holds what this address names. */
   readonly named: (answer: T) => boolean
 }): Promise<void> {
   let answer: T
   try {
     answer = await client.query({ ...read, gcTime: Number.POSITIVE_INFINITY })
+    if (!named(answer)) answer = await client.query(again)
   } catch {
     return
   }
@@ -96,23 +102,61 @@ export function useBoardPath() {
   return key === undefined ? '' : boardPath(key)
 }
 
-/** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
-const encodedPath = Schema.encodeSync(AddressPathSchema)
+/**
+ * The name of the worktree whose board the open page is under, as the address
+ * carries it, for what is drawn only on a board's pages; the router refuses
+ * the call anywhere else.
+ */
+export const useBoardName = () => useParams({ from: '/w/$key' }).key
 
-/** An item's id as the address carries it: one URI component. */
-const encodedId = Schema.encodeSync(Schema.StringFromUriComponent)
+/**
+ * The board's pages as the router's destinations, so a link and a key that
+ * opens a page go the same way: to the route, with the worktree's name and
+ * the item or path as its parameters, which the route's schema encodes and
+ * the router writes into the address the daemon serves, one segment each,
+ * the file path's slashes kept.
+ * Following one moves within the document, as every move between the board's
+ * pages does. A link to one is the current page's only when it goes to the
+ * page that is open, never to the page it sits under.
+ */
+const exact = { exact: true } as const
 
-/** The page for one item of a board. The one place the route is spelled. */
-export const itemHref = ({ board, id }: { readonly board: string; readonly id: string }) =>
-  `${board}/item/${encodedId(id)}`
+/** Every worktree the daemon tracks, at the root. */
+export const toIndex = linkOptions({ to: '/', activeOptions: exact })
 
-/** The page of one of a board's listings. */
-export const listingHref = ({ board, listing }: { readonly board: string; readonly listing: Listing }) =>
-  `${board}/${listing}`
+/** A worktree's board, by the worktree's name. */
+export const toBoard = (name: string) =>
+  linkOptions({ to: '/w/$key/', params: { key: name }, activeOptions: exact })
+
+/** One item of a board, by its id. */
+export const toItem = ({ name, id }: { readonly name: string; readonly id: string }) =>
+  linkOptions({ to: '/w/$key/item/$id', params: { key: name, id }, activeOptions: exact })
+
+/** Each listing's route. */
+const listingRoutes = {
+  ledger: '/w/$key/ledger',
+  context: '/w/$key/context',
+  archive: '/w/$key/archive',
+} as const satisfies Record<Listing, string>
+
+/** One of a board's listings. */
+export const toListing = ({ name, listing }: { readonly name: string; readonly listing: Listing }) =>
+  linkOptions({ to: listingRoutes[listing], params: { key: name }, activeOptions: exact })
 
 /** The page that renders one Markdown file of a board's session, by its path under the session. */
-export const filePageHref = ({ board, path }: { readonly board: string; readonly path: string }) =>
-  `${board}/file/${encodedPath(path)}`
+export const toFile = ({ name, path }: { readonly name: string; readonly path: string }) =>
+  linkOptions({ to: '/w/$key/file/$', params: { key: name, _splat: path }, activeOptions: exact })
+
+/** A page of the board a link can go to. */
+export type Destination =
+  | typeof toIndex
+  | ReturnType<typeof toBoard>
+  | ReturnType<typeof toItem>
+  | ReturnType<typeof toListing>
+  | ReturnType<typeof toFile>
+
+/** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
+const encodedPath = Schema.encodeSync(AddressPathSchema)
 
 /** One file of a board's session as it is on disk, served by the board's files route. */
 export const rawFileHref = ({ board, path }: { readonly board: string; readonly path: string }) =>

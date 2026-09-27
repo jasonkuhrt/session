@@ -48,6 +48,7 @@ export function LedgerPage() {
       boardMeaning="The board of the session this ledger belongs to."
       crumbs={[{ label: listingMeta.ledger.label, meaning: listingMeta.ledger.meaning }]}
       problem={error ?? problemOf(place)}
+      ready={value !== null || error !== null}
     >
       {ledger === null ? (error === null ? <PageLoading /> : null) : (
         <>

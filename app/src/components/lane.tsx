@@ -7,7 +7,7 @@ import type { Item, Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
 import { landing } from '../lib/drag'
 import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
-import { dragOf, listId } from '../lib/lanes'
+import { dragOf, laneItems, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { groupMeta, stageHint } from '../lib/workflow'
 import { Explained, Tip, useTip } from './tip'
@@ -56,8 +56,7 @@ export function Lane({ lane, count, dragging, executeOccupied, ...actions }: Lan
   const { ref: wholeRef } = useLaneDrop(stage, 'half', actions)
   const { ref: startRef } = useLaneDrop(stage, 'start', actions)
   const { ref: endRef } = useLaneDrop(stage, 'end', actions)
-  const items = lane.entries.flatMap(entry => (entry.kind === 'item' ? [entry.item] : entry.items))
-  const selected = items.flatMap(item => (actions.selectedIds.has(item.id) ? [item.id] : []))
+  const chosen = laneItems(lane).flatMap(item => (actions.chosenIds.has(item.id) ? [item.id] : []))
   // A card in no group is sorted among the lane's other cards in no group, so
   // its place in that list is what dnd-kit is told.
   const looseIndex = new Map<string, number>()
@@ -72,7 +71,7 @@ export function Lane({ lane, count, dragging, executeOccupied, ...actions }: Lan
             ? <ChooseEntries stage={stage} pending={actions.pending} onChoose={actions.onChoose} />
             : null}
         </LaneHeading>
-        <LaneControls {...actions} stage={stage} selected={selected} count={count} executeOccupied={executeOccupied} />
+        <LaneControls {...actions} stage={stage} chosen={chosen} count={count} executeOccupied={executeOccupied} />
       </div>
       <div className={cn('min-h-32 space-y-3 rounded-lg', held?.to === stage && held.group === null && landing)}>
         {lane.entries.map(entry => (entry.kind === 'item'
@@ -141,34 +140,34 @@ function ChooseEntries({ stage, pending, onChoose }: {
  * While the lane is choosing: what the chosen cards become, once there is one,
  * and the way out. Until a card is chosen the lane says what to do instead.
  */
-function ChoosingControls({ stage, purpose, selected, pending, onGroup, onQueue, onChoose }: Pick<
+function ChoosingControls({ stage, purpose, chosen, pending, onGroup, onQueue, onChoose }: Pick<
   LaneActions,
   'pending' | 'onGroup' | 'onQueue' | 'onChoose'
 > & {
   stage: Stage
   purpose: 'group' | 'batch'
   /** The lane's chosen items, in lane order. */
-  selected: readonly string[]
+  chosen: readonly string[]
 }) {
   return (
     <div className="flex items-center gap-2">
-      {selected.length === 0
+      {chosen.length === 0
         ? <p className="flex-1 text-sm text-muted-foreground">Choose the items for the {purpose}.</p>
         : purpose === 'group'
         ? (
           <Tip
             meaning={`Name the chosen items as a group in ${stage}.`}
-            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, selected)} />}
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(stage, chosen)} />}
           >
-            Group ({selected.length})
+            Group ({chosen.length})
           </Tip>
         )
         : (
           <Tip
             meaning="Name the chosen items as a batch and append it to Queue."
-            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(selected, null)} />}
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(chosen, null)} />}
           >
-            Queue batch ({selected.length})
+            Queue batch ({chosen.length})
           </Tip>
         )}
       <Tip meaning="Stop choosing. Nothing changes." render={<Button variant="ghost" onClick={() => onChoose(null)} />}>
@@ -184,10 +183,10 @@ function ChoosingControls({ stage, purpose, selected, pending, onGroup, onQueue,
  * visible in the lanes themselves, so a disabled button carrying the reason
  * would say a second time what the board already shows.
  */
-function LaneControls({ stage, choosing, selected, count, executeOccupied, pending, onGroup, onQueue, onChoose, onStart }: LaneActions & {
+function LaneControls({ stage, choosing, chosen, count, executeOccupied, pending, onGroup, onQueue, onChoose, onStart }: LaneActions & {
   stage: Stage
   /** The lane's chosen items, in lane order. */
-  selected: readonly string[]
+  chosen: readonly string[]
   count: number
   executeOccupied: boolean
 }) {
@@ -198,7 +197,7 @@ function LaneControls({ stage, choosing, selected, count, executeOccupied, pendi
         <ChoosingControls
           stage={stage}
           purpose={choosing.purpose}
-          selected={selected}
+          chosen={chosen}
           pending={pending}
           onGroup={onGroup}
           onQueue={onQueue}

@@ -28,13 +28,31 @@ export const reads = {
    * mounts, and again when its stream comes back, when a daemon started from
    * other sources reloads the page and one started from the same sources
    * replaces what it can do. It is kept for as long as the document is,
-   * whichever page of it is drawn, since the build stays the one it loaded.
+   * whichever page of it is drawn, since the build stays the one it loaded,
+   * so a page that mounts does not read it again, which would put the running
+   * daemon's stamp where the loaded build's is: the page's stream asks the
+   * daemon when it first opens instead.
    */
   daemon: () =>
     queryOptions({
       queryKey: ['daemon'],
       queryFn: ({ signal }) => DaemonApi.describe(signal),
       gcTime: Number.POSITIVE_INFINITY,
+      refetchOnMount: false,
+    }),
+
+  /**
+   * What the daemon says about itself now, for what the description the
+   * document keeps can be too old to say: whether it serves a board taken on
+   * after the document loaded, which a page reached without a document load
+   * can name. Kept apart from `daemon`, whose stamp stays the loaded build's.
+   */
+  daemonNow: () =>
+    queryOptions({
+      queryKey: ['daemon', 'now'],
+      queryFn: ({ signal }) => DaemonApi.describe(signal),
+      staleTime: 0,
+      gcTime: 0,
     }),
 
   /** A board's session: its stages and their items, with the revision a write is made against. */

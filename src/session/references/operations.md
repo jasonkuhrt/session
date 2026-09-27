@@ -1229,6 +1229,103 @@ places, which `check` reports as a duplicate ID.
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
 
+## Keys
+
+The index and every board answer to keys, and `?` says which: it opens a
+dialog, the legend, that lists each key the page answers to at that moment
+with the sentence of what it does, and Escape closes it as it closes every
+dialog. The legend is read from the keys registered while it is open, the
+page's and the open dialog's, so a key the page cannot offer then is not in
+it. The pages under a board, an item's, the listings and a file's, answer to
+no keys, and `?` does nothing there.
+
+The legend's sentences, word for word:
+
+| Key | On the index | On a board |
+| --- | --- | --- |
+| `?` | "Show the keys this page answers to." | the same |
+| `j`, `↓` | "Select the next worktree in this section." | "Select the item below, in the same lane." |
+| `k`, `↑` | "Select the previous worktree in this section." | "Select the item above, in the same lane." |
+| `h` | "Select a worktree in the previous section." | "Select an item in the nearest lane to the left." |
+| `l` | "Select a worktree in the next section." | "Select an item in the nearest lane to the right." |
+| `←` | | the same as `h` |
+| `→` | | the same as `l` |
+| Enter | "Open this worktree’s board." | "Open this item’s page." |
+| `[` | | "Move this item back to Design.", naming the stage before the item's |
+| `]` | | "Move this item forward to Batch.", naming the stage after the item's |
+| `t` | "Open a terminal here in cmux: the cmux workspace already in this worktree comes to the front, and otherwise a new one opens in it.", the selected worktree's icon | the same, the board's icon |
+| Escape | "Close this dialog.", in any dialog | the same |
+
+The selection is the one card the keys act on, ringed in the theme's ring
+colour, and nothing is selected until a key selects something, so a page no
+key has touched is drawn as it always was. A board's cards stand in its
+lanes, and the index's worktrees in its sections, each read the way the page
+draws it: an item in a group in its place in the lane, and a section's head
+before its cards, an epic's worktrees in its card's order. `j` and `k` step
+within a lane or a section, and `h` and `l` go to the nearest lane or section
+either side that holds anything, at the same place in it or its last. The
+first step selects the first card of the first lane or section that holds
+one. On the index `j` and `k` go by the order the section draws its
+worktrees in, which in a section of several columns can be beside or above,
+and the left and right arrows are not bound there: the sections stand one
+above another, so no arrow says which way the next one is. A selection is
+kept by the item's id or the worktree's path, so it
+follows an item a bracket moves into another lane, and an item or a worktree
+that leaves the page takes the selection with it. A step brings the selected
+card into view, and so does a bracket once its move has landed; a read that
+moves cards around never scrolls the page. A step that has nowhere
+further to go does nothing, and an arrow then scrolls the page as it always
+did; `h` and `l` are listed only while two lanes or sections hold anything.
+
+Enter is listed while something is selected, and on the index only for a
+worktree the daemon serves. The brackets move the selected item through the
+same route the stage control on its page uses, one stage back or forward in
+the flow, and each is listed only while the rules let the item go there, the
+way the stage control draws a stage it cannot reach dim: from Triage there is
+no stage back, Queue and Execute are entered only by composing and starting a
+batch, and an Execute item leaves only by being completed. A bracket does
+nothing while another write is under way, and a write the engine refuses
+reads as a failed drag does, in the daemon's words above the lanes. `t` is
+listed while `cmux` is on the daemon's PATH, as the terminal icon is drawn,
+and on the index only for a selected worktree; it presses that icon, on a
+board the header's and on the index the selected worktree's, so cmux's line
+shows beside the icon when it refuses. Each key's sentence is its control's
+tip where it presses one: the terminal icon's, and a card title's for Enter.
+The index's Enter has no tip of its own, since a worktree's name keeps its
+path as its tip.
+
+A key acts only while the keyboard is on the page: with nothing focused, or
+the focus on something of the page's own. It does nothing while a field has
+the focus, so typing in the picker's search or a dialog's name types the
+letter; nothing while a dialog, a menu or a list is open over the page, since
+each takes the focus into itself; and nothing while a card is dragged, by
+the pointer or by the keyboard, whose drag keeps the arrows. A step takes
+the keyboard from a control that held it, so the Enter that follows opens the
+selection rather than pressing that control, and Enter with a control focused
+is that control's, a link's or a button's. A step repeats while its key is
+held. Every other key acts on the first keydown of a press, and the repeats a
+held key sends do nothing, so a held bracket moves an item one stage even as
+its card is drawn again in the next lane. A key that does nothing keeps what
+the browser does with it.
+
+Moving between pages stays in the document. A link between the board's pages,
+the picker and a key that opens a page go through the router, which is safe
+because the board is one script, so no page's code is fetched after the
+document loaded. The page that leaves closes its event stream and any dialog
+or legend it had open and drops its reads; the page that arrives reads what
+it shows and draws only what it has read, and opens its own stream, as it
+did when every move loaded a document. What the daemon says about itself is
+the one answer the document keeps, since its stamp names the build the
+document loaded: each page's stream asks the daemon again when it opens, and
+a daemon started from other sources reloads the page. A board is known by
+the daemon's list of the boards it serves, asked again when the kept list
+does not name it, so a worktree taken on after the document loaded opens
+from the index. A move to another board, item or file mounts the page afresh, with
+nothing kept from the one before. The address bar shows each page's address,
+and Back, Forward and a reload return to it scrolled where it was left, once
+its reads have landed; a page reached by a link starts at the top. A middle
+click or a click with a modifier still opens a page in a tab of its own.
+
 ## Agents on the board
 
 The board also shows the coding agents at work in that worktree. It is a

@@ -54,7 +54,9 @@ export function useTrackedWorktrees({ held }: { readonly held: boolean }) {
   })
 
   return {
-    rows: rows.data ?? null,
+    // Only what this page read since it mounted: the board it came from may
+    // hold the rows its picker read when that board opened.
+    rows: rows.isFetchedAfterMount ? rows.data ?? null : null,
     notice: rows.error === null ? null : rowsProblem(rows.error),
     pullRequests: pullRequests.data ?? {},
     pullRequestsNotice: pullRequests.error === null ? null : pullRequestsProblem(pullRequests.error),

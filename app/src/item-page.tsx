@@ -1,4 +1,5 @@
 import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { CheckCircle2 } from 'lucide-react'
 import * as React from 'react'
 
@@ -13,7 +14,7 @@ import { Explained, useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { SessionApi } from './lib/api'
 import { archiveStateMeaning, readArchivedItem } from './lib/archive'
-import { useBoardPath } from './lib/base'
+import { toBoard, useBoardName, useBoardPath } from './lib/base'
 import { landWrite, reread } from './lib/reads'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
 import { useStream } from './lib/stream'
@@ -86,6 +87,7 @@ function useItemRead(board: string, id: string) {
  */
 export function ItemPage({ id }: { id: string }) {
   const board = useBoardPath()
+  const name = useBoardName()
   const client = useQueryClient()
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const { session, archived, loading, loadError } = useItemRead(board, id)
@@ -133,6 +135,7 @@ export function ItemPage({ id }: { id: string }) {
       crumbs={[{ label: id, meaning: `The item ${id}, on a page of its own.`, literal: true }]}
       problem={problem}
       notice={refreshed ? refreshedNotice : null}
+      ready={!loading}
     >
       {loading
         ? <PageLoading />
@@ -143,7 +146,7 @@ export function ItemPage({ id }: { id: string }) {
             ? (
               <p className="text-sm text-muted-foreground">
                 No item {id} in this session.{' '}
-                <a className="underline underline-offset-4" href={`${board}/`}>Back to the board</a>
+                <Link {...toBoard(name)} className="underline underline-offset-4">Back to the board</Link>
               </p>
             )
             : null
