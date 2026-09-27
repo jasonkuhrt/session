@@ -11,6 +11,7 @@ import { draggedId, movable, targetId } from '../lib/epics'
 import type { Marker } from '../lib/order'
 import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
+import { selectionRing, selectionRingInside } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { LandingLine, markedSide } from './landing-line'
 import { Explained, Tip, useTip } from './tip'
@@ -34,6 +35,8 @@ export type DragContext = RowContext & {
   readonly rows: readonly WorktreeSummary[]
   /** While a drop is written, nothing is picked up. */
   readonly writing: boolean
+  /** The worktree the keys act on, by its path, ringed where it is drawn; null while none is. */
+  readonly selected: string | null
   /** The target a held card would land in if it were dropped now, by its id; null when a drop would change nothing. */
   readonly landingOn: string | null
   /** Where a held project or worktree would take its place if it were dropped now; null when it would take none. */
@@ -87,6 +90,7 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
   })
   const ref = useBothRefs(holdRef, dropRef)
   const side = markedSide({ marker: context.marker, list: epicList(epic), id: row.path })
+  const selected = context.selected === row.path
   return (
     <div
       ref={ref}
@@ -96,10 +100,11 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
       role="group"
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
-      className={cn('relative px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
+      data-selected={selected ? 'true' : undefined}
+      className={cn('relative px-3 py-2.5 outline-none', selectionRingInside, canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
       {side === null ? null : <LandingLine side={side} gap="row" />}
-      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} />
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} selected={selected} />
     </div>
   )
 }
@@ -203,6 +208,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
   const { ref: dropRef } = useDroppable({ id: onto, accept: cardsAccept, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
   const tip = useTip()
+  const selected = context.selected === row.path
   return (
     <Card
       ref={ref}
@@ -214,14 +220,16 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
       title={card.quiet ? tip(quietCardMeaning) : undefined}
+      data-selected={selected ? 'true' : undefined}
       className={cn(
         cardClass({ quiet: card.quiet, lands: context.landingOn === onto, held: isDragSource }),
         'outline-none',
+        selectionRing,
         canMove && 'cursor-grab',
       )}
     >
       <div className="px-3 py-2.5">
-        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} />
+        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} selected={selected} />
       </div>
     </Card>
   )

@@ -5,6 +5,8 @@ import type { FocusResult, Item } from '../contract'
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
+import { KeyPage, SelectionKeys, type StepSentences } from './components/keys'
+import { ScrollRestored } from './components/scroll-restored'
 import type { BoardNameRequest } from './components/session-dialogs'
 import { CompleteDialog, NameDialog } from './components/session-dialogs'
 import { SessionHeader } from './components/session-header'
@@ -17,6 +19,7 @@ import { SessionApi } from './lib/api'
 import { useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import { landWrite, reads, reread } from './lib/reads'
+import { boardColumns, useSelection } from './lib/selection'
 import { refreshedNotice, useSessionMutations } from './lib/session-mutations'
 import { useStream } from './lib/stream'
 
@@ -51,6 +54,14 @@ function useBoardReads(board: string) {
   }
 }
 
+/** What each step of the selection does on a board. */
+const boardSteps: StepSentences = {
+  next: 'Select the item below, in the same lane.',
+  previous: 'Select the item above, in the same lane.',
+  left: 'Select an item in the nearest lane to the left.',
+  right: 'Select an item in the nearest lane to the right.',
+}
+
 function App() {
   const board = useBoardPath()
   const client = useQueryClient()
@@ -58,11 +69,16 @@ function App() {
   const [naming, setNaming] = React.useState<BoardNameRequest | null>(null)
   const [completing, setCompleting] = React.useState<Item | null>(null)
   const [choosing, setChoosing] = React.useState<Choosing>(null)
-  const [selection, setSelection] = React.useState<Set<string>>(new Set())
+  const [chosen, setChosen] = React.useState<Set<string>>(new Set())
   const now = useNow()
   const capabilities = useCapabilities()
 
   const { session, loading, loadError, agents, agentsError, trailers, links, linksError } = useBoardReads(board)
+
+  // The lanes' items as the board draws them, which the keys step through; a
+  // selected item that is no longer on the board is no longer selected.
+  const columns = boardColumns(session)
+  const { selected, select } = useSelection(columns)
 
   const readSession = React.useCallback(() => reread({ client, queryKey: reads.session(board).queryKey }), [board, client])
 
@@ -107,24 +123,26 @@ function App() {
   const choosableIds = new Set(
     choosing === null ? [] : session?.stages.find(stage => stage.stage === choosing.stage)?.items.map(item => item.id),
   )
-  const selectedIds = new Set([...selection].filter(id => choosableIds.has(id)))
+  const chosenIds = new Set([...chosen].filter(id => choosableIds.has(id)))
   const choose = (next: Choosing) => {
     setChoosing(next)
-    setSelection(new Set())
+    setChosen(new Set())
   }
   // A lane left with nothing to choose stops choosing, and an item that has
   // left the lane is not chosen again if it comes back.
   if (choosing !== null && session !== null && choosableIds.size === 0) choose(null)
-  else if (selectedIds.size !== selection.size) setSelection(selectedIds)
+  else if (chosenIds.size !== chosen.size) setChosen(chosenIds)
 
   // A write that failed and a write the board recovered from read differently:
   // one is a problem to look at, the other is the board saying it caught up.
   const problem = failure ?? loadError
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <KeyPage scope="board" held={dragging} className="min-h-dvh bg-background text-foreground">
       {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
+      <SelectionKeys columns={columns} selected={selected} onSelect={select} sentences={boardSteps} />
+      <ScrollRestored ready={!loading} />
       <SessionHeader
         worktree={session?.worktree}
         rules={session?.rules ?? false}
@@ -152,10 +170,11 @@ function App() {
             pending={pending}
             choosing={choosing}
             onChoose={choose}
-            selectedIds={selectedIds}
-            onSelect={(id, selected) => setSelection(current => {
+            chosenIds={chosenIds}
+            selectedId={selected}
+            onChosenChange={(id, isChosen) => setChosen(current => {
               const next = new Set(current)
-              if (selected) next.add(id)
+              if (isChosen) next.add(id)
               else next.delete(id)
               return next
             })}
@@ -164,6 +183,7 @@ function App() {
             onUngroup={ids => void mutate('/api/ungroup', { ids })}
             onStart={() => void mutate('/api/start', {})}
             onComplete={setCompleting}
+            onStage={(item, to) => mutate('/api/move', { id: item.id, to })}
             onMove={(id, placement) => mutate('/api/move', { id, ...placement })}
             onDraggingChange={setDragging}
           />
@@ -181,7 +201,7 @@ function App() {
           // the choice; one a group's heading asked for names that group and
           // leaves any lane's choice as it is.
           const fromChoice = naming.kind === 'group' || naming.group === null
-          const ids = fromChoice ? naming.ids.filter(id => selectedIds.has(id)) : naming.ids
+          const ids = fromChoice ? naming.ids.filter(id => chosenIds.has(id)) : naming.ids
           if (ids.length === 0) {
             choose(null)
             setNaming(null)
@@ -203,7 +223,7 @@ function App() {
           if (completing && await mutate('/api/complete', { id: completing.id })) setCompleting(null)
         }}
       />
-    </div>
+    </KeyPage>
   )
 }
 

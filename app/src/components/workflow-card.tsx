@@ -1,11 +1,16 @@
 import { useSortable } from '@dnd-kit/react/sortable'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Check } from 'lucide-react'
 
 import type { Item, Stage } from '../../contract'
-import { itemHref, useBoardPath } from '../lib/base'
+import { stageNames } from '../../contract'
+import { toItem, useBoardName } from '../lib/base'
 import { listId } from '../lib/lanes'
+import { selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
+import { moveAvailability } from '../lib/workflow'
 import { Copyable } from './copyable'
+import { type Binding, useBindings, useReveal } from './keys'
 import { useTip } from './tip'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
@@ -25,13 +30,74 @@ export type Choosing = { readonly stage: Stage; readonly purpose: 'group' | 'bat
 export type CardActions = {
   readonly pending: boolean
   readonly choosing: Choosing
-  readonly selectedIds: ReadonlySet<string>
+  /** The items chosen while a lane is choosing. */
+  readonly chosenIds: ReadonlySet<string>
+  /** The item the keys act on, ringed; null while none is. */
+  readonly selectedId: string | null
   readonly accepts: (id: unknown, target: DropTarget) => boolean
-  readonly onSelect: (id: string, selected: boolean) => void
+  readonly onChosenChange: (id: string, chosen: boolean) => void
   readonly onComplete: (item: Item) => void
+  /** Moves an item to another stage, as the item page's stage control does; resolves whether it moved. */
+  readonly onStage: (item: Item, to: Stage) => Promise<boolean>
 }
 
-export function WorkflowCard({ item, index, stage, pending, choosing, selectedIds, accepts, onSelect, onComplete }: CardActions & {
+/** What Enter does on the selected card, and what its title does when it is clicked. */
+const openSentence = 'Open this item’s page.'
+
+/**
+ * The stage a bracket moves an item to, one back or one forward in the flow,
+ * when the rules let it go there; null when there is none or they do not.
+ */
+const stageBeside = ({ item, stage, by }: { readonly item: Item; readonly stage: Stage; readonly by: 1 | -1 }) => {
+  const target = stageNames[stageNames.indexOf(stage) + by]
+  return target !== undefined && moveAvailability(item, stage, target).enabled ? target : null
+}
+
+/**
+ * The selected card's keys: Enter opens its page, as its title does, and the
+ * brackets move it one stage back or forward, as the stage control on its
+ * page does; a bracket is offered only while the rules let the item go there,
+ * does nothing while another write is under way, and once its move has landed
+ * brings the item into view in its new lane.
+ */
+function useCardKeys({ item, stage, selected, pending, onStage }: {
+  readonly item: Item
+  readonly stage: Stage
+  readonly selected: boolean
+  readonly pending: boolean
+  readonly onStage: (item: Item, to: Stage) => Promise<boolean>
+}) {
+  const navigate = useNavigate()
+  const name = useBoardName()
+  const reveal = useReveal()
+  const back = stageBeside({ item, stage, by: -1 })
+  const forward = stageBeside({ item, stage, by: 1 })
+  const moveInView = async (to: Stage) => {
+    if (await onStage(item, to)) reveal()
+  }
+  const move = (to: Stage) => () => {
+    if (pending) return false
+    void moveInView(to)
+    return true
+  }
+  const bindings: Binding[] = [
+    {
+      name: 'open',
+      sentence: openSentence,
+      // With a control focused, Enter is that control's.
+      act: (event) => {
+        if (event.target !== document.body) return false
+        void navigate(toItem({ name, id: item.id }))
+        return true
+      },
+    },
+    ...(back === null ? [] : [{ name: 'back', sentence: `Move this item back to ${back}.`, act: move(back) } as const]),
+    ...(forward === null ? [] : [{ name: 'forward', sentence: `Move this item forward to ${forward}.`, act: move(forward) } as const]),
+  ]
+  useBindings(selected ? bindings : [])
+}
+
+export function WorkflowCard({ item, index, stage, pending, choosing, chosenIds, selectedId, accepts, onChosenChange, onComplete, onStage }: CardActions & {
   item: Item
   /** Its place in its list: the lane's cards in no group, or its group's cards. */
   index: number
@@ -50,7 +116,9 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
   // Only the lane that is choosing offers its cards to be chosen.
   const purpose = choosing?.stage === stage ? choosing.purpose : null
   const tip = useTip()
-  const board = useBoardPath()
+  const name = useBoardName()
+  const selected = selectedId === item.id
+  useCardKeys({ item, stage, selected, pending, onStage })
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
     // what the sortable's keyboard sensor listens on. It carries the name a
@@ -71,7 +139,11 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
         !frozen && isDragSource && 'cursor-grabbing',
       )}
     >
-      <Card size="sm" className={cn(isDragSource && 'opacity-50')}>
+      <Card
+        size="sm"
+        data-selected={selected ? 'true' : undefined}
+        className={cn(isDragSource && 'opacity-50', selectionRing)}
+      >
         <CardContent className="space-y-3">
           <div className="flex items-start gap-2">
             {purpose === null
@@ -84,18 +156,19 @@ export function WorkflowCard({ item, index, stage, pending, choosing, selectedId
                   nativeButton
                   render={<button type="button" aria-label={`Choose ${item.title}`} />}
                   className="cursor-pointer"
-                  checked={selectedIds.has(item.id)}
-                  onCheckedChange={selected => onSelect(item.id, selected)}
+                  checked={chosenIds.has(item.id)}
+                  onCheckedChange={chosen => onChosenChange(item.id, chosen)}
                   title={tip(`Include this item in the ${purpose}.`)}
                 />
               )}
             {/* A real link: the item has a page, so it opens in a tab like anything else. */}
-            <a
-              href={itemHref({ board, id: item.id })}
+            <Link
+              {...toItem({ name, id: item.id })}
+              title={tip(openSentence)}
               className="min-w-0 flex-1 rounded-sm text-left font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {item.title}
-            </a>
+            </Link>
           </div>
           {item.summary ? <p className="line-clamp-3 text-sm text-muted-foreground">{item.summary}</p> : null}
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

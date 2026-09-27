@@ -11,11 +11,12 @@ import { paramsOf } from '../../../lib/base'
 const WorktreeName = Schema.String.check(Schema.isPattern(/^[^/]+(?:\/[^/]+)*$/u))
 
 /**
- * Every page of a board is under this route, which decodes the key once; an
- * address whose key is no worktree's name is no board's.
+ * Every page of a board is under this route, which decodes the key once and
+ * encodes it into every address a link or a key builds; an address whose key
+ * is no worktree's name is no board's.
  */
 const BoardParams = Schema.Struct({ key: WorktreeName })
 
 export const Route = createFileRoute('/w/$key')({
-  params: { parse: paramsOf(BoardParams) },
+  params: { parse: paramsOf(BoardParams), stringify: Schema.encodeSync(BoardParams) },
 })

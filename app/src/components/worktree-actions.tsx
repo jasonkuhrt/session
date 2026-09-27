@@ -4,7 +4,9 @@ import * as React from 'react'
 
 import type { DaemonCapabilities, OpenResult } from '../../contract'
 import { DaemonApi } from '../lib/api'
+import type { KeyName } from '../lib/keys'
 import { reads } from '../lib/reads'
+import { useBindings } from './keys'
 import { Tip } from './tip'
 import { Button } from './ui/button'
 
@@ -35,11 +37,16 @@ type ActionProps = {
   size: 'icon-sm' | 'icon-xs'
 }
 
-/** A terminal in one worktree, one click away, through cmux. */
-export function TerminalAction(props: ActionProps) {
+/**
+ * A terminal in one worktree, one click away, through cmux, and one key away
+ * while `bound`: `t` presses this control, on a board its header's and on the
+ * index the selected worktree's.
+ */
+export function TerminalAction({ bound = false, ...props }: ActionProps & { bound?: boolean }) {
   return (
     <OpenAction
       {...props}
+      keyName={bound ? 'terminal' : null}
       icon={SquareTerminal}
       meaning={terminalMeaning}
       label={`Open a terminal in ${props.name} in cmux`}
@@ -54,6 +61,7 @@ export function ZedAction(props: ActionProps) {
   return (
     <OpenAction
       {...props}
+      keyName={null}
       icon={SquareCode}
       meaning={zedMeaning}
       label={`Open ${props.name} in Zed`}
@@ -65,9 +73,12 @@ export function ZedAction(props: ActionProps) {
 
 /**
  * A worktree opened in a tool by the daemon. When the tool refuses, its own
- * line stays beside the control until the next click.
+ * line stays beside the control until the next click. A control with a key
+ * registers it with its own sentence, and the key does what a click does.
  */
-function OpenAction({ path, size, icon: Icon, meaning, label, failed, open }: ActionProps & {
+function OpenAction({ path, size, keyName, icon: Icon, meaning, label, failed, open }: ActionProps & {
+  /** The key that presses the control, or null for none. */
+  keyName: KeyName | null
   icon: LucideIcon
   meaning: string
   label: string
@@ -88,6 +99,15 @@ function OpenAction({ path, size, icon: Icon, meaning, label, failed, open }: Ac
       setPending(false)
     }
   }
+  useBindings(keyName === null ? [] : [{
+    name: keyName,
+    sentence: meaning,
+    act: () => {
+      if (pending) return false
+      void run()
+      return true
+    },
+  }])
   return (
     <span className="flex items-center gap-2">
       <Tip

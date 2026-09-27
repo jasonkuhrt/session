@@ -4,11 +4,11 @@ import { Schema } from 'effect'
 import { ItemPage } from '../../../../item-page'
 import { paramsOf } from '../../../../lib/base'
 
-/** An item's page carries the item's id, decoded by a schema as the board's key is. */
+/** An item's page carries the item's id, decoded and encoded by a schema as the board's key is. */
 const ItemParams = Schema.Struct({ id: Schema.NonEmptyString })
 
 export const Route = createFileRoute('/w/$key/item/$id')({
-  params: { parse: paramsOf(ItemParams) },
+  params: { parse: paramsOf(ItemParams), stringify: Schema.encodeSync(ItemParams) },
   component: Item,
 })
 

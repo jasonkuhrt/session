@@ -1,6 +1,8 @@
+import { Link } from '@tanstack/react-router'
 import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
+import { toIndex } from '../lib/base'
 import { LinearIssues } from './linear-issues'
 import { PageLinks } from './page-links'
 import { PullRequestChip } from './pull-request-chip'
@@ -50,14 +52,14 @@ export function SessionHeader({ worktree, rules, links, linksError, terminal, ze
           className="-ml-2.5"
           nativeButton={false}
           title={tip('Every worktree the daemon is tracking.')}
-          render={<a aria-label="All worktrees" href="/" />}
+          render={<Link {...toIndex} aria-label="All worktrees" />}
         >
           <LayoutGrid /> All worktrees
         </Button>
         {worktree ? (
           <div className="flex items-center gap-1.5">
             <WorktreePicker current={worktree} />
-            {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+            {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" bound /> : null}
             {zed ? <ZedAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
           </div>
         ) : null}

@@ -1,7 +1,9 @@
+import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { useBoardPath } from '../lib/base'
+import { type Destination, toBoard, toIndex, useBoardName } from '../lib/base'
 import { cn } from '../lib/utils'
+import { ScrollRestored } from './scroll-restored'
 import { SettingsMenu } from './settings-menu'
 import { useTip } from './tip'
 import { Alert, AlertDescription } from './ui/alert'
@@ -35,7 +37,7 @@ export type Crumb = {
   /** The sentence behind the step, on hover. */
   readonly meaning: string
   /** Where the step goes; a step without one is only a name, and the last step is the page itself. */
-  readonly href?: string
+  readonly link?: Destination
   /** Whether the step is a name the files use, such as an id or a path segment. */
   readonly literal?: boolean
 }
@@ -48,7 +50,7 @@ export type Crumb = {
  * by, which is what lets a code block in the column run the window's width
  * without counting a scroll bar in it.
  */
-export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem, notice = null, children }: {
+export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem, notice = null, ready, children }: {
   /** What the page is, first in the tab's name. */
   title: string
   /** The worktree's name, once the session has been read. */
@@ -60,11 +62,14 @@ export function BoardPageFrame({ title, worktree, boardMeaning, crumbs, problem,
   problem: string | null
   /** A line from the page that is not a problem, such as having caught up after a conflict. */
   notice?: string | null
+  /** Whether the page's first read has landed, which is when Back's scroll comes back to it. */
+  ready: boolean
   children: React.ReactNode
 }) {
   return (
     <TooltipProvider>
       <div className="@container min-h-dvh bg-background text-foreground">
+        <ScrollRestored ready={ready} />
         {/* One tab per page, so a row of them is readable. React hoists this into the head. */}
         <title>{worktree === null ? `${title} · Session` : `${title} · ${worktree} · Session`}</title>
         <PageTrail worktree={worktree} boardMeaning={boardMeaning} crumbs={crumbs} />
@@ -97,7 +102,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
   crumbs: readonly Crumb[]
 }) {
   const tip = useTip()
-  const boardPath = useBoardPath()
+  const name = useBoardName()
   const board = worktree ?? 'Board'
   // A step is known by the steps that lead to it, so two steps with one name,
   // such as a path's `a/a`, are still two.
@@ -113,9 +118,9 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
           <BreadcrumbItem>
             <BreadcrumbLink
               render={
-                <a
+                <Link
+                  {...toIndex}
                   aria-label="All worktrees"
-                  href="/"
                   title={tip('Every worktree the daemon is tracking.')}
                 />
               }
@@ -125,7 +130,7 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink render={<a aria-label={board} href={`${boardPath}/`} title={tip(boardMeaning)} />}>
+            <BreadcrumbLink render={<Link {...toBoard(name)} aria-label={board} title={tip(boardMeaning)} />}>
               {board}
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -139,12 +144,12 @@ function PageTrail({ worktree, boardMeaning, crumbs }: {
                       {crumb.label}
                     </BreadcrumbPage>
                   )
-                  : crumb.href === undefined
+                  : crumb.link === undefined
                   ? <span className={cn(crumb.literal && 'font-mono')} title={tip(crumb.meaning)}>{crumb.label}</span>
                   : (
                     <BreadcrumbLink
                       className={cn(crumb.literal && 'font-mono')}
-                      render={<a aria-label={crumb.label} href={crumb.href} title={tip(crumb.meaning)} />}
+                      render={<Link {...crumb.link} aria-label={crumb.label} title={tip(crumb.meaning)} />}
                     >
                       {crumb.label}
                     </BreadcrumbLink>

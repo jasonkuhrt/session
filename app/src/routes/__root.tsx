@@ -5,6 +5,8 @@ import '../styles.css'
 import { ClientOnly, createRootRoute, HeadContent, Link, Outlet, Scripts } from '@tanstack/react-router'
 import type * as React from 'react'
 
+import { toIndex } from '../lib/base'
+
 /** The board's mark on its tab. */
 const icon =
   'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%2309090b%22/><circle cx=%2216%22 cy=%2216%22 r=%225%22 fill=%22%23fafafa%22/></svg>'
@@ -59,8 +61,7 @@ function NoPage() {
     <main className="p-6">
       <p className="text-sm text-muted-foreground">
         No board page is at this address.{' '}
-        {/* A document load, as every move between the board's pages is. */}
-        <Link className="underline underline-offset-4" to="/" reloadDocument>All projects</Link>
+        <Link {...toIndex} className="underline underline-offset-4">All projects</Link>
       </p>
     </main>
   )

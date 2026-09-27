@@ -18,6 +18,7 @@ import {
   untrackedHeadMeaning,
 } from '../lib/index-meanings'
 import { sectionsList } from '../lib/order'
+import { selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { LandingLine, markedSide } from './landing-line'
 import { Explained, useTip } from './tip'
@@ -47,12 +48,14 @@ const headRule = 'border-b px-3 pb-3 text-base'
 /**
  * A section's head, and where a quiet section says it is dim, in the words
  * true of what it heads; its cards are dim by what happens in each. A main
- * worktree's head is what holds its section, by `holdRef`.
+ * worktree's head is what holds its section, by `holdRef`, and is ringed
+ * while the keys act on it.
  */
-function Head({ section, context, holdRef }: {
+function Head({ section, context, holdRef, selected }: {
   section: ProjectSectionShape
   context: RowContext
   holdRef: (element: Element | null) => void
+  selected: boolean
 }) {
   const tip = useTip()
   const { head, name, quiet } = section
@@ -74,9 +77,15 @@ function Head({ section, context, holdRef }: {
       aria-roledescription="Draggable project"
       aria-label={`Drag ${name}`}
       title={title}
-      className={cn(headRule, 'cursor-grab outline-none', quiet && 'opacity-60')}
+      data-selected={selected ? 'true' : undefined}
+      className={cn(
+        headRule,
+        'cursor-grab outline-none data-selected:rounded-md',
+        selectionRing,
+        quiet && 'opacity-60',
+      )}
     >
-      <WorktreeRow row={head.row} context={context} meaning={trackedHeadMeaning(head.row)} name={name} />
+      <WorktreeRow row={head.row} context={context} meaning={trackedHeadMeaning(head.row)} name={name} selected={selected} />
     </div>
   )
 }
@@ -183,7 +192,7 @@ export function ProjectSection({ section, context, newEpicOf }: {
   const { ref: dropRef } = useSectionDrop(section.key, context)
   return (
     <SectionFrame label={section.name} sectionKey={section.key} context={context} held={isDragSource} dropRef={dropRef}>
-      <Head section={section} context={context} holdRef={holdRef} />
+      <Head section={section} context={context} holdRef={holdRef} selected={main !== null && context.selected === main.path} />
       {cards.length === 0 && newEpicOf === null ? null : (
         <div className="worktree-cards">
           {cards.map((card) =>

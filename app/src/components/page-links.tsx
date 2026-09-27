@@ -1,8 +1,9 @@
+import { Link } from '@tanstack/react-router'
 import { Archive, FolderTree, Gavel, type LucideIcon, ScrollText } from 'lucide-react'
 
 import { rulesFile } from '../../contract'
-import type { Listing } from '../lib/base'
-import { filePageHref, listingHref, useBoardPath } from '../lib/base'
+import type { Destination, Listing } from '../lib/base'
+import { toFile, toListing, useBoardName } from '../lib/base'
 import { listingMeta } from '../lib/listings'
 import { Tip } from './tip'
 import { Button } from './ui/button'
@@ -23,33 +24,33 @@ const rulesMeaning =
  * place that says what needs you.
  */
 export function PageLinks({ rules }: { rules: boolean }) {
-  const board = useBoardPath()
+  const name = useBoardName()
   return (
     <nav aria-label="The session’s pages" className="flex items-center gap-1">
-      {rules ? <PageLink icon={Gavel} label="Rules" meaning={rulesMeaning} href={filePageHref({ board, path: rulesFile })} /> : null}
+      {rules ? <PageLink icon={Gavel} label="Rules" meaning={rulesMeaning} to={toFile({ name, path: rulesFile })} /> : null}
       {listings.map((listing) => (
         <PageLink
           key={listing}
           icon={icons[listing]}
           label={listingMeta[listing].label}
           meaning={listingMeta[listing].meaning}
-          href={listingHref({ board, listing })}
+          to={toListing({ name, listing })}
         />
       ))}
     </nav>
   )
 }
 
-function PageLink({ icon: Icon, label, meaning, href }: {
+function PageLink({ icon: Icon, label, meaning, to }: {
   icon: LucideIcon
   label: string
   meaning: string
-  href: string
+  to: Destination
 }) {
   return (
     <Tip
       meaning={meaning}
-      render={<Button variant="ghost" size="icon-sm" nativeButton={false} render={<a aria-label={label} href={href} />} />}
+      render={<Button variant="ghost" size="icon-sm" nativeButton={false} render={<Link {...to} aria-label={label} />} />}
     >
       <Icon />
     </Tip>

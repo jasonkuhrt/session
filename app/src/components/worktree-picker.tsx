@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 
 import type { Session, WorktreeSummary } from '../../contract'
+import { toBoard } from '../lib/base'
 import { checkoutLabel } from '../lib/format'
 import { reads } from '../lib/reads'
 import { cn } from '../lib/utils'
@@ -70,6 +72,7 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
   // to the plain name and branch.
   const worktrees = useQuery(reads.worktrees()).data
   const tip = useTip()
+  const navigate = useNavigate()
 
   const options: Option[] = (worktrees ?? [])
     .filter((row) => row.conflict === null)
@@ -93,7 +96,8 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
       autoHighlight
       onValueChange={(next: Option | null) => {
         if (next === null || next.key === selected?.key) return
-        window.location.assign(`/w/${next.key}/`)
+        // Within the document, as a link to the board goes.
+        void navigate(toBoard(next.name))
       }}
     >
       <ComboboxTrigger
