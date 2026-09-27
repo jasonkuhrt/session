@@ -7,6 +7,7 @@ import type { StageRange } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { checkoutLabel } from '../lib/format'
 import { mainMeaning } from '../lib/index-meanings'
+import { selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { AgentPills } from './agent-pills'
 import { Copyable } from './copyable'
@@ -39,9 +40,13 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
-/** How a card looks for what it is and what a drag is doing to it: dim when quiet, outlined where a held card would land, faint while it is the one held. */
+/**
+ * How a card looks for what it is and what a drag is doing to it: dim when
+ * quiet, outlined where a held card would land, faint while it is the one
+ * held, and ringed while it is marked as the selection.
+ */
 export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boolean; held: boolean }) =>
-  cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40')
+  cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40', selectionRing)
 
 /**
  * One worktree in two lines, since there are no columns to carry the rest:

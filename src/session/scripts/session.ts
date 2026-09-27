@@ -462,8 +462,7 @@ const move = (options: Options, repository: SessionRepository) =>
     const moved = yield* repository.moveItem({
       id,
       to: stage,
-      beforeId: namesGroup ? undefined : before,
-      beforeGroup: namesGroup ? before : undefined,
+      ...(before === undefined ? {} : namesGroup ? { beforeGroup: before } : { beforeId: before }),
       revision: session.revision,
     });
     const item = stageIn(moved, stage).items.find((entry) => entry.id === id)!;

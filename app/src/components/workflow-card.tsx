@@ -5,11 +5,13 @@ import { Check } from 'lucide-react'
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
 import { toItem, useBoardName } from '../lib/base'
+import { landing } from '../lib/drag'
 import { listId } from '../lib/lanes'
 import { selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { moveAvailability } from '../lib/workflow'
 import { Copyable } from './copyable'
+import { HeldWords } from './held-words'
 import { type Binding, useBindings, useReveal } from './keys'
 import { useTip } from './tip'
 import { Button } from './ui/button'
@@ -99,11 +101,15 @@ function useCardKeys({ item, stage, selected, pending, onStage }: {
   useBindings(selected ? bindings : [])
 }
 
-export function WorkflowCard({ item, index, stage, pending, choosing, chosenIds, selectedId, accepts, onChosenChange, onComplete, onStage }: CardActions & {
+export function WorkflowCard({ item, index, stage, lands, words, pending, choosing, chosenIds, selectedId, accepts, onChosenChange, onComplete, onStage }: CardActions & {
   item: Item
   /** Its place in its list: the lane's cards in no group, or its group's cards. */
   index: number
   stage: Stage
+  /** Whether the card held over this one would make a group with it if it were dropped now. */
+  lands: boolean
+  /** What dropping this card where it is would do, while it is the one held; null when the lanes show all of it. */
+  words: string | null
 }) {
   // Execute is frozen: its cards leave only by completing, never by dragging.
   const frozen = stage === 'Execute'
@@ -139,8 +145,11 @@ export function WorkflowCard({ item, index, stage, pending, choosing, chosenIds,
         'relative rounded-xl outline-none',
         frozen ? undefined : 'cursor-grab focus-visible:ring-3 focus-visible:ring-ring/50',
         !frozen && isDragSource && 'cursor-grabbing',
+        lands && landing,
       )}
     >
+      {/* The held card is this element itself, carried by the pointer, so the words ride on it. */}
+      <HeldWords words={isDragSource ? words : null} />
       <Card
         size="sm"
         data-selected={selected ? 'true' : undefined}

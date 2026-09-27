@@ -18,12 +18,20 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 
 /**
- * What a board names: items chosen in one lane as a group, or Batch items as
- * a batch for Queue, either the ones chosen or the items of one group there,
- * in which case the group's name is where the name starts.
+ * What a board names: items chosen in one lane as a group; two cards as a
+ * group, one dropped on the other in no group of their lane, `ids` and
+ * `titles` the one dropped on first and the one dropped second; or Batch
+ * items as a batch for Queue, either the ones chosen or the items of one
+ * group there, in which case the group's name is where the name starts.
  */
 export type BoardNameRequest =
   | { readonly kind: 'group'; readonly stage: Stage; readonly ids: readonly string[] }
+  | {
+    readonly kind: 'drop'
+    readonly stage: Stage
+    readonly ids: readonly [string, string]
+    readonly titles: readonly [string, string]
+  }
   | { readonly kind: 'batch'; readonly ids: readonly string[]; readonly group: string | null }
 
 /**
@@ -74,21 +82,30 @@ function epicCopyOf(request: EpicNameRequest) {
   }
 }
 
+/** What a group's dialog says it will gather: the items chosen, or two cards, one dropped on the other. */
+function gatheredOf(request: Extract<BoardNameRequest, { kind: 'group' | 'drop' }>) {
+  if (request.kind === 'drop') {
+    const [onto, held] = request.titles
+    return `“${onto}” and “${held}” will be gathered under one name, where “${onto}” stands.`
+  }
+  const count = request.ids.length
+  return `${count} chosen ${count === 1 ? 'item' : 'items'} in ${request.stage} will be gathered under one name.`
+}
+
 function copyOf(request: NameRequest) {
   if (request.kind === 'epic' || request.kind === 'rename') return epicCopyOf(request)
-  const count = request.ids.length
-  const chosen = `${count} chosen ${count === 1 ? 'item' : 'items'}`
-  if (request.kind === 'group') {
-    const lane = request.stage
+  if (request.kind === 'group' || request.kind === 'drop') {
     return {
       title: 'Gather a group',
-      description: `${chosen} in ${lane} will be gathered under one name. A name ${lane} already has adds them to that group.`,
+      description: `${gatheredOf(request)} A name ${request.stage} already has adds them to that group.`,
       label: 'Group name',
       placeholder: 'What do these items have in common?',
       submit: 'Group items',
       submitting: 'Grouping…',
     }
   }
+  const count = request.ids.length
+  const chosen = `${count} chosen ${count === 1 ? 'item' : 'items'}`
   return {
     title: 'Queue a focused batch',
     description: request.group === null
@@ -104,17 +121,17 @@ function copyOf(request: NameRequest) {
 /** The mark beside each dialog's title: what the name will name. */
 function NameMark({ request }: { request: NameRequest | null }) {
   const className = 'size-4 text-muted-foreground'
-  if (request?.kind === 'group') return <Group className={className} />
+  if (request?.kind === 'group' || request?.kind === 'drop') return <Group className={className} />
   return request?.kind === 'batch' ? <Layers3 className={className} /> : <Boxes className={className} />
 }
 
 /**
  * The one dialog that names something: a group gathered from what a lane
- * chose, a batch composed for Queue from what Batch chose or from one group in
- * Batch, and on the index an epic, made or renamed. Every name the board and
- * the index ask for is asked for here, so all of them are named the same way,
- * and none starts from a name of the dialog's own: without one there is
- * nothing to name.
+ * chose or from one card dropped on another, a batch composed for Queue from
+ * what Batch chose or from one group in Batch, and on the index an epic, made
+ * or renamed. Every name the board and the index ask for is asked for here,
+ * so all of them are named the same way, and none starts from a name of the
+ * dialog's own: without one there is nothing to name.
  */
 export function NameDialog({
   request,

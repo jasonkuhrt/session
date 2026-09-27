@@ -12,10 +12,12 @@ export const refreshedNotice =
 /**
  * The one way a surface changes the records, so the board and the item page
  * cannot drift on the part that matters: every mutation carries the revision
- * the surface read, and one that lost the race reloads and says the records
- * moved rather than overwriting a newer file. A real failure and a refresh are
- * kept apart, because one is a problem to look at and the other is the surface
- * saying it caught up.
+ * the surface drew it on, and one that lost the race reloads and says the
+ * records moved rather than overwriting a newer file. That is the session it
+ * read, unless the write was made on an earlier one, as a board's drop is made
+ * on the session it drew when the card was picked up. A real failure and a
+ * refresh are kept apart, because one is a problem to look at and the other is
+ * the surface saying it caught up.
  */
 export function useSessionMutations(input: {
   readonly session: Session | null
@@ -30,13 +32,18 @@ export function useSessionMutations(input: {
   const [refreshed, setRefreshed] = React.useState(false)
 
   const mutate = React.useCallback(
-    async <P extends SessionMutation>(path: P, body: SessionWriteBody<P>) => {
+    async <P extends SessionMutation>(
+      path: P,
+      body: SessionWriteBody<P>,
+      /** The revision the write was drawn on; the session read, when left out. */
+      drawn?: string,
+    ) => {
       if (!session) return false
       setPending(true)
       setFailure(null)
       setRefreshed(false)
       try {
-        await onSession(await SessionApi.mutate(board, path, body, session.revision))
+        await onSession(await SessionApi.mutate(board, path, body, drawn ?? session.revision))
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
