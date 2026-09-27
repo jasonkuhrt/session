@@ -391,8 +391,11 @@ side; Queue and Execute hold batch directories only:
 
 Use normal Markdown links to relevant files under `context/<ID>/`, or put long
 technical context under `### Evidence`, which the board collapses by default.
-Keep completion criteria visible when they determine whether the work is ready
-or done.
+The panel starts at the item's first `### Evidence` heading, never at such a
+line inside a code block, and holds everything after it; the item is still one
+document, so a link reference or a footnote resolves across the panel, and the
+footnotes stay at the foot of the page, after it. Keep completion criteria
+visible when they determine whether the work is ready or done.
 
 Migrate item by item using actual approval and design state. Preserve source
 material before restructuring it, stable IDs, constraints, and intended batch

@@ -21,13 +21,14 @@ const noCapabilities: DaemonCapabilities = { terminal: false, zed: false }
 /**
  * What this page can offer a worktree: a terminal, when the daemon can run
  * cmux, and Zed, when it can run zed. The daemon runs both from its own PATH
- * and says whether each is there; it is read once, when the page loads. Until
- * that answer arrives, and if it never does, there is no control to draw, and
- * the page's own read is what says the daemon cannot be reached.
+ * and says whether each is there; it is read when the page loads, and again
+ * when the page's stream comes back, so a restarted daemon's answer replaces
+ * it. Until that answer arrives, and if it never does, there is no control to
+ * draw, and the page's own read is what says the daemon cannot be reached.
  */
 export function useCapabilities(): DaemonCapabilities {
   // A failed read draws nothing, and has nothing to say twice.
-  return useQuery(reads.capabilities()).data ?? noCapabilities
+  return useQuery(reads.daemon()).data ?? noCapabilities
 }
 
 type ActionProps = {
