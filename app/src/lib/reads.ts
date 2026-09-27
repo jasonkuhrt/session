@@ -41,6 +41,19 @@ export const reads = {
       refetchOnMount: false,
     }),
 
+  /**
+   * What the daemon says about itself now, for what the description the
+   * document keeps can be too old to say: whether it serves a board taken on
+   * after the document loaded, which a page reached without a document load
+   * can name. Kept apart from `daemon`, whose stamp stays the loaded build's.
+   */
+  daemonNow: () =>
+    queryOptions({
+      queryKey: ['daemon', 'now'],
+      queryFn: ({ signal }) => DaemonApi.describe(signal),
+      staleTime: 0,
+      gcTime: 0,
+    }),
 
   /** A board's session: its stages and their items, with the revision a write is made against. */
   session: (board: string) =>

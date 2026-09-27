@@ -65,19 +65,25 @@ export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S)
  * session and no stream. A board is gated on the daemon's description, which
  * names the boards it serves; a page drawn from the index's rows would be
  * gated on those. The answer is kept for the document, so the page that draws
- * the same read shows it rather than asking again. A read that fails says
- * nothing about the address, and the page draws as it would without the gate.
+ * the same read shows it rather than asking again. A page reached without a
+ * document load can name what was taken on after the kept answer was read, so
+ * an answer that does not hold the address is asked again now, by `again`,
+ * before the address is called no page. A read that fails says nothing about
+ * the address, and the page draws as it would without the gate.
  */
-export async function noPageUnless<T, K extends QueryKey>({ client, read, named }: {
+export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ client, read, again, named }: {
   readonly client: QueryClient
   /** The read whose answer says what an address may name. */
   readonly read: QueryExecuteOptions<T, Error, T, T, K>
+  /** The same question asked now, for an address the kept answer does not hold. */
+  readonly again: QueryExecuteOptions<T, Error, T, T, L>
   /** Whether that answer holds what this address names. */
   readonly named: (answer: T) => boolean
 }): Promise<void> {
   let answer: T
   try {
     answer = await client.query({ ...read, gcTime: Number.POSITIVE_INFINITY })
+    if (!named(answer)) answer = await client.query(again)
   } catch {
     return
   }
