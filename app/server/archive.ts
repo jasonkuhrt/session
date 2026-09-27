@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect';
 import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
 import { archiveDirectory } from './layout.ts';
-import { itemIdSource, recordDecoder } from './model.ts';
+import { itemIdSource, linesOf, recordDecoder } from './model.ts';
 
 /**
  * Archived records: how a filed item's file is named, how that name is read
@@ -71,7 +71,7 @@ const closedLine = /^`([0-9a-f]{40,64})` /u;
 /** The commits whose notes an item's text carries: the reader of `closedByCommitNote`. */
 export const commitsThatClosed = (text: string): ReadonlySet<string> => {
   const hashes = new Set<string>();
-  const lines = text.split('\n');
+  const lines = linesOf(text);
   for (const [index, line] of lines.entries()) {
     if (line.trimEnd() !== closedHeading) continue;
     const hash = closedLine.exec(lines[index + 2] ?? '')?.[1];

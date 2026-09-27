@@ -27,11 +27,15 @@ differ from the new convention.
 
 Each item is one file. Its first line is `## ID — Short title`, with an em dash,
 and the rest is the body: a short lead paragraph, then the stage's meaningful
-section. IDs are unique across all five stages and survive moves. A commit's
-`Session-Done:` value is IDs separated by commas or spaces, and it is filed
-whole or not at all: when any of them names no item of the session, open or
-archived, none of them is filed. Add only useful evidence and constraints.
-There is no universal eight-field form.
+section. A section a stage requires that has nothing to hold says so with the
+one word `None`, exactly so and alone on its line, which the stage accepts as
+intentionally empty wherever its sections are checked; beside anything else in
+the section `None` is ordinary content, and a section with nothing under its
+heading still fails. IDs are unique across all five stages and survive moves.
+A commit's `Session-Done:` value is IDs separated by commas or spaces, and it
+is filed whole or not at all: when any of them names no item of the session,
+open or archived, none of them is filed. Add only useful evidence and
+constraints. There is no universal eight-field form.
 
 ## Triage
 
