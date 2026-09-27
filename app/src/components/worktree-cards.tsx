@@ -13,6 +13,7 @@ import type { Marker } from '../lib/order'
 import { epicBoardMeaning, epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
 import { cn } from '../lib/utils'
+import { HeldWords } from './held-words'
 import { LandingLine, markedSide } from './landing-line'
 import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
@@ -133,9 +134,7 @@ function EpicHeading({ card, movable: canMove, onRename, ref }: {
       aria-label={`Drag the epic ${card.name}`}
       className={cn('flex items-center gap-2 border-b px-3 py-2 outline-none', canMove && 'cursor-grab')}
     >
-      <Explained meaning={epicMeaning(card.name)} className="shrink-0">
-        <EpicMark />
-      </Explained>
+      <Explained meaning={epicMeaning(card.name)} className="shrink-0"><EpicMark /></Explained>
       <h2 className="min-w-0 text-sm font-medium wrap-anywhere">
         <a className={epicLink} href={`${epicPath(card.name)}/`} title={tip(epicBoardMeaning(card.name))}>{card.name}</a>
       </h2>
@@ -222,9 +221,11 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
       title={card.quiet ? tip(quietCardMeaning) : undefined}
+      // The focus outline is taken away first, so the landing outline, which
+      // sets the same style, is not merged away with it.
       className={cn(
-        cardClass({ quiet: card.quiet, lands: context.landingOn === onto, held: isDragSource }),
         'outline-none',
+        cardClass({ quiet: card.quiet, lands: context.landingOn === onto, held: isDragSource }),
         canMove && 'cursor-grab',
       )}
     >
@@ -275,7 +276,7 @@ export function HeldPreview({ held, words, context }: {
 }) {
   return (
     <div className="relative">
-      {words === null ? null : <Badge className="absolute -top-3 left-3 z-10 shadow-sm">{words}</Badge>}
+      <HeldWords words={words} />
       <Card size="sm" className={cn('gap-0 py-0 shadow-lg', held.kind === 'head' && 'max-w-md')}>
         {held.kind === 'epic'
           ? (

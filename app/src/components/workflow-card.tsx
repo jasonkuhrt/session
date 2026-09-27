@@ -3,9 +3,11 @@ import { Check } from 'lucide-react'
 
 import type { Item, Stage } from '../../contract'
 import { itemHref } from '../lib/base'
+import { landing } from '../lib/drag'
 import { cardId, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { Copyable } from './copyable'
+import { HeldWords } from './held-words'
 import { useTip } from './tip'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
@@ -36,13 +38,21 @@ export type CardActions = {
   readonly onComplete: (board: string, item: Item) => void
 }
 
-export function WorkflowCard({ board, item, index, stage, pending, choosing, selectedIds, accepts, onSelect, onComplete }: CardActions & {
+/** What a card may be chosen for: only the lane that is choosing, on its own worktree's board, offers its cards. */
+const purposeIn = ({ choosing, board, stage }: { readonly choosing: Choosing; readonly board: string; readonly stage: Stage }) =>
+  choosing?.board === board && choosing.stage === stage ? choosing.purpose : null
+
+export function WorkflowCard({ board, item, index, stage, lands, words, pending, choosing, selectedIds, accepts, onSelect, onComplete }: CardActions & {
   /** The board of the worktree the item is filed in, which its page and every write to it go through. */
   board: string
   item: Item
   /** Its place in its list: the lane's cards in no group, or its group's cards. */
   index: number
   stage: Stage
+  /** Whether the card held over this one would make a group with it if it were dropped now. */
+  lands: boolean
+  /** What dropping this card where it is would do, while it is the one held; null when the lanes show all of it. */
+  words: string | null
 }) {
   // Execute is frozen: its cards leave only by completing, never by dragging.
   const frozen = stage === 'Execute'
@@ -54,8 +64,7 @@ export function WorkflowCard({ board, item, index, stage, pending, choosing, sel
     accept: source => accepts(source.id, { board, stage, group: item.group }),
     disabled: pending || frozen,
   })
-  // Only the lane that is choosing offers its cards to be chosen.
-  const purpose = choosing?.board === board && choosing.stage === stage ? choosing.purpose : null
+  const purpose = purposeIn({ choosing, board, stage })
   const tip = useTip()
   return (
     // The card is the drag surface, so it is what the keyboard reaches and
@@ -75,8 +84,11 @@ export function WorkflowCard({ board, item, index, stage, pending, choosing, sel
         'relative rounded-xl outline-none',
         frozen ? undefined : 'cursor-grab focus-visible:ring-3 focus-visible:ring-ring/50',
         !frozen && isDragSource && 'cursor-grabbing',
+        lands && landing,
       )}
     >
+      {/* The held card is this element itself, carried by the pointer, so the words ride on it. */}
+      <HeldWords words={isDragSource ? words : null} />
       <Card size="sm" className={cn(isDragSource && 'opacity-50')}>
         <CardContent className="space-y-3">
           <div className="flex items-start gap-2">

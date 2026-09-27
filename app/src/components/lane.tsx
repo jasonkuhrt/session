@@ -4,7 +4,7 @@ import type * as React from 'react'
 
 import type { Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
-import type { Lane as LaneLayout, Placement } from '../lib/lanes'
+import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { stageHint } from '../lib/workflow'
@@ -41,9 +41,6 @@ export type LanePart = {
   readonly executeOccupied: boolean
 }
 
-/** Where the card being dragged would land if it were dropped now, on its own worktree's board; null while none is. */
-export type HeldPlacement = { readonly board: string; readonly placement: Placement } | null
-
 /**
  * A part of a lane that takes a card into the lane itself, in no group, on
  * one worktree's board. The heading takes it to the lane's start and the
@@ -79,7 +76,7 @@ const offersChoice = ({ board, stage, count, choosing }: {
  * One stage's lane of a worktree's board, whole: its heading and controls,
  * which take a card to its start, then its entries.
  */
-export function Lane({ part, stage, held, ...actions }: LaneActions & { part: LanePart; stage: Stage; held: HeldPlacement }) {
+export function Lane({ part, stage, dragging, ...actions }: LaneActions & { part: LanePart; stage: Stage; dragging: Dragging | null }) {
   const { board, lane, count, executeOccupied } = part
   const { ref: wholeRef } = useLaneDrop({ ...actions, board, stage, at: 'half' })
   const { ref: startRef } = useLaneDrop({ ...actions, board, stage, at: 'start' })
@@ -96,7 +93,7 @@ export function Lane({ part, stage, held, ...actions }: LaneActions & { part: La
         </LaneHeading>
         <LaneControls {...actions} board={board} stage={stage} selected={chosenIn({ lane, selectedIds: actions.selectedIds })} count={count} executeOccupied={executeOccupied} />
       </div>
-      <LaneList {...actions} board={board} stage={stage} lane={lane} held={held} endRef={endRef} className="min-h-32" endClassName="h-24" />
+      <LaneList {...actions} board={board} stage={stage} lane={lane} dragging={dragging} endRef={endRef} className="min-h-32" endClassName="h-24" />
     </section>
   )
 }
@@ -110,7 +107,7 @@ export function Lane({ part, stage, held, ...actions }: LaneActions & { part: La
  * stand in one row across the lanes, so its work reads across its stages and a
  * card moves straight across to another stage.
  */
-export function PartOfLane({ part, stage, held, ...actions }: LaneActions & { part: LanePart; stage: Stage; held: HeldPlacement }) {
+export function PartOfLane({ part, stage, dragging, ...actions }: LaneActions & { part: LanePart; stage: Stage; dragging: Dragging | null }) {
   const { board, name, lane, count, executeOccupied } = part
   const { ref: wholeRef } = useLaneDrop({ ...actions, board, stage, at: 'half' })
   const { ref: startRef } = useLaneDrop({ ...actions, board, stage, at: 'start' })
@@ -125,7 +122,7 @@ export function PartOfLane({ part, stage, held, ...actions }: LaneActions & { pa
         </PartHeading>
         <LaneControls {...actions} board={board} stage={stage} selected={chosenIn({ lane, selectedIds: actions.selectedIds })} count={count} executeOccupied={executeOccupied} />
       </div>
-      <LaneList {...actions} board={board} stage={stage} lane={lane} held={held} endRef={endRef} className="min-h-10" endClassName="h-10" />
+      <LaneList {...actions} board={board} stage={stage} lane={lane} dragging={dragging} endRef={endRef} className="min-h-10" endClassName="h-10" />
     </div>
   )
 }

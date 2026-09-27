@@ -14,13 +14,15 @@ export type SessionsOnScreen = ReadonlyMap<string, Session | null>
 /**
  * The one way a surface changes the records, so the board and the item page
  * cannot drift on the part that matters: every mutation goes to the board of
- * the session it changes, carrying the revision the surface read of that
- * session, and one that lost the race reloads that session and says the
- * records moved rather than overwriting a newer file. A board that draws the
+ * the session it changes, carrying the revision the surface drew it on, and
+ * one that lost the race reloads that session and says the records moved
+ * rather than overwriting a newer file. That is the session it read, unless
+ * the write was made on an earlier one, as a board's drop is made on the
+ * session it drew when the card was picked up. A board that draws the
  * worktrees of an epic or a project writes each item through its own
- * worktree's board, so nothing crosses worktrees. A real failure and a refresh
- * are kept apart, because one is a problem to look at and the other is the
- * surface saying it caught up.
+ * worktree's board, so nothing crosses worktrees. A real failure and a
+ * refresh are kept apart, because one is a problem to look at and the other
+ * is the surface saying it caught up.
  */
 export function useSessionMutations(input: {
   readonly sessions: SessionsOnScreen
@@ -35,14 +37,15 @@ export function useSessionMutations(input: {
   const [refreshed, setRefreshed] = React.useState(false)
 
   const mutate = React.useCallback(
-    async <P extends SessionMutation>(board: string, path: P, body: SessionWriteBody<P>) => {
+    // `drawn` is the revision the write was drawn on; the session read, when left out.
+    async <P extends SessionMutation>(board: string, path: P, body: SessionWriteBody<P>, drawn?: string) => {
       const session = sessions.get(board) ?? null
       if (!session) return false
       setPending(true)
       setFailure(null)
       setRefreshed(false)
       try {
-        await onSession(board, await SessionApi.mutate(board, path, body, session.revision))
+        await onSession(board, await SessionApi.mutate(board, path, body, drawn ?? session.revision))
         return true
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {

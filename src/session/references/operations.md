@@ -119,7 +119,13 @@ the revision and answered with the session:
   item in no group when `group` is left out; it is refused together with
   `beforeId`, with a `group` that is not `null`, and for a group the stage does
   not hold.
-- `POST /w/<key>/api/group {ids, name, revision}` is `group`.
+- `POST /w/<key>/api/group {ids, name, at?, revision}` is `group`. `at` names
+  one of the items, in no group, which is gathered first, and a group the
+  stage does not hold yet starts in its place, numbered as its file was,
+  rather than at the end of the stage; that is how a card dropped on another
+  makes a group on the board. A group the stage holds keeps its place, so `at`
+  moves nothing there. An `at` that is not among the items, or that names an
+  item in a group, is refused.
 - `POST /w/<key>/api/ungroup {ids, revision}` is `ungroup`.
 
 ## Finish and archive
@@ -1116,27 +1122,72 @@ ever drawn disabled with a reason: an empty choice and an occupied Execute
 are already visible in the lanes themselves. Execute is frozen: its cards can
 only be completed, which files them under `archive/`.
 
-A card is dragged by its whole self, and picking it up moves nothing. While it
-is held, the board draws it where the move would write it and outlines the list
-it would land in: one group, or the lane's cards in no group. Held over a card,
-it goes in front of that card while its own centre is above the card's centre
-and right after it once below, whichever list either is in, and it follows as it
-moves. Right after a card in no group it goes in front of whatever follows that
-card, a group included, so it lands just where it is drawn. Held over a group's
-heading or edge it joins the group, at its start over the group's top half and
-at its end over the bottom half, and a group the drag has emptied is still there
-to take it back until the drop. Held over the lane's heading it leaves any group
-for the start of the lane, in front of its first entry, a group included, and
-held over the space that runs on below the lane's last entry it leaves any group
-for the end of the lane. So a card dropped among a group's cards joins that
-group, one dropped among the lane's cards in no group leaves its group, and one
+A card is dragged by its whole self and picked up as a card on the index is, and
+picking it up moves nothing. Unlike a card on the index, which stays where it is
+until the drop, a held card is drawn where the move would write it, and the list
+it would land in is outlined: one group, or the lane's cards in no group. Held
+over a card, it goes in front of that card while its own centre is above the
+card's centre and right after it once below, whichever list either is in, and it
+follows as it moves. Right after a card in no group it goes in front of whatever
+follows that card, a group included, so it lands just where it is drawn. Held
+over a group's heading, which runs out to the group's top edge, it joins the
+group at its end, even where the drag has already drawn it in the group on the
+way there, though a card of that group drawn in it stays where it is drawn. Held
+over the group's side or bottom edge it joins it at its start over the group's
+top half and at its end over the bottom half, unless the drag has already drawn
+it in the group, where it stays. A card drawn ahead of a group in its own lane
+is never drawn into the group's top half, heading and edges alike, since that
+would lift the group, heading and all, from under the pointer: there it stays
+drawn where it is, the group is outlined, the card says it joins, and the drop
+puts it last. It is drawn among the group's cards only where the pointer itself
+is on one of them, never where the held card merely overlaps them. A group the
+drag has emptied is still there to take it back until the drop. Held over the
+lane's heading it leaves any group for the start of the lane, in front of its
+first entry, a group included, and held over the space that runs on below the
+lane's last entry it leaves any group for the end of the lane. So a card dropped
+among a group's cards or on its heading joins that group, one dropped among the
+lane's cards in no group or on the lane's own space leaves its group, and one
 dropped in another lane lands in no group there unless it was dropped among one
-of that lane's groups. `POST /api/move` carries that as `group`, the group it
-lands in or `null`, and names the card or, for a card in no group, the group it
-goes in front of. Nothing drops into Queue or Execute; a Queue card can be
-reordered inside its own batch or dragged back to Batch, Design, or Triage, into
-a group there or not. Escape puts the held card back, and so does a move the
-engine refuses.
+of that lane's groups or on one of their headings. `POST /api/move` carries that
+as `group`, the group it lands in or `null`, and names the card or, for a card
+in no group, the group it goes in front of. Nothing drops into Queue or Execute;
+a Queue card can be reordered inside its own batch or dragged back to Batch,
+Design, or Triage, into a group there or not. Escape puts the held card back,
+and so does a move the engine refuses.
+
+A card makes a group with another the way a worktree makes an epic on the index:
+by being dropped on it. Held with its centre over the middle third of a card in
+no group of its own lane, in Triage, Design or Batch, it moves nothing; that
+card is outlined instead of a list, and a drop there opens the dialog groups and
+batches are named in, which starts empty and makes nothing without a name. The
+share of the card that counts as its middle is `ontoShare` in
+`app/src/lib/held.ts`. A name makes the group directory holding the card dropped
+on and then the held one, in the place of the card dropped on and numbered as
+its file was, written with `POST /api/group` and `at` naming that card; the held
+card leaves any group it was in, and a name the lane already has adds both to
+that group's end, as `group` does. Over a card's top or bottom third, and over a
+card in a group or in another lane, a held card is placed as above and makes no
+group. The keys step a card from place to place as they always have, landing on
+the middle of each card, so neither a card's middle nor a group's heading is a
+place for a card they carry.
+
+The held card says above it what the drop would do to its group, as the copy a
+card on the index carries does: `New group with "Drag a card onto another"` over
+a card it would make a group with, `Join "Needs a decision"` where it would land
+in a group it is not in, and `Leave "Needs a decision"` where it would leave its
+group for no group, cut short at the card's width. It says nothing when the drop
+would keep it in its list, or move it between the lanes' cards in no group,
+since the lanes draw where it lands.
+
+While a card is held, and until its move is written, the board draws the session
+it drew when the card was picked up, as the index draws its rows: a change it is
+told of meanwhile is read once the card is let go, and a read already under way
+at pickup lands unseen until then. A move is written against that session's
+revision, so one dropped on files that changed in the meantime is refused as
+changed on disk, and the board reads again. The group a dropped card's dialog
+names is written against the files as the board has read them when the name is
+given, as the writes of its other dialogs are, and starts where the card dropped
+on stands then; the engine refuses it once the two are no longer in one lane.
 
 Beside the session, each board serves three read-only listings. `GET
 /w/<key>/api/ledger` is the ledger's entries, newest first by date and then by
@@ -1176,7 +1227,8 @@ pages, with the reason above them, because none of them reads the items.
 The board follows the files, and so does every page under it. The daemon watches
 that worktree's `.session` and pushes an event when anything under it changes,
 `context/` and `ledger/` included, and the board refetches; it never polls.
-Refetching pauses while a card is being dragged.
+Refetching pauses while a card is being dragged or a write is under way, and one
+read catches up after.
 
 Every mutation checks the revision, a digest over every item file's path and
 content, so a stale tab cannot overwrite a later edit on disk; reload and repeat

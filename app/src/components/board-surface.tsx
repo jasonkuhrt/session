@@ -112,7 +112,7 @@ export function BoardSurface({ parts, grouped, loading, problems, stream }: {
   if (choosing !== null && !loading && choosableIds.size === 0) choose(null)
   else if (selectedIds.size !== selection.size) setSelection(selectedIds)
 
-  const drawn: BoardPart[] = parts.flatMap(part => (part.session === null ? [] : [{ board: part.board, name: part.name, stages: part.session.stages }]))
+  const drawn: BoardPart[] = parts.flatMap(part => (part.session === null ? [] : [{ board: part.board, name: part.name, session: part.session }]))
 
   return (
     <>
@@ -142,7 +142,9 @@ export function BoardSurface({ parts, grouped, loading, problems, stream }: {
             onUngroup={(board, ids) => void mutate(board, '/api/ungroup', { ids })}
             onStart={board => void mutate(board, '/api/start', {})}
             onComplete={(board, item) => setCompleting({ board, item })}
-            onMove={(board, id, placement) => mutate(board, '/api/move', { id, ...placement })}
+            onMove={(board, id, placement, revision) => mutate(board, '/api/move', { id, ...placement }, revision)}
+            onGroupDrop={({ board, stage, onto, held }) =>
+              setNaming({ kind: 'drop', board, stage, ids: [onto.id, held.id], titles: [onto.title, held.title] })}
             onDraggingChange={setDragging}
           />
         ) : (
@@ -158,6 +160,14 @@ export function BoardSurface({ parts, grouped, loading, problems, stream }: {
         onClose={() => setNaming(null)}
         onName={async name => {
           if (naming === null) return
+          // A card dropped on another makes a group of the two, the one
+          // dropped on first and in its place, on the files as they are read
+          // now: the place is that card's wherever it stands by then, and the
+          // engine refuses the two once they are no longer in one lane.
+          if (naming.kind === 'drop') {
+            if (await mutate(naming.board, '/api/group', { ids: naming.ids, name, at: naming.ids[0] })) setNaming(null)
+            return
+          }
           // A name the lane's choice asked for names what is still chosen,
           // since the files may have moved under the open dialog, and ends
           // the choice; one a group's heading asked for names that group and
