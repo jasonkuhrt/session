@@ -247,5 +247,18 @@
       }
     ]
   },
+  // `include` is what TypeScript checks, and `files` adds nothing to it. It
+  // names the files a command or a tool starts from, which React Doctor takes
+  // as entries: Start reaches the router through a virtual module, Vite loads
+  // its config, and the rest run as commands. `check:types` runs a bare `tsc`
+  // because React Doctor reads a script's `tsc -p <tsconfig>` as an entry for
+  // each file the tsconfig includes, and it never checks an entry's exports.
+  "files": [
+    "app/src/router.tsx",
+    "app/vite.config.ts",
+    "install.ts",
+    "scripts/rename-stage-directories.ts",
+    "src/session/scripts/session.ts"
+  ],
   "include": ["app/**/*.ts", "app/**/*.tsx", "src/**/*.ts", "scripts/**/*.ts", "install.ts"]
 }

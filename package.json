@@ -9,7 +9,7 @@
     "install:skill": "bash install.sh",
     "lint": "oxlint .",
     "doctor": "react-doctor . --lint --scope full --blocking error --yes --no-score",
-    "check:types": "effect-tsgo patch && tsc -p tsconfig.json"
+    "check:types": "effect-tsgo patch && tsc"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",

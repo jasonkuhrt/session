@@ -92,7 +92,7 @@ const sameOrder = <A>(left: readonly A[], right: readonly A[]) =>
   left.length === right.length && left.every((entry, index) => entry === right[index])
 
 /** What a drop writes and draws: the placement's `before` and `after`, where its line goes, and the words over the held copy. */
-export type Landing = {
+type Landing = {
   readonly before: string | null
   readonly after: readonly string[]
   readonly marker: Marker
