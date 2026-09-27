@@ -1205,9 +1205,9 @@ or legend it had open and drops its reads; the page that arrives reads what
 it shows and opens its own stream, as it did when every move loaded a
 document. A move to another board, item or file mounts the page afresh, with
 nothing kept from the one before. The address bar shows each page's address,
-and Back and Forward return to it scrolled where it was left, once its
-content is drawn; a page reached by a link starts at the top. A middle click
-or a click with a modifier still opens a page in a tab of its own.
+and Back, Forward and a reload return to it scrolled where it was left, once
+its reads have landed; a page reached by a link starts at the top. A middle
+click or a click with a modifier still opens a page in a tab of its own.
 
 ## Agents on the board
 
