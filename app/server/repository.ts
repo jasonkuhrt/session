@@ -94,7 +94,7 @@ const gitignoreContent = '*\n';
  *   was filed now, or already was, or was brought back by a person after this
  *   commit filed it; `failures` are the ids whose filing failed, and why
  */
-export type LineOutcome =
+type LineOutcome =
   | { readonly kind: 'unknown'; readonly words: Arr.NonEmptyReadonlyArray<string> }
   | { readonly kind: 'outside' }
   | { readonly kind: 'filed'; readonly failures: ReadonlyArray<{ readonly id: string; readonly message: string }> };
