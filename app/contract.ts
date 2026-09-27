@@ -277,8 +277,20 @@ export const DaemonCapabilitiesSchema = Schema.Struct({
 });
 export type DaemonCapabilities = typeof DaemonCapabilitiesSchema.Type;
 
-/** What `GET /api/daemon` answers: who the daemon is, and what it can do for a page. */
-export const DaemonDescriptionSchema = Schema.Struct({ ...DaemonInfoSchema.fields, ...DaemonCapabilitiesSchema.fields });
+/**
+ * What `GET /api/daemon` answers: who the daemon is, what it can do for a
+ * page, and the boards it serves.
+ */
+export const DaemonDescriptionSchema = Schema.Struct({
+  ...DaemonInfoSchema.fields,
+  ...DaemonCapabilitiesSchema.fields,
+  /**
+   * The key of every board the daemon serves under `/w/`, one per tracked
+   * worktree, from what it tracks and nothing it has to read. A board's page
+   * is drawn only at a key it names.
+   */
+  boards: Schema.Array(Schema.String),
+});
 export type DaemonDescription = typeof DaemonDescriptionSchema.Type;
 
 /**

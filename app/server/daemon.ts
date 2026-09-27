@@ -1635,7 +1635,11 @@ export const runDaemon = async () => {
     return aliases.has(hostname);
   };
 
-  /** Who the daemon is, which the CLI checks, and what it can do for a page, which a page checks. */
+  /**
+   * Who the daemon is, which the CLI checks, and what it can do for a page,
+   * which a page checks: the actions it can take, and the boards it serves,
+   * which a board's page is gated on.
+   */
   const describe = async (): Promise<DaemonDescription> => ({
     pid: process.pid,
     port: settings.port,
@@ -1643,6 +1647,9 @@ export const runDaemon = async () => {
     sourceStamp: stamp,
     terminal: await runNode(cmuxOnPath),
     zed: await runNode(zedOnPath),
+    // The keys `board` routes by, from the tracked set alone: no session is
+    // read and no agent listed, so a page can ask before it draws a board.
+    boards: [...new Set([...tracked.values()].map((entry) => entry.key))].toSorted(),
   });
 
   /**
