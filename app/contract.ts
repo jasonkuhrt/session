@@ -730,14 +730,24 @@ export type MoveItem = typeof MoveItemSchema.Type;
 export const GroupItemsSchema = Schema.Struct({
   ids: Schema.Array(Schema.String),
   name: Schema.String,
+  /**
+   * One of `ids`, in no group, gathered first and in whose place a group the
+   * stage does not hold yet starts, numbered as its file was, as a card
+   * dropped on another on the board starts one where that card stood; left
+   * out, the group starts at the end of the stage, as `session group` starts
+   * one. A group the stage holds keeps its place either way.
+   */
+  at: Schema.String.pipe(Schema.optionalKey),
   revision: Schema.String,
 });
+export type GroupItems = typeof GroupItemsSchema.Type;
 
 /** What `POST /api/ungroup` takes: items taken out of their groups. */
 export const UngroupItemsSchema = Schema.Struct({
   ids: Schema.Array(Schema.String),
   revision: Schema.String,
 });
+export type UngroupItems = typeof UngroupItemsSchema.Type;
 
 /** What `POST /api/batch` takes: Batch items, queued as the batch of that name. */
 export const QueueBatchSchema = Schema.Struct({
@@ -745,17 +755,20 @@ export const QueueBatchSchema = Schema.Struct({
   name: Schema.String,
   revision: Schema.String,
 });
+export type QueueBatch = typeof QueueBatchSchema.Type;
 
 /** What `POST /api/start` takes: the revision the first queued batch starts on. */
 export const StartBatchSchema = Schema.Struct({
   revision: Schema.String,
 });
+export type StartBatch = typeof StartBatchSchema.Type;
 
 /** What `POST /api/complete` takes: the Execute item completed. */
 export const CompleteItemSchema = Schema.Struct({
   id: Schema.String,
   revision: Schema.String,
 });
+export type CompleteItem = typeof CompleteItemSchema.Type;
 
 /**
  * Every write a board makes to its records, by its route, with the body each

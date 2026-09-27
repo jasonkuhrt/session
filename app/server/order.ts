@@ -1,6 +1,6 @@
 import * as Effect from 'effect/Effect';
 import * as Result from 'effect/Result';
-import { numberEntries } from './layout.ts';
+import { numberEntries } from './numbering.ts';
 import { quote } from './model.ts';
 import { RepositoryError, type SessionRepository } from './repository.ts';
 import type { WorktreeSession } from './worktree.ts';
