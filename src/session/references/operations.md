@@ -151,6 +151,10 @@ Session-Done: BE-12
 Session-Done: BE-13, BE-14
 ```
 
+A value holds ids only, each letters, a hyphen and a number, separated by
+commas or spaces; a line whose value holds any other word is reported whole,
+and none of its ids is filed.
+
 The daemon watches every tracked worktree's reflog, so it sees the commit the
 moment it is made, and the engine files each named item as done from whatever
 stage it is in: the commit is the evidence of completion, so the route through
@@ -177,11 +181,14 @@ sentence per commit, and as a count beside its name on the index:
 - the id is not in the session, open or archived;
 - the `Session-Done:` line is outside the last paragraph, so Git does not read
   it as a trailer and nothing was closed;
+- a `Session-Done:` line's value holds words that are not ids, such as prose
+  written after one, in the trailers or outside them; the report names the line
+  and those words, and nothing on the line was filed;
 - filing the item away failed, for instance because a record of that name
   already exists that day; this is tried again whenever the session changes
   outside `context/`, `ledger/` and `meta/`, or the branch changes.
 
-The fix for the first two is to amend the commit. A report lasts while the
+The fix for the first three is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
 amended without rewriting published history.
 
