@@ -1,6 +1,7 @@
 import { Settings } from 'lucide-react'
 
-import { changeSettings, useSettings } from '../lib/settings'
+import { changeSettings, type Hue, useSettings } from '../lib/settings'
+import { HueSwatches } from './hue-swatches'
 import { Button } from './ui/button'
 import {
   DropdownMenu,
@@ -34,9 +35,37 @@ export function SettingsMenu({ className }: { className?: string }) {
               </span>
             </span>
           </DropdownMenuCheckboxItem>
+          <ColourSetting
+            name="Code colour"
+            does="Inline code on every page is drawn in this hue; a code block keeps the text's colour."
+            value={settings.codeColor}
+            onChange={(codeColor) => changeSettings({ codeColor })}
+          />
         </DropdownMenuGroup>
         {problem === null ? null : <p className="px-1.5 py-1 text-xs text-destructive wrap-anywhere">{problem}</p>}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/**
+ * A setting that holds one of the theme's hues: its name and what it does, as
+ * every item here says, over the swatches that change it. A press changes it
+ * without closing the menu, so the page behind shows each hue as it is tried.
+ */
+function ColourSetting({ name, does, value, onChange }: {
+  name: string
+  does: string
+  value: Hue
+  onChange: (hue: Hue) => void
+}) {
+  return (
+    <div className="space-y-1.5 px-1.5 py-1 text-sm">
+      <span className="block">
+        <span className="block">{name}</span>
+        <span className="block text-xs text-muted-foreground">{does}</span>
+      </span>
+      <HueSwatches label={name} value={value} onChange={onChange} />
+    </div>
   )
 }

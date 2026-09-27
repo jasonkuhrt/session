@@ -184,9 +184,16 @@
   transition: text-decoration-color 120ms ease;
 }
 .markdown-reader a:hover { text-decoration-color: currentColor; }
-.markdown-reader code { background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
+/*
+ * Inline code stands out from the sentence it sits in: it is drawn in the hue
+ * the Code colour setting chooses, which the settings set on the document's
+ * root as `--code`, over the muted ground. A block is already set apart as a
+ * band of its own, so it keeps the text's colour. Until the settings are read
+ * `--code` is unset, and inline code is drawn in the text's colour too.
+ */
+.markdown-reader code { color: var(--code); background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
 .markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); font-size: .9em; line-height: 1.6; }
-.markdown-reader pre code { padding: 0; background: none; font-size: 1em; }
+.markdown-reader pre code { color: inherit; padding: 0; background: none; font-size: 1em; }
 /*
  * Code is not prose: its lines are as long as they are, and the reading
  * column cuts them. On a page that is its Markdown, an item's or a file's, a

@@ -3,6 +3,15 @@ import * as KeyValueStore from 'effect/unstable/persistence/KeyValueStore'
 import * as React from 'react'
 
 /**
+ * The theme's hues, by the names `styles.css` gives them: each is the colour
+ * `--tn-<name>` of Tokyo Night's palette. A colour setting holds one of them,
+ * so the board is never drawn in a colour its theme does not have.
+ */
+export const HueSchema = Schema.Literals(['blue', 'red', 'yellow', 'green', 'teal', 'magenta'])
+
+export type Hue = typeof HueSchema.Type
+
+/**
  * The board's own settings: how this browser draws the board, never the work.
  * The files stay the only record of the work, and nothing here reaches the
  * daemon. They are kept in this browser's localStorage, so they survive a
@@ -20,6 +29,14 @@ export const SettingsSchema = Schema.Struct({
    * comes up under a pointer that is only passing.
    */
   tips: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  /**
+   * The hue inline code is drawn in, on the muted ground behind it; a code
+   * block keeps the text's colour. Green by default: of the theme's hues it
+   * stands out most on that ground, and Tokyo Night draws raw Markdown in it,
+   * as a string. Blue, the theme's own choice for inline code, is this
+   * board's link colour, so code in it would read as a link.
+   */
+  codeColor: HueSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('green'))),
 })
 
 export type Settings = typeof SettingsSchema.Type
@@ -73,8 +90,18 @@ const snapshot = () => {
   return current
 }
 
+/**
+ * Draws what the settings colour: the variable the stylesheet reads, set on
+ * the document's root, so every reader on the page follows a change at once.
+ * Called only once settings are read in a browser, never when the module loads.
+ */
+const paint = (settings: Settings) => {
+  document.documentElement.style.setProperty('--code', `var(--tn-${settings.codeColor})`)
+}
+
 const publish = (next: SettingsState) => {
   current = next
+  paint(next.settings)
   for (const listener of listeners) listener()
 }
 
@@ -88,15 +115,16 @@ let listening = false
 
 /**
  * The first subscriber starts listening for other tabs, for as long as the
- * page lives, and reads the settings again, since a tab may have changed them
- * between the first draw and this. Listening starts here rather than when the
- * module loads, which the build's prerender does where there is no window.
+ * page lives, reads the settings again, since a tab may have changed them
+ * between the first draw and this, and draws the colours they choose.
+ * Listening starts here rather than when the module loads, which the build's
+ * prerender does where there is no window.
  */
 const subscribe = (listener: () => void) => {
   if (!listening) {
     listening = true
     window.addEventListener('storage', onStorage)
-    current = read()
+    publish(read())
   }
   listeners.add(listener)
   return () => {

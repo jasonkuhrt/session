@@ -832,12 +832,22 @@ the same address; they say only how the board draws, and nothing in them
 reaches the daemon or the files. A setting missing from what is stored reads as
 its default; a stored value the schema cannot read leaves the defaults
 standing, and a write the browser refuses holds on the page until it reloads,
-and the menu says so either way. The one setting is Tips, off by default. With
-Tips on, every word and control says what it means when it is hovered or
-focused: the sentences this reference calls a tooltip, or says are on hover,
-are tips. With Tips off nothing comes up under the pointer, and a word that
-only carried a tip is plain text. A title that reports what just happened,
-such as a copy the clipboard refused, is not a tip and shows either way.
+and the menu says so either way. The settings are Tips and Code colour.
+
+Tips is off by default. With Tips on, every word and control says what it
+means when it is hovered or focused: the sentences this reference calls a
+tooltip, or says are on hover, are tips. With Tips off nothing comes up under
+the pointer, and a word that only carried a tip is plain text. A title that
+reports what just happened, such as a copy the clipboard refused, is not a tip
+and shows either way.
+
+Code colour is the hue inline code is drawn in wherever the board reads
+Markdown, on an item's page, a file's and the ledger's cards, over the muted
+ground behind it; a code block keeps the text's colour. It is one of the
+theme's hues, `blue`, `red`, `yellow`, `green`, `teal` or `magenta`, and green
+by default, the one that stands out most on that ground. The menu draws it as
+a row of swatches, one per hue, each with its name as its tip and the chosen
+one pressed, and a press changes it at once on every open page of the address.
 
 The pull request is one chip, and the chip is a link to it: its number, gh's
 state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
