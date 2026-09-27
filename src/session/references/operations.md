@@ -552,7 +552,11 @@ read `SESSION_PORT` and `SESSION_STATE_DIR` as `open` does and ignore `-C`,
 since the daemon is the user's and not a worktree's. A page left open reloads
 itself once when its stream comes back to a daemon started from other sources
 than the page was loaded from, so a rebuild reaches the tabs already open; a
-restart from the same sources reloads none.
+restart from the same sources reloads none. Tabs that follow the same stream,
+such as two tabs of one board, share one connection to it: one tab holds the
+stream and passes each event to the others, and another takes it over when
+that tab closes, so however many tabs show one page, they hold one of the six
+connections a browser opens to a host over HTTP/1.1.
 
 The daemon starts with the environment of the command that started it, less
 what Claude Code, Codex, cmux and Git set for the processes they run, because
