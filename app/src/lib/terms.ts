@@ -72,11 +72,16 @@ const termRows = (tree: Root): TermRow[] => {
   return rows
 }
 
-/** A cell's own Markdown, as the document writes it between the cell's pipes; empty for a cell with nothing in it. */
+/**
+ * A cell's own Markdown, as the document writes it between the cell's pipes,
+ * with each escaped pipe a pipe again: the table reads `\|` as `|` in code
+ * too, and a cell is one line, which cannot read as a table on its own.
+ * Empty for a cell with nothing in it.
+ */
 const sourceOf = (document: string, cell: TableCell | undefined) => {
   const start = cell?.children.at(0)?.position?.start.offset
   const end = cell?.children.at(-1)?.position?.end.offset
-  return start === undefined || end === undefined ? '' : document.slice(start, end)
+  return start === undefined || end === undefined ? '' : document.slice(start, end).replaceAll('\\|', '|')
 }
 
 /**
