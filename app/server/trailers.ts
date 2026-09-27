@@ -4,7 +4,6 @@ import * as Schema from 'effect/Schema';
 import type { TrailerProblem } from '../contract.ts';
 import { doneTrailer } from '../contract.ts';
 import { capture } from './command.ts';
-import { isItemId } from './model.ts';
 import type { SessionRepository } from './repository.ts';
 
 /**
@@ -13,9 +12,10 @@ import type { SessionRepository } from './repository.ts';
  * A commit whose message ends with `Session-Done: <ID>` says it finished that
  * item, and the engine files the item as done. Git's own trailer parser reads
  * the message, so what counts as a trailer here is what counts as one to
- * `git interpret-trailers`. A value holds ids only, separated by commas or
- * spaces: a line whose value holds any other word is prose, or a slip, and is
- * reported whole, with none of its ids filed.
+ * `git interpret-trailers`. A value is ids separated by commas or spaces, and a
+ * line is filed whole or not at all: a word on it that names no item of the
+ * session, which prose after an id is, files nothing on the line and is
+ * reported with the line.
  *
  * Only commits no remote has yet are read. Those are the commits a wrong
  * trailer can still be fixed on, so a problem is reported exactly while it is
@@ -41,72 +41,57 @@ const logFormat = ['%H', '%s', `%(trailers:key=${doneTrailer},unfold)`, '%B'].jo
  */
 const doneLine = new RegExp(`^${doneTrailer}[ \\t]*:(.*)$`, 'gimu');
 
-/** Every `Session-Done:` line of a text, as written, and the words of its value, which commas or spaces split. */
-const doneLines = (text: string) =>
+/**
+ * Every `Session-Done:` line of a text, as written, with the words of its
+ * value, which commas or spaces split, once each, and whether Git reads the
+ * lines of this text as trailers.
+ */
+const doneLines = (text: string, trailer: boolean) =>
   [...text.matchAll(doneLine)].map((match) => ({
     line: match[0].trimEnd(),
-    words: (match[1] ?? '').split(/[\s,]+/u).filter((word) => word !== ''),
+    words: Arr.dedupe((match[1] ?? '').split(/[\s,]+/u).filter((word) => word !== '')),
+    trailer,
   }));
 
-/** What one commit says it finished: its full hash, its subject, and the ids its `Session-Done` trailers name. */
+/** One `Session-Done:` line of a commit: the line as written, the words of its value, and whether Git reads it as a trailer. */
+export const DoneLineSchema = Schema.Struct({
+  line: Schema.String,
+  words: Schema.Array(Schema.String),
+  trailer: Schema.Boolean,
+});
+export type DoneLine = typeof DoneLineSchema.Type;
+
+/** What one commit says it finished: its full hash, its subject, and its `Session-Done:` lines in the order written. */
 export const CommitClaimSchema = Schema.Struct({
   hash: Schema.String,
   subject: Schema.String,
-  ids: Schema.Array(Schema.String),
+  lines: Schema.Array(DoneLineSchema),
 });
 export type CommitClaim = typeof CommitClaimSchema.Type;
 
-/** A `Session-Done:` line whose value holds words that are not ids: the line as written, and those words. */
-const NotIdsSchema = Schema.Struct({
-  line: Schema.String,
-  words: Schema.NonEmptyArray(Schema.String),
-});
-type NotIds = typeof NotIdsSchema.Type;
-
-/**
- * What a commit says it finished, the ids it names on `Session-Done:` lines
- * Git does not read as trailers, and its lines that hold words that are not ids.
- */
-const ClaimSchema = Schema.Struct({
-  ...CommitClaimSchema.fields,
-  strays: Schema.Array(Schema.String),
-  notIds: Schema.Array(NotIdsSchema),
-});
-type Claim = typeof ClaimSchema.Type;
-
-const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(ClaimSchema));
-
-/** A line's ids, or, when its value holds any other word, the line with those words. */
-const readLine = ({ line, words }: { readonly line: string; readonly words: ReadonlyArray<string> }) => {
-  const others = words.filter((word) => !isItemId(word));
-  return Arr.isArrayNonEmpty(others) ? { ids: [], notIds: { line, words: others } } : { ids: words, notIds: null };
-};
+const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(CommitClaimSchema));
 
 /**
  * `git log`'s records, one per commit, each read into the claim it makes; the
  * caller decodes them. Git's trailer block ends the message, so its
  * `Session-Done` trailers are the message's last `Session-Done:` lines, in
  * order, and every such line before them is outside the block, where Git reads
- * no trailer.
+ * no trailer. A line written twice is one line, and a line with no words says
+ * nothing.
  */
-const parseClaims = (stdout: string): Claim[] => {
-  const claims: Claim[] = [];
+const parseClaims = (stdout: string): CommitClaim[] => {
+  const claims: CommitClaim[] = [];
   for (const record of stdout.split('\0')) {
     const [hash, subject, trailers, message] = record.split(unitSeparator);
     if (hash === undefined || hash === '' || subject === undefined) continue;
-    const trailed = doneLines(trailers ?? '').map((line) => readLine(line));
-    const written = doneLines(message ?? '');
-    const outside = written.slice(0, Math.max(0, written.length - trailed.length)).map((line) => readLine(line));
-    const ids = new Set(trailed.flatMap((read) => read.ids));
-    const strays = new Set(outside.flatMap((read) => read.ids).filter((id) => !ids.has(id)));
-    // A line written twice is one problem, as an id named twice is one claim.
-    const notIds = Arr.dedupeWith(
-      [...outside, ...trailed].flatMap((read): NotIds[] => (read.notIds === null ? [] : [read.notIds])),
-      (left, right) => left.line === right.line,
-    );
-    if (ids.size > 0 || strays.size > 0 || notIds.length > 0) {
-      claims.push({ hash, subject, ids: [...ids], strays: [...strays], notIds });
-    }
+    const trailed = doneLines(trailers ?? '', true);
+    const written = doneLines(message ?? '', false);
+    const outside = written.slice(0, Math.max(0, written.length - trailed.length));
+    const lines = Arr.dedupeWith(
+      [...outside, ...trailed],
+      (left, right) => left.line === right.line && left.trailer === right.trailer,
+    ).filter((line) => line.words.length > 0);
+    if (lines.length > 0) claims.push({ hash, subject, lines });
   }
   return claims;
 };
@@ -137,33 +122,40 @@ const unpushedClaims = (worktree: string) =>
   }).pipe(
     Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
     Effect.orElseSucceed(() => null),
-    Effect.flatMap((stdout) => (stdout === null ? Effect.succeed<ReadonlyArray<Claim>>([]) : decodeClaims(parseClaims(stdout)))),
+    Effect.flatMap((stdout) =>
+      stdout === null ? Effect.succeed<ReadonlyArray<CommitClaim>>([]) : decodeClaims(parseClaims(stdout))
+    ),
   );
 
-/** Act on every unpushed claim, and say which ones could not be acted on. */
+/**
+ * Act on every unpushed claim, and say which lines could not be acted on, in
+ * the order the commits and their lines were written. An id on a line outside
+ * the block that a trailer of the same commit names too needs no report of
+ * its own.
+ */
 export const reconcileTrailers = (input: { readonly worktree: string; readonly repository: SessionRepository }) =>
   Effect.gen(function*() {
     const claims = yield* unpushedClaims(input.worktree);
     if (claims.length === 0) return [];
     const outcomes = yield* input.repository.closeFromCommits(claims);
     const problems: TrailerProblem[] = [];
-    for (const claim of claims) {
-      for (const { line, words } of claim.notIds) {
-        problems.push({ commit: claim.hash, subject: claim.subject, kind: 'not-ids', line, words });
+    const reportedOutside = new Set<string>();
+    for (const { claim, line, outcome } of outcomes) {
+      const commit = { commit: claim.hash, subject: claim.subject };
+      if (outcome.kind === 'unknown') {
+        problems.push({ ...commit, kind: 'unknown', line: line.line, words: outcome.words });
+        continue;
       }
-      for (const id of claim.strays) {
-        problems.push({ commit: claim.hash, subject: claim.subject, id, kind: 'outside-trailers', detail: null });
+      if (outcome.kind === 'filed') {
+        for (const { id, message } of outcome.failures) problems.push({ ...commit, kind: 'close-failed', id, detail: message });
+        continue;
       }
-    }
-    for (const { claim, id, outcome } of outcomes) {
-      if (outcome.kind === 'honoured') continue;
-      problems.push({
-        commit: claim.hash,
-        subject: claim.subject,
-        id,
-        kind: outcome.kind === 'unknown' ? 'unknown' : 'close-failed',
-        detail: outcome.kind === 'failed' ? outcome.message : null,
-      });
+      const trailed = new Set(claim.lines.flatMap((other) => (other.trailer ? other.words : [])));
+      for (const id of line.words) {
+        if (trailed.has(id) || reportedOutside.has(`${claim.hash} ${id}`)) continue;
+        reportedOutside.add(`${claim.hash} ${id}`);
+        problems.push({ ...commit, kind: 'outside-trailers', id, detail: null });
+      }
     }
     return problems;
   });

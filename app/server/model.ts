@@ -17,23 +17,12 @@ export class SessionError extends Data.TaggedError('SessionError')<{
 export const ItemDraftSchema = ItemSchema.mapFields(Struct.omit(['path']));
 export type ItemDraft = typeof ItemDraftSchema.Type;
 
-/**
- * What an item id is: letters, a hyphen and a number, `BE-12`. It is the one
- * rule for every reader that finds an id in text, an item file's heading, an
- * archive record's name and a commit's `Session-Done` trailer, and it is what
- * tells an id from a word, so a trailer's value can hold ids and nothing else.
- */
-export const itemIdSource = '[A-Za-z]+-[0-9]+';
-
-/** The id rule as a refusal says it. */
-const itemIdForm = 'an ID is letters, a hyphen and a number, such as BE-12';
+/** What an item id may be, as a pattern source for every reader that finds one in text. */
+export const itemIdSource = '[A-Za-z0-9][A-Za-z0-9._-]*';
 
 const itemHeading = new RegExp(`^## (${itemIdSource}) — (\\S(?:.*\\S)?)$`, 'u');
 const itemIdExactly = new RegExp(`^${itemIdSource}$`, 'u');
 const groupHeading = /^# (\S(?:.*\S)?)$/u;
-
-/** Whether a text is an item id, whole. */
-export const isItemId = (text: string): boolean => itemIdExactly.test(text);
 
 export const fail = (message: string): never => {
   throw new SessionError({ kind: 'validation', message });
@@ -149,8 +138,8 @@ export const validateGroupName = (stage: Stage, name: string, where: string = st
 
 /** Structure: what every reader of the files must be able to rely on. */
 export const validateItem = (stage: Stage, item: ItemDraft): void => {
-  if (!isItemId(item.id)) {
-    fail(`${stageDirectory(stage)}: invalid item ID ${quote(item.id)}; ${itemIdForm}.`);
+  if (!itemIdExactly.test(item.id)) {
+    fail(`${stageDirectory(stage)}: invalid item ID ${quote(item.id)}.`);
   }
   if (item.title.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: title is empty.`);
   if (item.body.trim() === '') fail(`${stageDirectory(stage)}/${item.id}: body is empty.`);
@@ -202,9 +191,6 @@ export const parseItemFile = (input: {
   readonly group: string | null;
   readonly content: string;
 }): Item => {
-  // The id comes from the file's name, so one that is no id is named as that,
-  // before the heading it could never match.
-  if (!isItemId(input.id)) fail(`${input.path}: invalid item ID ${quote(input.id)}; ${itemIdForm}.`);
   const lines = input.content.replaceAll('\r\n', '\n').split('\n');
   const heading: RegExpExecArray = itemHeading.exec(lines[0] ?? '') ??
     fail(`${input.path}:1: an item file starts with \`## ${input.id} — <title>\`.`);
