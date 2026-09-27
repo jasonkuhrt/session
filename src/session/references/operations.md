@@ -986,9 +986,10 @@ order and reads the item files directly; it never writes an item's content, and
 there is no way to type a body or create an item in it. A card shows the start of
 the item's first paragraph under its title, up to 180 characters, as a reader
 of the Markdown sees it, without the marks around its words. Headings, code,
-tables and HTML are not paragraphs and a footnote is not where a body starts,
-so a body that opens with an example shows the paragraph after it, and a body
-with no paragraph shows nothing more than the title. The item's id sits
+tables and HTML are not paragraphs, and neither a footnote nor the word `None`
+where it says a required section is intentionally empty is where a body
+starts, so a body that opens with an example shows the paragraph after it, and
+a body with no paragraph shows nothing more than the title. The item's id sits
 under that, very dim until pointed at, and a click copies it. A card's title is a link
 to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
 reading width, shows the item's id and its path under the session, and above
@@ -1003,12 +1004,14 @@ the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
 stage. All five stages are always drawn, because together they show the shape
-of the flow: a stage the item cannot reach is drawn very dim and says on hover
-what is needed first. "Complete work" is there for an item in Execute, and
-leaves you on the page with the item archived. Settle missing content with the
-agent or in the editor. A code block on the page is a band across the window's
-full width, its text starting where the prose starts, and a line longer than
-the room to the right scrolls inside the band.
+of the flow: a stage the item cannot reach is drawn very dim, as dim under the
+pointer as beside it, and says on hover what is needed first. "Complete work"
+is there for an item in Execute, and leaves you on the page with the item
+archived. Settle missing content with the agent or in the editor. Where the one
+word `None` is all a required section holds, the reader draws it very dim, and
+its tip says the section is intentionally empty. A code block on the page is a
+band across the window's full width, its text starting where the prose starts,
+and a line longer than the room to the right scrolls inside the band.
 
 An item filed under `archive/`, by "Complete work", `done`, `archive` or a
 commit's trailer, keeps its page. When no stage holds the id, the page reads
