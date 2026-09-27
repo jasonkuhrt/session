@@ -27,7 +27,7 @@ import { TooltipProvider } from './ui/tooltip'
 import type { DropTarget } from './workflow-card'
 
 /** A card dropped on another in no group of its own lane: the two a group is to be made of, the one dropped on first. */
-export type GroupDrop = { readonly stage: Stage; readonly onto: Item; readonly held: Item }
+type GroupDrop = { readonly stage: Stage; readonly onto: Item; readonly held: Item }
 
 type BoardProps = Omit<LaneActions, 'accepts'> & {
   session: Drawn

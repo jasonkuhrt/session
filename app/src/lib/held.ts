@@ -20,7 +20,7 @@ export type Drawn = Pick<Session, 'stages' | 'revision'>
  * it last in, since drawing it there would lift the heading from under the
  * pointer.
  */
-export type Over =
+type Over =
   | { readonly kind: 'card'; readonly id: string }
   | { readonly kind: 'heading'; readonly placement: Placement }
 
