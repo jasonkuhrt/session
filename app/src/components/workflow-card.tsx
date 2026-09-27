@@ -7,7 +7,7 @@ import { stageNames } from '../../contract'
 import { toItem, useBoardName } from '../lib/base'
 import { landing } from '../lib/drag'
 import { listId } from '../lib/lanes'
-import { selectionRing } from '../lib/selection'
+import { selectedMark, selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { moveAvailability } from '../lib/workflow'
 import { Copyable } from './copyable'
@@ -152,7 +152,7 @@ export function WorkflowCard({ item, index, stage, lands, words, pending, choosi
       <HeldWords words={isDragSource ? words : null} />
       <Card
         size="sm"
-        data-selected={selected ? 'true' : undefined}
+        data-selected={selectedMark(selected)}
         className={cn(isDragSource && 'opacity-50', selectionRing)}
       >
         <CardContent className="space-y-3">

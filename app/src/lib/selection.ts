@@ -97,3 +97,6 @@ export const canStep = ({ columns, step }: { readonly columns: Columns; readonly
  */
 export const selectionRing = 'data-selected:ring-2 data-selected:ring-ring'
 export const selectionRingInside = `${selectionRing} data-selected:ring-inset`
+
+/** The `data-selected` an element carries: `true` while it is the selection, and none otherwise. */
+export const selectedMark = (selected: boolean) => (selected ? 'true' : undefined)

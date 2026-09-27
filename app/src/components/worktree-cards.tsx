@@ -11,7 +11,7 @@ import { draggedId, movable, targetId } from '../lib/epics'
 import type { Marker } from '../lib/order'
 import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
-import { selectionRingInside } from '../lib/selection'
+import { selectedMark, selectionRingInside } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { HeldWords } from './held-words'
 import { LandingLine, markedSide } from './landing-line'
@@ -100,7 +100,7 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
       role="group"
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
-      data-selected={context.selected === row.path ? 'true' : undefined}
+      data-selected={selectedMark(context.selected === row.path)}
       className={cn('relative px-3 py-2.5 outline-none', selectionRingInside, canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
       {side === null ? null : <LandingLine side={side} gap="row" />}
@@ -220,7 +220,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
       title={card.quiet ? tip(quietCardMeaning) : undefined}
-      data-selected={selected ? 'true' : undefined}
+      data-selected={selectedMark(selected)}
       // The focus outline is taken away first, so the landing outline, which
       // sets the same style, is not merged away with it.
       className={cn(

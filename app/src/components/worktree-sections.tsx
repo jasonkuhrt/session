@@ -18,7 +18,7 @@ import {
   untrackedHeadMeaning,
 } from '../lib/index-meanings'
 import { sectionsList } from '../lib/order'
-import { selectionRing } from '../lib/selection'
+import { selectedMark, selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { LandingLine, markedSide } from './landing-line'
 import { Explained, useTip } from './tip'
@@ -77,7 +77,7 @@ function Head({ section, context, holdRef, selected }: {
       aria-roledescription="Draggable project"
       aria-label={`Drag ${name}`}
       title={title}
-      data-selected={selected ? 'true' : undefined}
+      data-selected={selectedMark(selected)}
       className={cn(
         headRule,
         'cursor-grab outline-none data-selected:rounded-md',
