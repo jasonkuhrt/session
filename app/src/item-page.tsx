@@ -4,6 +4,7 @@ import { CheckCircle2 } from 'lucide-react'
 import * as React from 'react'
 
 import type { ArchiveRecord, Item, Session, Stage } from '../contract'
+import { noneLines } from '../stage-rules'
 import { BoardPageFrame, PageLoading } from './components/board-page'
 import { Copyable } from './components/copyable'
 import { Markdown } from './components/markdown'
@@ -209,6 +210,9 @@ function Detail({
 }) {
   const tip = useTip()
   const stage = place.kind === 'stage' ? place.stage : null
+  // Where the body says None in a section a stage requires, the page draws
+  // the word as what it says rather than as the section's content.
+  const none = React.useMemo(() => noneLines(item.body), [item.body])
   return (
     <article>
       {place.kind === 'archived' ? <ArchivedLine record={place.record} /> : null}
@@ -248,7 +252,7 @@ function Detail({
       </div>
 
       <div className="mt-10 border-t pt-10">
-        <Markdown collapseEvidence page>{item.body || '_No detail has been written yet._'}</Markdown>
+        <Markdown collapseEvidence page noneLines={none}>{item.body || '_No detail has been written yet._'}</Markdown>
       </div>
     </article>
   )

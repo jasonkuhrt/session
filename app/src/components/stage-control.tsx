@@ -50,13 +50,16 @@ export function StageControl({
             ? 'Another update is in progress'
             : availability.reason ?? stageHint[candidate]
 
+          // A stage it refuses keeps the pointer, which is how its reason is
+          // read, so the toggle's hover would light it as if it could act: it
+          // stays as dim under the pointer as beside it.
           return (
             <Tip
               key={candidate}
               meaning={current ? stageHint[candidate] : explanation}
               render={
                 <ToggleGroupItem
-                  className="w-full aria-disabled:opacity-25"
+                  className="w-full aria-disabled:opacity-25 aria-disabled:hover:bg-transparent aria-disabled:hover:text-inherit"
                   value={candidate}
                   aria-disabled={!current && unavailable}
                   onPressedChange={(_pressed, details) => {
