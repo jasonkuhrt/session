@@ -4,7 +4,7 @@ import * as Schema from 'effect/Schema';
 import * as Struct from 'effect/Struct';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, ItemSchema, stageDirectory } from '../contract.ts';
-import { requiredSections, scanFences, sectionHasContent } from '../stage-rules.ts';
+import { emptySections, scanFences } from '../stage-rules.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
@@ -148,17 +148,15 @@ export const validateItem = (stage: Stage, item: ItemDraft): void => {
 };
 
 /**
- * Content: the sections a stage requires of the items it holds. A mutation
- * checks the stage it places an item in, and `check` checks where each item
- * sits. Loading does not, so an item file can be rewritten for its next stage
- * and moved there afterwards.
+ * Content: the sections a stage requires of the items it holds, each written,
+ * or saying `None` when it is intentionally empty. A mutation checks the stage
+ * it places an item in, and `check` checks where each item sits. Loading does
+ * not, so an item file can be rewritten for its next stage and moved there
+ * afterwards.
  */
 export const validateItemSections = (stage: Stage, item: ItemDraft): void => {
-  for (const section of requiredSections[stage]) {
-    if (!sectionHasContent(item.body, section)) {
-      fail(`${stageDirectory(stage)}/${item.id}: ### ${section} requires content.`);
-    }
-  }
+  const [empty] = emptySections(stage, item.body);
+  if (empty !== undefined) fail(`${stageDirectory(stage)}/${item.id}: ### ${empty} requires content.`);
 };
 
 export const makeItem = (input: {

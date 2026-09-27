@@ -1,6 +1,6 @@
 import type { Item, Stage } from '../../contract'
 import { stageNames } from '../../contract'
-import { requiredSections, sectionHasContent } from '../../stage-rules'
+import { emptySections } from '../../stage-rules'
 
 /**
  * What each stage holds. A stage is shown by its own name, as the files and
@@ -51,6 +51,13 @@ export const groupMeta: Record<Stage, { label: 'Group' | 'Batch'; heading: strin
   },
 }
 
+/**
+ * What the word `None` says where it is all a required section holds, as the
+ * item page draws it there, very dim.
+ */
+export const noneMeaning =
+  'Intentionally empty: None, alone in a section a stage requires, says there is nothing to write here, and the stage accepts it.'
+
 export function isStage(value: unknown): value is Stage {
   return stageNames.some(stage => stage === value)
 }
@@ -63,7 +70,7 @@ export function moveAvailability(item: Item, current: Stage, target: Stage) {
   if (current === 'Execute') return { enabled: false, reason: 'Complete this execution item before changing its stage' }
   if (target === 'Execute') return { enabled: false, reason: 'Start the next queued batch' }
   if (target === 'Queue') return { enabled: false, reason: 'Select it in Batch and queue a batch' }
-  const missing = requiredSections[target].filter(section => !sectionHasContent(item.body, section))
+  const missing = emptySections(target, item.body)
   if (missing.length === 0) return { enabled: true, reason: null }
   if (target === 'Batch') return { enabled: false, reason: 'Settle the outcome and acceptance with your agent first' }
   if (target === 'Design') return { enabled: false, reason: 'Write the open questions with your agent first' }
