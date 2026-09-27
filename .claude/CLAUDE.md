@@ -45,6 +45,12 @@ agent reaches an epic only through the worktree its working directory is in, and
 no fact ties an agent to an epic. Each tracked worktree's `.session` watch also
 feeds the index's `worktrees` event, settled, for every change a row shows.
 
+On a board, a card dropped on the middle of another card in no group of its own
+lane makes a group of the two through `NameDialog`, in that card's place, and
+one dropped on a group's heading joins it last; the held card says what the drop
+does to its group, keys only move cards from place to place, and the board draws
+the session it drew at pickup until the drop lands, as the index draws its rows.
+
 The index is a stack of projects, each a repository, which is Git's rather than
 the tool's, the worktrees sharing one Git directory, or a folder outside Git: a
 section headed by the repository's main worktree whether or not that has a
