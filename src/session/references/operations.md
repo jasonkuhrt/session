@@ -182,13 +182,14 @@ sentence per commit, and as a count beside its name on the index:
 - a word on a `Session-Done:` line, in the trailers or outside them, names no
   item in the session, open or archived, as prose written after an id does, so
   nothing on the line was filed; the report names the line and those words;
+- a `Session-Done:` line names nothing at all;
 - the `Session-Done:` line is outside the last paragraph, so Git does not read
   it as a trailer and nothing was closed;
 - filing the item away failed, for instance because a record of that name
   already exists that day; this is tried again whenever the session changes
   outside `context/`, `ledger/` and `meta/`, or the branch changes.
 
-The fix for the first two is to amend the commit. A report lasts while the
+The fix for the first three is to amend the commit. A report lasts while the
 commit is unpushed and goes once it is fixed or pushed, when it can no longer be
 amended without rewriting published history.
 

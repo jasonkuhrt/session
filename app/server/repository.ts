@@ -86,6 +86,7 @@ const gitignoreContent = '*\n';
 /**
  * What became of one `Session-Done:` line a commit holds, which is filed whole
  * or not at all:
+ * - `empty`: the line names nothing, so nothing is filed
  * - `unknown`: `words` name no item of the session, open or archived, so
  *   nothing on the line is filed
  * - `outside`: every word names an item, but Git does not read the line as a
@@ -95,6 +96,7 @@ const gitignoreContent = '*\n';
  *   commit filed it; `failures` are the ids whose filing failed, and why
  */
 type LineOutcome =
+  | { readonly kind: 'empty' }
   | { readonly kind: 'unknown'; readonly words: Arr.NonEmptyReadonlyArray<string> }
   | { readonly kind: 'outside' }
   | { readonly kind: 'filed'; readonly failures: ReadonlyArray<{ readonly id: string; readonly message: string }> };
@@ -1270,8 +1272,9 @@ export const makeRepository = (directory: string) =>
      * Honour what commits say they finished, oldest commit first and line by
      * line, deciding each line on what the files say under the session's own
      * lock. A line is filed whole or not at all: when a word on it names no item
-     * of the session, open or archived, nothing on it is filed, and a line Git
-     * does not read as a trailer files nothing either. An open item is filed as
+     * of the session, open or archived, nothing on it is filed, and a line that
+     * names nothing, or that Git does not read as a trailer, files nothing
+     * either. An open item is filed as
      * done from whichever stage it is in, because the commit is the evidence of
      * completion and the route through Execute that `completeItem` insists on
      * does not apply; the item's text gains the commit's note, which is what
@@ -1311,6 +1314,10 @@ export const makeRepository = (directory: string) =>
             [];
           for (const claim of claims) {
             for (const line of claim.lines) {
+              if (line.words.length === 0) {
+                outcomes.push({ claim, line, outcome: { kind: 'empty' } });
+                continue;
+              }
               const missing = line.words.filter((word) => !names(word));
               if (Arr.isArrayNonEmpty(missing)) {
                 outcomes.push({ claim, line, outcome: { kind: 'unknown', words: missing } });

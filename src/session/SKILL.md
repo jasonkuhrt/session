@@ -188,10 +188,12 @@ abandoned one stays on the record. An empty stage is an empty directory, and
 
 When a commit finishes an item, say so in the commit instead: end the message
 with a `Session-Done: <ID>` trailer, in the last paragraph with any other
-trailers, one per line or several ids separated by commas. The running daemon
-files the item as done when the commit is made, from whatever stage it is in,
-and writes the commit into the archived record. It reads only commits that no
-remote has yet, so a trailer the board reports as not applied is fixed by
+trailers, one per line or several ids separated by commas or spaces, and nothing
+else on the line. A line is filed whole or not at all: when a word on it names
+no item of the session, open or archived, none of it is filed. The running
+daemon files the item as done when the commit is made, from whatever stage it is
+in, and writes the commit into the archived record. It reads only commits that
+no remote has yet, so a trailer the board reports as not applied is fixed by
 amending the commit before it is pushed. A commit that only moves an item along
 carries no trailer.
 

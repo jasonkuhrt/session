@@ -76,8 +76,9 @@ const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(CommitClaimSchema))
  * caller decodes them. Git's trailer block ends the message, so its
  * `Session-Done` trailers are the message's last `Session-Done:` lines, in
  * order, and every such line before them is outside the block, where Git reads
- * no trailer. A line written twice is one line, and a line with no words says
- * nothing.
+ * no trailer. A line written twice is one line, and so is a line outside the
+ * block that a trailer repeats word for word, which says nothing the trailer
+ * does not.
  */
 const parseClaims = (stdout: string): CommitClaim[] => {
   const claims: CommitClaim[] = [];
@@ -86,11 +87,14 @@ const parseClaims = (stdout: string): CommitClaim[] => {
     if (hash === undefined || hash === '' || subject === undefined) continue;
     const trailed = doneLines(trailers ?? '', true);
     const written = doneLines(message ?? '', false);
-    const outside = written.slice(0, Math.max(0, written.length - trailed.length));
+    const repeated = new Set(trailed.map((line) => line.words.join(' ')));
+    const outside = written
+      .slice(0, Math.max(0, written.length - trailed.length))
+      .filter((line) => !repeated.has(line.words.join(' ')));
     const lines = Arr.dedupeWith(
       [...outside, ...trailed],
       (left, right) => left.line === right.line && left.trailer === right.trailer,
-    ).filter((line) => line.words.length > 0);
+    );
     if (lines.length > 0) claims.push({ hash, subject, lines });
   }
   return claims;
@@ -142,6 +146,10 @@ export const reconcileTrailers = (input: { readonly worktree: string; readonly r
     const reportedOutside = new Set<string>();
     for (const { claim, line, outcome } of outcomes) {
       const commit = { commit: claim.hash, subject: claim.subject };
+      if (outcome.kind === 'empty') {
+        problems.push({ ...commit, kind: 'empty', line: line.line });
+        continue;
+      }
       if (outcome.kind === 'unknown') {
         problems.push({ ...commit, kind: 'unknown', line: line.line, words: outcome.words });
         continue;

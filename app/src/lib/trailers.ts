@@ -18,13 +18,19 @@ const wordList = (words: ReadonlyArray<string>): string => {
 }
 
 /** A problem with a whole line, some of whose words name no item. */
-type LineProblem = Extract<TrailerProblem, { readonly kind: 'unknown' }>
+type UnknownProblem = Extract<TrailerProblem, { readonly kind: 'unknown' }>
+
+/** A problem with a line that names nothing. */
+type EmptyProblem = Extract<TrailerProblem, { readonly kind: 'empty' }>
 
 /** A problem with one id a line named. */
-type IdProblem = Exclude<TrailerProblem, { readonly kind: 'unknown' }>
+type IdProblem = Exclude<TrailerProblem, { readonly kind: 'unknown' | 'empty' }>
 
-const lineSentence = (problem: LineProblem) =>
+const unknownSentence = (problem: UnknownProblem) =>
   `Commit ${commitName(problem)} has the line “${problem.line}”, but this session has no item ${wordList(problem.words)}, open or archived. A ${doneTrailer} line is filed whole or not at all, so nothing on it is filed; amend it before you push.`
+
+const emptySentence = (problem: EmptyProblem) =>
+  `Commit ${commitName(problem)} has the line “${problem.line}”, which names no item, so nothing on it is filed. Amend it before you push.`
 
 const idSentences: Record<IdProblem['kind'], (problem: IdProblem) => string> = {
   'outside-trailers': (problem) =>
@@ -34,12 +40,15 @@ const idSentences: Record<IdProblem['kind'], (problem: IdProblem) => string> = {
 }
 
 /** What went wrong with one trailer, and what puts it right. */
-export const problemSentence = (problem: TrailerProblem): string =>
-  problem.kind === 'unknown' ? lineSentence(problem) : idSentences[problem.kind](problem)
+export const problemSentence = (problem: TrailerProblem): string => {
+  if (problem.kind === 'unknown') return unknownSentence(problem)
+  if (problem.kind === 'empty') return emptySentence(problem)
+  return idSentences[problem.kind](problem)
+}
 
 /** One problem among a worktree's: a commit's line, or a commit's id, for each way a trailer can go wrong. */
 export const problemKey = (problem: TrailerProblem): string =>
-  `${problem.commit}:${problem.kind}:${problem.kind === 'unknown' ? problem.line : problem.id}`
+  `${problem.commit}:${problem.kind}:${problem.kind === 'unknown' || problem.kind === 'empty' ? problem.line : problem.id}`
 
 /** What these trailers are, for whichever surface names them. */
 export const trailerMeaning =

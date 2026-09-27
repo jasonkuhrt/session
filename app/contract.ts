@@ -448,6 +448,7 @@ export const doneTrailer = 'Session-Done';
  * - `unknown`: a `Session-Done:` line, in the trailers or outside them, has
  *   words that name no item in the session, live or archived, so nothing on
  *   the line is filed
+ * - `empty`: a `Session-Done:` line names nothing at all
  * - `outside-trailers`: the message has a `Session-Done:` line that is not in
  *   its final paragraph, so Git does not read it as a trailer at all
  * - `close-failed`: the item exists and filing it away failed; `detail` says why
@@ -459,10 +460,19 @@ export const TrailerProblemSchema = Schema.Union([
     /** The commit's subject line. */
     subject: Schema.String,
     kind: Schema.Literal('unknown'),
-    /** The line, key and value, as the message holds it. */
+    /** The line, key and value, as Git reads it: a value folded onto following lines is joined onto one. */
     line: Schema.String,
     /** The words on it that name no item, in the order written. */
     words: Schema.NonEmptyArray(Schema.String),
+  }),
+  Schema.Struct({
+    /** Full hash of the commit carrying the line. */
+    commit: Schema.String,
+    /** The commit's subject line. */
+    subject: Schema.String,
+    kind: Schema.Literal('empty'),
+    /** The line, as Git reads it. */
+    line: Schema.String,
   }),
   Schema.Struct({
     /** Full hash of the commit carrying the trailer. */
