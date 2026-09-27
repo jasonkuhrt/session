@@ -134,7 +134,11 @@ removed. Every JSON answer and refusal goes out through `answer`, encoded
 through its route's schema; a text parser's closing decode that fails is refused
 where the file was read; and `bun run lint` refuses any type, interface, enum or
 re-export in `app/contract.ts` that is not `typeof <Name>Schema.Type`, by the
-rule in `scripts/lint/session.js`.
+rule in `scripts/lint/session.js`. Every JSON answer and refusal goes out
+through `answer`, encoded through its route's schema; a text parser's closing
+decode that fails is refused where the file was read; and `bun run lint` refuses
+any type, interface, enum or re-export in `app/contract.ts` that is not `typeof
+<Name>Schema.Type`, by the rule in `scripts/lint/session.js`.
 
 The board is TanStack Start in SPA mode: `bun run build` runs Vite on Bun and
 prerenders one shell into `app/dist/client`, beside the one script and the one
