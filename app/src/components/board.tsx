@@ -46,6 +46,19 @@ const countOf = (session: Drawn | undefined, stage: Stage) => session?.stages.fi
 /** Whether a worktree's Execute holds a batch under way, which Queue's start waits for. */
 const executeOccupied = (session: Drawn | undefined) => session?.stages.some(stage => stage.stage === 'Execute' && stage.items.length > 0) ?? false
 
+/**
+ * Whether a card may be put at a place of its own worktree, by the rules for
+ * moving an item. Execute is entered only by starting the next queued batch
+ * and Queue only by composing one in Batch, so neither takes a card from
+ * elsewhere. A queued card may still move inside its own batch.
+ */
+function allows(source: Card, target: DropTarget) {
+  if (target.stage === 'Execute') return false
+  if (target.stage === 'Queue') return source.stage === 'Queue' && target.group !== null && source.item.group === target.group
+  if (source.stage === target.stage) return true
+  return moveAvailability(source.item, source.stage, target.stage).enabled
+}
+
 /** Every card of every worktree drawn, by the name the drag library knows it by. */
 function cardsOf(shown: ReadonlyMap<string, Drawn>): ReadonlyMap<string, Card> {
   const cards = new Map<string, Card>()
@@ -107,17 +120,14 @@ export function Board({ parts, grouped, onMove, onGroupDrop, onDraggingChange, .
   const cards = cardsOf(shown)
   const cardOf = (id: unknown) => (typeof id === 'string' ? cards.get(id) ?? null : null)
 
-  // A card moves only among its own worktree's lanes, since its session is the
-  // one a move writes. Execute is entered only by starting the next queued
-  // batch and Queue only by composing one in Batch, so neither takes a card
-  // from elsewhere. A queued card may still move inside its own batch.
+  // What a drop target takes as something to aim at: a place of the card's own
+  // worktree the rules allow, and anything of another worktree's, which is no
+  // place the card can be, and which the card aims past, back to where it was
+  // picked up. A target that takes nothing is never over, so without that a
+  // card released over another worktree would land where it last was.
   const accepts = (id: unknown, target: DropTarget) => {
     const source = cardOf(id)
-    if (source === null || source.board !== target.board) return false
-    if (target.stage === 'Execute') return false
-    if (target.stage === 'Queue') return source.stage === 'Queue' && target.group !== null && source.item.group === target.group
-    if (source.stage === target.stage) return true
-    return moveAvailability(source.item, source.stage, target.stage).enabled
+    return source !== null && (source.board !== target.board || allows(source, target))
   }
 
   /** What the held card is aimed at now, in its own worktree's lanes as drawn. */
@@ -130,8 +140,9 @@ export function Board({ parts, grouped, onMove, onGroupDrop, onDraggingChange, .
    * over leaves what it was over.
    */
   const take = (current: Held, aim: Aim) => {
+    const card = cardOf(cardId({ board: current.board, id: current.id }))
     const allowed = (placement: Placement) =>
-      accepts(cardId({ board: current.board, id: current.id }), { board: current.board, stage: placement.to, group: placement.group })
+      card !== null && allows(card, { board: current.board, stage: placement.to, group: placement.group })
     const over = aim?.kind === 'over' && (aim.over.kind === 'card' || allowed(aim.over.placement)) ? aim.over : null
     const next = aim?.kind === 'place' && allowed(aim.placement) ? aim.placement : current.placement
     if (sameOver({ left: over, right: current.over }) && samePlacement({ left: next, right: current.placement })) return

@@ -1256,39 +1256,50 @@ project's main worktree first, as it heads the project on the index, an epic's
 worktrees placed by hand first, in their ranks' order, and the rest by name.
 
 A card moves only among its own worktree's lanes, which are the only ones whose
-session a move could be written to. Held over another worktree's, it stays where
-it was last placed in its own, as it does over a lane that refuses it, and the
-outline says where that is. Choosing, a group, a batch, the next batch's start
-and an item's completion each act within one worktree, and every write goes to
-that worktree's own board, the routes under `/w/<key>/api/`, carrying its own
-session's revision, so one made on a stale read is refused there alone: the board reads
-that session again and says it caught up. An item is known by its worktree and
-its id, so two worktrees can each file an item under one id and neither's card
-answers for the other's. A worktree in view the daemon does not serve says why
-above the lanes, and so does a session that could not be read. An address no
-tracked worktree is in, an epic nothing names or a path no worktree is under,
-draws the not-found page with its link to All projects once the rows have been
-read, and so does a name no epic could have, such as one with a slash.
+session a move could be written to. Held over another worktree's lanes, it goes
+back to where it was picked up, and released there it moves nothing, in either
+worktree: another worktree is no place it can be, so releasing there is
+releasing on nothing, as a drop on nothing is on the index. A lane of its own
+worktree that refuses it is a place it can be near, and over one it keeps the
+place it last had, as on a worktree's board. Dropped onto the middle of another
+card, or onto a group's heading, it acts in its own worktree alone, since
+neither takes a card of another worktree's, and only its own worktree's lanes
+draw its outline and its words. While it is held, every worktree in view is
+drawn as it was at pickup, and its move is written against its own worktree's
+revision then. Choosing, a group, a batch, the next batch's start and an item's
+completion each act within one worktree, and every write goes to that
+worktree's own board, the routes under `/w/<key>/api/`, carrying its own
+session's revision, so one made on a stale read is refused there alone: the
+board reads that session again and says it caught up. An item is known by its
+worktree and its id, so two worktrees can each file an item under one id and
+neither's card answers for the other's. A worktree whose key reaches another
+worktree's board, the later of two tracked under one name, is not served, and
+says so above the lanes; a session that could not be read says why there too.
+An address no tracked worktree is in, an epic nothing names or a path no
+worktree is under, draws the not-found page with its link to All projects once
+the rows have been read.
 
 The ledger of an epic's board or a project's, at `/e/<name>/ledger` and
 `/p/<path>/ledger`, merges the entries of every worktree in view, newest first
 by date and then by name, each named beside its age for the worktree it was
 written in, which that name opens. Each entry's Markdown links resolve in its
 own worktree's session, and a file a ledger leaves out is named above the cards
-with its worktree's name. Its trail is All projects / the epic or the project /
+with its worktree's name. A worktree whose items cannot be read still has its
+entries merged, as its own ledger page lists them, with the reason above the
+cards; only a worktree whose key reaches another's board is left out, and says
+so there. Its trail is All projects / the epic or the project /
 Ledger.
 
-A page of an epic or a project follows the root's stream, one however many
-worktrees are in view, since a browser keeps six connections to one address,
-and every stream holds one. `changed` there is every change under any tracked
-worktree's `.session`, `context/` and `ledger/` included, fed by the same watch
-that feeds `worktrees` and settled as `worktrees` is, once the writes of every
-worktree have settled for half a second and at least every two seconds while
-they keep coming; on it the page reads every session or ledger in view again.
-It carries nothing but its name, and a stream that does not name it, as the
-index's does not, never carries it. `worktrees` says the rows changed, which is
-how a worktree joining or leaving the epic, or taken on or dropped, joins or
-leaves the view. A drag or a write
+A page of an epic or a project follows one stream, the root's, however many
+worktrees are in view, so it has one subscription and one hold. `changed` there
+is every change under any tracked worktree's `.session`, `context/` and
+`ledger/` included, fed by the same watch that feeds `worktrees` and settled as
+`worktrees` is, once the writes of every worktree have settled for half a
+second and at least every two seconds while they keep coming; on it the page
+reads every session or ledger in view again. It carries nothing but its name,
+and a stream that does not name it, as the index's does not, never carries it.
+`worktrees` says the rows changed, which is how a worktree joining or leaving
+the epic, or taken on or dropped, joins or leaves the view. A drag or a write
 holds both, and one read of the sessions and the rows catches up when it ends.
 A worktree's own board keeps its own stream, as before. The root answers every
 path under `/e/` and `/p/` with the app, dots included, since an epic's name and

@@ -1006,10 +1006,10 @@ export const runDaemon = async () => {
    * Any change under any tracked worktree's session, for the pages that draw
    * the sessions of more than one worktree: an epic's or a project's board and
    * its ledger read every session in view again on it, as `changed` on the
-   * root's stream, so a page of any number of worktrees holds one stream, as a
-   * browser keeps only six connections to one address. It settles as
-   * `worktrees` does, since such a page, like the index, reads every board in
-   * view on it, and only a stream that names it carries it.
+   * root's stream, so such a page follows one stream however many worktrees
+   * it draws. It settles as `worktrees` does, since such a page, like the
+   * index, reads every board in view on it, and only a stream that names it
+   * carries it.
    */
   const everySession = makeSessionEvents({ settle: indexSettleMilliseconds, ceiling: indexCeilingMilliseconds });
   /** Pushed after gh is asked about any tracked worktree, to the index, which shows every row's pull request. */

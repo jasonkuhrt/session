@@ -158,15 +158,17 @@ export function aimOf({ current, operation, pointer, lanes, cardOf }: {
   const lifts = (stage: Stage, group: string | null) =>
     outside && group !== null && isDrawnAhead({ lanes, id: current.id, stage, group })
   const aiming: Aiming = { current, lanes, shape, centreY, lifts }
-  // Another worktree's card or list is no place this card can be.
-  const nowhere = placeAt(current.origin)
+  // Another worktree's card or list is no place this card can be: with the
+  // pointer over it, the card goes back to where it was picked up, and
+  // merely overlapping it changes nothing.
+  const elsewhere = shape.containsPoint(pointer ?? now) ? placeAt(current.origin) : null
   if (target.type === 'item') {
     const card = cardOf(target.id)
     if (card === null) return null
-    return card.board === current.board ? aimOverCard({ ...aiming, overId: card.item.id }) : nowhere
+    return card.board === current.board ? aimOverCard({ ...aiming, overId: card.item.id }) : elsewhere
   }
   if (target.type !== 'group' && target.type !== 'lane') return null
-  if (target.data['board'] !== current.board) return nowhere
+  if (target.data['board'] !== current.board) return elsewhere
   return aimOverList({ ...aiming, group: target.type === 'group', data: target.data })
 }
 

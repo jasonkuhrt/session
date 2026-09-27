@@ -12,7 +12,7 @@ import { problemOf, worktreeOf } from './lib/api'
 import { BoardScope, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
-import { boardOf, filterPath, unionOf } from './lib/filter'
+import { boardOf, filterPath, keyTaken, unionOf } from './lib/filter'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
 import { listingMeta, unionLedgerMeaning } from './lib/listings'
@@ -108,7 +108,8 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   const client = useQueryClient()
   const rows = useQuery(reads.worktrees())
   const union = rows.data === undefined ? undefined : unionOf({ filter, rows: rows.data, now })
-  const served = union?.rows.filter((row) => row.conflict === null) ?? []
+  const listedRows = rows.data ?? []
+  const served = union?.rows.filter((row) => !keyTaken({ row, rows: listedRows })) ?? []
   const ledgers = useQueries({ queries: served.map((row) => reads.ledger(boardOf(row))) })
   const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
   useStream({
@@ -129,11 +130,11 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   const notices = listed.flatMap(({ row, listing }) => listing.notices.map((notice) => `${row.name}: ${notice}`))
   const problems = [
     ...(rows.error === null ? [] : [messageOf(rows.error, 'Could not load the worktrees')]),
-    ...(union?.rows ?? []).flatMap((row) => (row.conflict === null ? [] : [`${row.name} is not served: ${row.conflict}`])),
+    ...(union?.rows ?? []).flatMap((row) => (keyTaken({ row, rows: listedRows }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
     ...served.flatMap((row, index) => {
       const read = ledgers[index]
       const error = read?.error ?? null
-      // A session whose items cannot be read still has its ledger listed, with the reason beside it.
+      // A worktree whose items cannot be read still has its ledger listed, as its own ledger page lists it, with the daemon's reason above the cards.
       const problem = error === null ? problemOf(read?.data?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
       return problem === null ? [] : [`${row.name}: ${problem}`]
     }),

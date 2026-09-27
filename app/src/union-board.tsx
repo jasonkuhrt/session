@@ -6,7 +6,7 @@ import { NoPage } from './components/no-page'
 import { SessionHeader } from './components/session-header'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
-import { boardOf, unionOf } from './lib/filter'
+import { boardOf, keyTaken, unionOf } from './lib/filter'
 import { reads, reread } from './lib/reads'
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
@@ -19,12 +19,13 @@ const messageOf = (error: unknown, fallback: string) => (error instanceof Error 
  * action goes to the board of the item's own worktree. It draws nothing that
  * belongs to one worktree alone, its agents, pull request, issues, pages,
  * terminal or Zed: each worktree's name in the lanes opens its own board,
- * where they are. A worktree the daemon does not serve, and a session that
- * could not be read, each say why above the lanes. An address no tracked
- * worktree is in draws the not-found page once the rows have said so.
+ * where they are. A worktree whose key reaches another's board is not served,
+ * and says so above the lanes, as does a session that could not be read. An
+ * address no tracked worktree is in draws the not-found page once the rows
+ * have said so.
  *
- * It follows the root's stream, one however many worktrees are in view, since
- * a browser keeps six connections to one address: `changed` there is every
+ * It follows one stream, the root's, however many worktrees are in view, so
+ * the page has one subscription and one hold: `changed` there is every
  * tracked session's, on which it reads every session in view again, and
  * `worktrees` says the rows changed, which is how a worktree joins or leaves
  * the view. A drag or a write holds both.
@@ -34,7 +35,8 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
   const now = useNow()
   const rows = useQuery(reads.worktrees())
   const union = rows.data === undefined ? undefined : unionOf({ filter, rows: rows.data, now })
-  const served = union?.rows.filter(row => row.conflict === null) ?? []
+  const listed = rows.data ?? []
+  const served = union?.rows.filter(row => !keyTaken({ row, rows: listed })) ?? []
   const sessions = useQueries({ queries: served.map(row => reads.session(boardOf(row))) })
   const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
 
@@ -43,7 +45,7 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
   const parts = served.map((row, index) => ({ board: boardOf(row), name: row.name, session: sessions[index]?.data ?? null }))
   const problems = [
     ...(rows.error === null ? [] : [messageOf(rows.error, 'Could not load the worktrees')]),
-    ...(union?.rows ?? []).flatMap(row => (row.conflict === null ? [] : [`${row.name} is not served: ${row.conflict}`])),
+    ...(union?.rows ?? []).flatMap(row => (keyTaken({ row, rows: listed }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
     ...served.flatMap((row, index) => {
       const error = sessions[index]?.error ?? null
       return error === null ? [] : [`${row.name}: ${messageOf(error, 'Could not load the session')}`]

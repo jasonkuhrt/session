@@ -25,6 +25,17 @@ export type UnionFilter = Exclude<Filter, { readonly kind: 'worktree' }>
 /** The board a row's worktree is served under: its key under `/w/`, which every write to its session goes to. */
 export const boardOf = (row: Pick<WorktreeSummary, 'key'>) => `/w/${row.key}`
 
+/**
+ * Whether a row's key reaches another worktree's board: the daemon serves a
+ * key to the worktree that claimed it first, and lists a later worktree of
+ * the same name with the conflict that says so, whose key then reaches the
+ * first one's board. That is the one row a union does not read. Any other
+ * conflict, a session or a Git the daemon cannot read, leaves the board at the
+ * row's own key, where whatever can be read still is.
+ */
+export const keyTaken = ({ row, rows }: { readonly row: WorktreeSummary; readonly rows: readonly WorktreeSummary[] }) =>
+  row.conflict !== null && rows.some((other) => other.path !== row.path && other.key === row.key)
+
 /** Where a filter's board is: at this prefix with a trailing slash, and its ledger at `ledger` under it. */
 export const filterPath = (filter: Filter) => {
   if (filter.kind === 'worktree') return boardPath(filter.name)
@@ -89,15 +100,9 @@ export function unionOf({ filter, rows, now }: {
  * it, served or not, as its board draws them.
  */
 export type FilterOption =
-  | {
-    readonly kind: 'worktree'
-    readonly name: string
-    readonly path: string
-    readonly branch: string | null
-    readonly detached: boolean
-  }
-  | { readonly kind: 'epic'; readonly name: string; readonly count: number }
-  | { readonly kind: 'project'; readonly name: string; readonly path: string; readonly count: number }
+  | ({ readonly kind: 'worktree' } & Pick<WorktreeSummary, 'name' | 'path' | 'branch' | 'detached'>)
+  | { readonly kind: 'epic'; readonly name: NonNullable<WorktreeSummary['epic']>; readonly count: number }
+  | { readonly kind: 'project'; readonly name: ProjectSection['name']; readonly path: ProjectSection['key']; readonly count: number }
 
 /** The filter an option switches to. */
 export const filterOf = (option: FilterOption): Filter =>
