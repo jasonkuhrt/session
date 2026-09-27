@@ -26,7 +26,11 @@ declare module '@tanstack/hotkeys' {
 /**
  * Every key the board answers to, named for what it does, in the order the
  * legend lists them. A letter is bound without Shift, so `j` is `j` and
- * Shift+J is nothing; `?` is typed with Shift, which the match allows.
+ * Shift+J is nothing; `?` is typed with Shift, which the match allows. The
+ * index's sections stand one above another, and each lays its cards out in
+ * columns, so no arrow says which way the next section is: `h` and `l` step
+ * between sections there, and the left and right arrows only between a
+ * board's lanes.
  */
 export const keys = {
   legend: ['?'],
@@ -34,6 +38,8 @@ export const keys = {
   previous: ['K', 'ArrowUp'],
   left: ['H', 'ArrowLeft'],
   right: ['L', 'ArrowRight'],
+  previousSection: ['H'],
+  nextSection: ['L'],
   open: ['Enter'],
   back: ['['],
   forward: [']'],

@@ -41,8 +41,16 @@ const onPage = (event: KeyboardEvent, root: HTMLElement | null) => {
     (root !== null && target instanceof Node && root.contains(target))
 }
 
-/** The keys that take one step and may be held down to take several; every other key acts once per press. */
-const steps: ReadonlySet<KeyName> = new Set(['next', 'previous', 'left', 'right'])
+/**
+ * The keys that take one step and may be held down to take several. Every
+ * other key acts on the first keydown of a press and ignores the repeats a
+ * held key sends, which the event itself says, so a card that moves and draws
+ * its keys again under a held bracket does not move twice.
+ */
+const steps: ReadonlySet<KeyName> = new Set(['next', 'previous', 'left', 'right', 'previousSection', 'nextSection'])
+
+/** Whether a keydown is a held key's repeat, which only a step acts on. */
+const repeatOf = (event: KeyboardEvent, name: KeyName) => event.repeat && !steps.has(name)
 
 /**
  * How every binding meets the keyboard: never while a field has the focus,
@@ -67,11 +75,11 @@ export function useBindings(bindings: ReadonlyArray<Binding>) {
     keys[binding.name].map((hotkey) => ({
       hotkey,
       callback: (event: KeyboardEvent) => {
-        if (onPage(event, page.root.current) && binding.act(event)) event.preventDefault()
+        if (repeatOf(event, binding.name) || !onPage(event, page.root.current)) return
+        if (binding.act(event)) event.preventDefault()
       },
       options: {
         enabled: !page.held,
-        requireReset: !steps.has(binding.name),
         meta: { name: binding.name, description: binding.sentence, scope: page.scope },
       },
     }))
@@ -93,8 +101,8 @@ export function useReveal() {
   }, [page])
 }
 
-/** What each step of the selection does on a page, in the page's words. */
-export type StepSentences = Readonly<Record<Step, string>>
+/** Each step of the selection as a page offers it: the name of its keys, and what it does in the page's words. */
+export type StepKeys = Readonly<Record<Step, { readonly name: KeyName; readonly sentence: string }>>
 
 const allSteps: ReadonlyArray<Step> = ['next', 'previous', 'left', 'right']
 
@@ -112,16 +120,16 @@ const releaseFocus = () => {
  * nowhere further to go does nothing, and an arrow then scrolls the page as
  * it always did.
  */
-export function SelectionKeys({ columns, selected, onSelect, sentences }: {
+export function SelectionKeys({ columns, selected, onSelect, steps: offered }: {
   columns: ReadonlyArray<ReadonlyArray<string>>
   selected: string | null
   onSelect: (id: string) => void
-  sentences: StepSentences
+  steps: StepKeys
 }) {
   const reveal = useReveal()
   useBindings(allSteps.filter((step) => canStep({ columns, step })).map((step) => ({
-    name: step,
-    sentence: sentences[step],
+    name: offered[step].name,
+    sentence: offered[step].sentence,
     act: () => {
       const reached = stepped({ columns, selected, step })
       if (reached === null || reached === selected) return false
@@ -146,8 +154,10 @@ export function useDialogKeys({ open, onClose }: { readonly open: boolean; reado
   const definitions: UseHotkeyDefinition[] = open
     ? keys.close.map((hotkey) => ({
       hotkey,
-      callback: () => onClose(),
-      options: { requireReset: true, meta: { name: 'close', description: closeSentence, scope: 'dialog' } },
+      callback: (event: KeyboardEvent) => {
+        if (!repeatOf(event, 'close')) onClose()
+      },
+      options: { meta: { name: 'close', description: closeSentence, scope: 'dialog' } },
     }))
     : []
   useHotkeys(definitions, keyOptions)

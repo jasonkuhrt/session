@@ -33,8 +33,10 @@ export function getRouter() {
         gcTime: 0,
         // A page reads when it mounts, even when the page it replaced was
         // showing the same answer a moment ago, as the index and a board's
-        // picker share the worktrees: the page's stream only hears of changes
-        // from the moment it opens.
+        // picker share the worktrees, and draws only what it read since
+        // (`isFetchedAfterMount`): its stream only hears of changes from the
+        // moment it opens. What the daemon says about itself is the one
+        // answer kept for the whole document (`reads.daemon`).
         refetchOnMount: 'always',
       },
     },

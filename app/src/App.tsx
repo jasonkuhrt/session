@@ -5,7 +5,7 @@ import type { FocusResult, Item } from '../contract'
 import { stageNames } from '../contract'
 import { AgentsStrip } from './components/agents'
 import { Board } from './components/board'
-import { KeyPage, SelectionKeys, type StepSentences } from './components/keys'
+import { KeyPage, SelectionKeys, type StepKeys } from './components/keys'
 import { ScrollRestored } from './components/scroll-restored'
 import type { BoardNameRequest } from './components/session-dialogs'
 import { CompleteDialog, NameDialog } from './components/session-dialogs'
@@ -54,12 +54,12 @@ function useBoardReads(board: string) {
   }
 }
 
-/** What each step of the selection does on a board. */
-const boardSteps: StepSentences = {
-  next: 'Select the item below, in the same lane.',
-  previous: 'Select the item above, in the same lane.',
-  left: 'Select an item in the nearest lane to the left.',
-  right: 'Select an item in the nearest lane to the right.',
+/** The steps of the selection on a board, whose lanes stand side by side. */
+const boardSteps: StepKeys = {
+  next: { name: 'next', sentence: 'Select the item below, in the same lane.' },
+  previous: { name: 'previous', sentence: 'Select the item above, in the same lane.' },
+  left: { name: 'left', sentence: 'Select an item in the nearest lane to the left.' },
+  right: { name: 'right', sentence: 'Select an item in the nearest lane to the right.' },
 }
 
 function App() {
@@ -141,7 +141,7 @@ function App() {
     <KeyPage scope="board" held={dragging} className="min-h-dvh bg-background text-foreground">
       {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
       <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
-      <SelectionKeys columns={columns} selected={selected} onSelect={select} sentences={boardSteps} />
+      <SelectionKeys columns={columns} selected={selected} onSelect={select} steps={boardSteps} />
       <ScrollRestored ready={!loading} />
       <SessionHeader
         worktree={session?.worktree}

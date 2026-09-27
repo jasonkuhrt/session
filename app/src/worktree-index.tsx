@@ -2,7 +2,7 @@ import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
 import type { EpicWrite, PullRequestReports, WorktreeSummary } from '../contract'
-import { KeyPage, SelectionKeys, type StepSentences } from './components/keys'
+import { KeyPage, SelectionKeys, type StepKeys } from './components/keys'
 import { ScrollRestored } from './components/scroll-restored'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
@@ -27,12 +27,16 @@ import { useTrackedWorktrees } from './lib/tracked-worktrees'
 
 const skeletonCards = [1, 2, 3, 4, 5, 6]
 
-/** What each step of the selection does on the index, whose sections stand one above another. */
-const indexSteps: StepSentences = {
-  next: 'Select the worktree below, in the same section.',
-  previous: 'Select the worktree above, in the same section.',
-  left: 'Select a worktree in the section above.',
-  right: 'Select a worktree in the section below.',
+/**
+ * The steps of the selection on the index, said by order: a section's cards
+ * stand in columns, so the next worktree in one can be beside or above the
+ * last, and its sections are stepped through with `h` and `l` alone.
+ */
+const indexSteps: StepKeys = {
+  next: { name: 'next', sentence: 'Select the next worktree in this section.' },
+  previous: { name: 'previous', sentence: 'Select the previous worktree in this section.' },
+  left: { name: 'previousSection', sentence: 'Select a worktree in the previous section.' },
+  right: { name: 'nextSection', sentence: 'Select a worktree in the next section.' },
 }
 
 /** One line for the whole page: a source that failed, failed for every row. */
@@ -191,7 +195,7 @@ export function WorktreeIndex() {
     <TooltipProvider>
       <KeyPage scope="index" held={snapshot !== null} className="flex min-h-dvh flex-col bg-background text-foreground">
         <title>Worktrees</title>
-        <SelectionKeys columns={columns} selected={selected} onSelect={select} sentences={indexSteps} />
+        <SelectionKeys columns={columns} selected={selected} onSelect={select} steps={indexSteps} />
         <ScrollRestored ready={dashboard !== null} />
         {/* No heading: every card says what it is and how it moves from where
             it is, and the tab carries the page's name. */}

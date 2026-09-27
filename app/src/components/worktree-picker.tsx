@@ -69,8 +69,10 @@ export function WorktreePicker({ current }: { current: NonNullable<Session['work
   // The registry of served worktrees lives at the root whichever page is open.
   // It is the picker's own concern, so no surface has to fetch it to have one,
   // and it is read once: a failed read says nothing, and the header falls back
-  // to the plain name and branch.
-  const worktrees = useQuery(reads.worktrees()).data
+  // to the plain name and branch. Only what this board read counts, not rows
+  // the index it came from last drew.
+  const read = useQuery(reads.worktrees())
+  const worktrees = read.isFetchedAfterMount ? read.data : undefined
   const tip = useTip()
   const navigate = useNavigate()
 

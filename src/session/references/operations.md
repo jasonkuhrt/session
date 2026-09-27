@@ -1184,10 +1184,12 @@ The legend's sentences, word for word:
 | Key | On the index | On a board |
 | --- | --- | --- |
 | `?` | "Show the keys this page answers to." | the same |
-| `j`, `↓` | "Select the worktree below, in the same section." | "Select the item below, in the same lane." |
-| `k`, `↑` | "Select the worktree above, in the same section." | "Select the item above, in the same lane." |
-| `h`, `←` | "Select a worktree in the section above." | "Select an item in the nearest lane to the left." |
-| `l`, `→` | "Select a worktree in the section below." | "Select an item in the nearest lane to the right." |
+| `j`, `↓` | "Select the next worktree in this section." | "Select the item below, in the same lane." |
+| `k`, `↑` | "Select the previous worktree in this section." | "Select the item above, in the same lane." |
+| `h` | "Select a worktree in the previous section." | "Select an item in the nearest lane to the left." |
+| `l` | "Select a worktree in the next section." | "Select an item in the nearest lane to the right." |
+| `←` | | the same as `h` |
+| `→` | | the same as `l` |
 | Enter | "Open this worktree’s board." | "Open this item’s page." |
 | `[` | | "Move this item back to Design.", naming the stage before the item's |
 | `]` | | "Move this item forward to Batch.", naming the stage after the item's |
@@ -1203,7 +1205,11 @@ before its cards, an epic's worktrees in its card's order. `j` and `k` step
 within a lane or a section, and `h` and `l` go to the nearest lane or section
 either side that holds anything, at the same place in it or its last. The
 first step selects the first card of the first lane or section that holds
-one. A selection is kept by the item's id or the worktree's path, so it
+one. On the index `j` and `k` go by the order the section draws its
+worktrees in, which in a section of several columns can be beside or above,
+and the left and right arrows are not bound there: the sections stand one
+above another, so no arrow says which way the next one is. A selection is
+kept by the item's id or the worktree's path, so it
 follows an item a bracket moves into another lane, and an item or a worktree
 that leaves the page takes the selection with it. The selected card is
 scrolled into view whenever it stands somewhere new. A step that has nowhere
@@ -1236,7 +1242,9 @@ the pointer or by the keyboard, whose drag keeps the arrows. A step takes
 the keyboard from a control that held it, so the Enter that follows opens the
 selection rather than pressing that control, and Enter with a control focused
 is that control's, a link's or a button's. A step repeats while its key is
-held; every other key acts once per press. A key that does nothing keeps what
+held. Every other key acts on the first keydown of a press, and the repeats a
+held key sends do nothing, so a held bracket moves an item one stage even as
+its card is drawn again in the next lane. A key that does nothing keeps what
 the browser does with it.
 
 Moving between pages stays in the document. A link between the board's pages,
