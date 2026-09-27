@@ -385,7 +385,10 @@ side; Queue and Execute hold batch directories only:
   batch's included, lives in its directory's name.
 - Prefixes step by 10 and pad to three digits. The engine keeps existing numbers
   when it can fit an entry between them and renumbers the whole directory from
-  `010` otherwise, so gaps are normal and hand-renumbering is unnecessary.
+  `010` otherwise, so gaps are normal and hand-renumbering is unnecessary. An
+  item a move places keeps its number while it still fits where it lands and
+  takes a new one there otherwise, and every other entry keeps its own; a group
+  gathered where its first item stood in no group takes that item's number.
 - Emptying a group, a batch included, removes its directory on the next write,
   dot entries and all; the stage directory itself stays, empty.
 

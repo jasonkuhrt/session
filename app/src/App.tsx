@@ -148,7 +148,7 @@ function App() {
           </div>
         ) : session ? (
           <Board
-            stages={session.stages}
+            session={session}
             pending={pending}
             choosing={choosing}
             onChoose={choose}
@@ -164,7 +164,9 @@ function App() {
             onUngroup={ids => void mutate('/api/ungroup', { ids })}
             onStart={() => void mutate('/api/start', {})}
             onComplete={setCompleting}
-            onMove={(id, placement) => mutate('/api/move', { id, ...placement })}
+            onMove={(id, placement, drawn) => mutate('/api/move', { id, ...placement }, drawn)}
+            onGroupDrop={({ stage, onto, held }) =>
+              setNaming({ kind: 'drop', stage, ids: [onto.id, held.id], titles: [onto.title, held.title] })}
             onDraggingChange={setDragging}
           />
         ) : <p className="py-20 text-center text-muted-foreground">The session files could not be loaded.</p>}
@@ -176,6 +178,14 @@ function App() {
         onClose={() => setNaming(null)}
         onName={async name => {
           if (naming === null) return
+          // A card dropped on another makes a group of the two, the one
+          // dropped on first and in its place, on the files as they are read
+          // now: the place is that card's wherever it stands by then, and the
+          // engine refuses the two once they are no longer in one lane.
+          if (naming.kind === 'drop') {
+            if (await mutate('/api/group', { ids: naming.ids, name, at: naming.ids[0] })) setNaming(null)
+            return
+          }
           // A name the lane's choice asked for names what is still chosen,
           // since the files may have moved under the open dialog, and ends
           // the choice; one a group's heading asked for names that group and
