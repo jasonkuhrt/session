@@ -70,8 +70,10 @@ function useCardKeys({ item, stage, selected, pending, onStage }: {
   const navigate = useNavigate()
   const name = useBoardName()
   const reveal = useReveal()
-  const back = stageBeside({ item, stage, by: -1 })
-  const forward = stageBeside({ item, stage, by: 1 })
+  // Only the selected card has keys, so only it reads its body for the rules;
+  // every card draws again on each step of a drag.
+  const back = selected ? stageBeside({ item, stage, by: -1 }) : null
+  const forward = selected ? stageBeside({ item, stage, by: 1 }) : null
   const moveInView = async (to: Stage) => {
     if (await onStage(item, to)) reveal()
   }

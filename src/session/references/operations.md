@@ -1139,18 +1139,20 @@ page's and the open dialog's, so a key the page cannot offer then is not in
 it. The pages under a board, an item's, the listings and a file's, answer to
 no keys, and `?` does nothing there.
 
+The legend's sentences, word for word:
+
 | Key | On the index | On a board |
 | --- | --- | --- |
-| `?` | Show the keys this page answers to. | Show the keys this page answers to. |
-| `j`, `↓` | Select the worktree below, in the same section. | Select the item below, in the same lane. |
-| `k`, `↑` | Select the worktree above, in the same section. | Select the item above, in the same lane. |
-| `h`, `←` | Select a worktree in the section above. | Select an item in the nearest lane to the left. |
-| `l`, `→` | Select a worktree in the section below. | Select an item in the nearest lane to the right. |
-| Enter | Open this worktree's board. | Open this item's page. |
-| `[` | | Move this item back to the stage before its own, named in the sentence. |
-| `]` | | Move this item forward to the stage after its own, named in the sentence. |
-| `t` | Open a terminal here in cmux, in the selected worktree. | Open a terminal here in cmux, in the board's worktree. |
-| Escape | Close this dialog, in any dialog. | Close this dialog, in any dialog. |
+| `?` | "Show the keys this page answers to." | the same |
+| `j`, `↓` | "Select the worktree below, in the same section." | "Select the item below, in the same lane." |
+| `k`, `↑` | "Select the worktree above, in the same section." | "Select the item above, in the same lane." |
+| `h`, `←` | "Select a worktree in the section above." | "Select an item in the nearest lane to the left." |
+| `l`, `→` | "Select a worktree in the section below." | "Select an item in the nearest lane to the right." |
+| Enter | "Open this worktree’s board." | "Open this item’s page." |
+| `[` | | "Move this item back to Design.", naming the stage before the item's |
+| `]` | | "Move this item forward to Batch.", naming the stage after the item's |
+| `t` | "Open a terminal here in cmux: the cmux workspace already in this worktree comes to the front, and otherwise a new one opens in it.", the selected worktree's icon | the same, the board's icon |
+| Escape | "Close this dialog.", in any dialog | the same |
 
 The selection is the one card the keys act on, ringed in the theme's ring
 colour, and nothing is selected until a key selects something, so a page no
