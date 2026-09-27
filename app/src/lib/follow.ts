@@ -4,7 +4,7 @@ import { reread } from './reads'
 import { useStream } from './stream'
 
 /** What a page last read, and why its latest read failed. */
-export type Followed<A> = {
+type Followed<A> = {
   /** Null until the first read lands. */
   readonly value: A | null
   /** Why the latest read failed; what was read before it stays on screen. */

@@ -59,7 +59,7 @@ export const ledgerFileName = (input: { readonly date: string; readonly title: s
 
 /** An entry's fields before it has a file. */
 export const LedgerFieldsSchema = LedgerEntrySchema.mapFields(Struct.omit(['name', 'path']));
-export type LedgerFields = typeof LedgerFieldsSchema.Type;
+type LedgerFields = typeof LedgerFieldsSchema.Type;
 
 const encodeFields = Schema.encodeSync(LedgerFieldsSchema);
 

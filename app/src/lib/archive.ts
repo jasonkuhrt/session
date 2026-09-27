@@ -41,7 +41,7 @@ export const archiveStateMeaning = (state: string) => {
 }
 
 /** An item filed under `archive/`: its record as the listing reads its name, and the item as its text holds it. */
-export type ArchivedItem = { readonly record: ArchiveRecord; readonly item: Item }
+type ArchivedItem = { readonly record: ArchiveRecord; readonly item: Item }
 
 /**
  * An item's record under `archive/`, read as the item it was, or null when the
