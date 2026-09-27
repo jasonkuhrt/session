@@ -1,25 +1,23 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDraggable, useDroppable } from '@dnd-kit/react'
-import { Pencil, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
-import { epicPath } from '../lib/base'
 import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { draggedId, movable, targetId } from '../lib/epics'
 import type { Marker } from '../lib/order'
-import { epicBoardMeaning, epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
+import { epicRowMeaning, looseMeaning, quietCardMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
+import { selectedMark, selectionRingInside } from '../lib/selection'
 import { cn } from '../lib/utils'
+import { EpicHeading } from './epic-heading'
 import { HeldWords } from './held-words'
 import { LandingLine, markedSide } from './landing-line'
-import { Explained, Tip, useTip } from './tip'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
+import { useTip } from './tip'
 import { Card } from './ui/card'
-import { EpicMark } from './worktree-marks'
 import type { RowContext } from './worktree-row'
 import { cardClass, WorktreeRow } from './worktree-row'
 
@@ -37,6 +35,8 @@ export type DragContext = RowContext & {
   readonly rows: readonly WorktreeSummary[]
   /** While a drop is written, nothing is picked up. */
   readonly writing: boolean
+  /** The worktree the keys act on, by its path, ringed where it is drawn; null while none is. */
+  readonly selected: string | null
   /** The target a held card would land in if it were dropped now, by its id; null when a drop would change nothing. */
   readonly landingOn: string | null
   /** Where a held project or worktree would take its place if it were dropped now; null when it would take none. */
@@ -59,9 +59,6 @@ function useBothRefs(first: (element: Element | null) => void, second: (element:
     second(element)
   }, [first, second])
 }
-
-/** An epic's name as the link to its board, drawn as a worktree's name is. */
-const epicLink = 'rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50'
 
 /** What a card that others land in is to the library: the pointer alone decides it, and it outranks the space around it. */
 const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Normal } as const
@@ -102,59 +99,11 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
       role="group"
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
-      className={cn('relative px-3 py-2.5 outline-none', canMove && 'cursor-grab', isDragSource && 'opacity-40')}
+      data-selected={selectedMark(context.selected === row.path)}
+      className={cn('relative px-3 py-2.5 outline-none', selectionRingInside, canMove && 'cursor-grab', isDragSource && 'opacity-40')}
     >
       {side === null ? null : <LandingLine side={side} gap="row" />}
-      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} />
-    </div>
-  )
-}
-
-/**
- * An epic's heading, which is what holds the card: its mark, which says what
- * an epic is, its name, which opens its board, how many worktrees are in it,
- * and, while `onRename` is given, a way to rename it. `movable` says whether
- * it can be held now.
- */
-function EpicHeading({ card, movable: canMove, onRename, ref }: {
-  card: EpicCardShape
-  movable: boolean
-  onRename?: ((card: EpicCardShape) => void) | undefined
-  ref?: React.Ref<HTMLDivElement>
-}) {
-  const tip = useTip()
-  return (
-    <div
-      ref={ref}
-      // A role of its own, so the drag library does not make the handle a
-      // button, whose content would stop being controls: it holds the rename.
-      // eslint-disable-next-line jsx-a11y/prefer-tag-over-role -- An element that is dragged and holds its own controls has no tag of its own; `fieldset` groups a form's fields.
-      role="group"
-      aria-roledescription="Draggable epic"
-      aria-label={`Drag the epic ${card.name}`}
-      className={cn('flex items-center gap-2 border-b px-3 py-2 outline-none', canMove && 'cursor-grab')}
-    >
-      <Explained meaning={epicMeaning(card.name)} className="shrink-0"><EpicMark /></Explained>
-      <h2 className="min-w-0 text-sm font-medium wrap-anywhere">
-        <a className={epicLink} href={`${epicPath(card.name)}/`} title={tip(epicBoardMeaning(card.name))}>{card.name}</a>
-      </h2>
-      <Badge variant="secondary" title={tip(worktreeCountMeaning)}>{card.rows.length}</Badge>
-      {onRename === undefined ? null : (
-        <Tip
-          meaning="Rename this epic. A name another epic already has merges the two."
-          render={
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="ml-auto"
-              aria-label={`Rename the epic ${card.name}`}
-              onClick={() => onRename(card)}
-            />
-          }
-        >
-          <Pencil />
-        </Tip>
-      )}
+      <WorktreeRow row={row} context={context} meaning={epicRowMeaning({ row, epic })} selected={context.selected === row.path} />
     </div>
   )
 }
@@ -210,6 +159,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
   const { ref: dropRef } = useDroppable({ id: onto, accept: cardsAccept, ...cardDrop, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
   const tip = useTip()
+  const selected = context.selected === row.path
   return (
     <Card
       ref={ref}
@@ -221,6 +171,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       aria-roledescription="Draggable worktree"
       aria-label={`Drag ${row.name}`}
       title={card.quiet ? tip(quietCardMeaning) : undefined}
+      data-selected={selectedMark(selected)}
       // The focus outline is taken away first, so the landing outline, which
       // sets the same style, is not merged away with it.
       className={cn(
@@ -230,7 +181,7 @@ export function LooseCard({ card, context }: { card: Extract<IndexCard, { kind: 
       )}
     >
       <div className="px-3 py-2.5">
-        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} />
+        <WorktreeRow row={row} context={context} meaning={looseMeaning(row)} selected={selected} />
       </div>
     </Card>
   )

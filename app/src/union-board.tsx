@@ -7,7 +7,7 @@ import { SessionHeader } from './components/session-header'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
 import { boardOf, keyTaken, unionOf } from './lib/filter'
-import { reads, reread } from './lib/reads'
+import { reads, reread, sinceMount } from './lib/reads'
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
@@ -28,23 +28,25 @@ const messageOf = (error: unknown, fallback: string) => (error instanceof Error 
  * the page has one subscription and one hold: `changed` there is every
  * tracked session's, on which it reads every session in view again, and
  * `worktrees` says the rows changed, which is how a worktree joins or leaves
- * the view. A drag or a write holds both.
+ * the view. A drag or a write holds both. It draws only what it has read
+ * since it mounted, the rows and each session alike, as every page does.
  */
 export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
   const client = useQueryClient()
   const now = useNow()
-  const rows = useQuery(reads.worktrees())
-  const union = rows.data === undefined ? undefined : unionOf({ filter, rows: rows.data, now })
-  const listed = rows.data ?? []
+  const rowsRead = useQuery(reads.worktrees())
+  const rows = sinceMount(rowsRead)
+  const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
+  const listed = rows ?? []
   const served = union?.rows.filter(row => !keyTaken({ row, rows: listed })) ?? []
   const sessions = useQueries({ queries: served.map(row => reads.session(boardOf(row))) })
   const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
 
   if (union === null) return <NoPage />
 
-  const parts = served.map((row, index) => ({ board: boardOf(row), name: row.name, session: sessions[index]?.data ?? null }))
+  const parts = served.map((row, index) => ({ board: boardOf(row), name: row.name, session: sinceMount(sessions[index]) ?? null }))
   const problems = [
-    ...(rows.error === null ? [] : [messageOf(rows.error, 'Could not load the worktrees')]),
+    ...(rowsRead.error === null ? [] : [messageOf(rowsRead.error, 'Could not load the worktrees')]),
     ...(union?.rows ?? []).flatMap(row => (keyTaken({ row, rows: listed }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
     ...served.flatMap((row, index) => {
       const error = sessions[index]?.error ?? null
@@ -52,20 +54,22 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
     }),
   ]
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
-      <title>{union === undefined ? 'Session' : `${union.name} · Session`}</title>
-      <SessionHeader filter={filter} worktree={undefined} rules={false} links={null} linksError={null} terminal={false} zed={false} />
-      <BoardSurface
-        parts={parts}
-        grouped
-        // The skeleton stands until a first session lands; a worktree that
-        // joins the view later appears once its own read lands, and the board
-        // meanwhile stays as it is.
-        loading={rows.isPending || (sessions.length > 0 && sessions.every(read => read.isPending))}
-        problems={problems}
-        stream={{ board: '', on: { worktrees: readRows }, held: ['worktrees'], release: readRows }}
-      />
-    </div>
+    <BoardSurface
+      head={
+        <>
+          {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
+          <title>{union === undefined ? 'Session' : `${union.name} · Session`}</title>
+          <SessionHeader filter={filter} worktree={undefined} rules={false} links={null} linksError={null} terminal={false} zed={false} />
+        </>
+      }
+      parts={parts}
+      grouped
+      // The skeleton stands until a first session lands; a worktree that
+      // joins the view later appears once its own read lands, and the board
+      // meanwhile stays as it is.
+      loading={!rowsRead.isFetchedAfterMount || (sessions.length > 0 && sessions.every(session => !session.isFetchedAfterMount))}
+      problems={problems}
+      stream={{ board: '', on: { worktrees: readRows }, held: ['worktrees'], release: readRows }}
+    />
   )
 }

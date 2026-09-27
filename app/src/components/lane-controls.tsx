@@ -38,7 +38,7 @@ export function ChooseEntries({ board, stage, pending, onChoose }: Pick<LaneActi
  * While the lane is choosing: what the chosen cards become, once there is one,
  * and the way out. Until a card is chosen the lane says what to do instead.
  */
-function ChoosingControls({ board, stage, purpose, selected, pending, onGroup, onQueue, onChoose }: Pick<
+function ChoosingControls({ board, stage, purpose, chosen, pending, onGroup, onQueue, onChoose }: Pick<
   LaneActions,
   'pending' | 'onGroup' | 'onQueue' | 'onChoose'
 > & {
@@ -46,27 +46,27 @@ function ChoosingControls({ board, stage, purpose, selected, pending, onGroup, o
   stage: Stage
   purpose: 'group' | 'batch'
   /** The lane's chosen items, in lane order. */
-  selected: readonly string[]
+  chosen: readonly string[]
 }) {
   return (
     <div className="flex items-center gap-2">
-      {selected.length === 0
+      {chosen.length === 0
         ? <p className="flex-1 text-sm text-muted-foreground">Choose the items for the {purpose}.</p>
         : purpose === 'group'
         ? (
           <Tip
             meaning={`Name the chosen items as a group in ${stage}.`}
-            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(board, stage, selected)} />}
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onGroup(board, stage, chosen)} />}
           >
-            Group ({selected.length})
+            Group ({chosen.length})
           </Tip>
         )
         : (
           <Tip
             meaning="Name the chosen items as a batch and append it to Queue."
-            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(board, selected, null)} />}
+            render={<Button variant="outline" className="flex-1" disabled={pending} onClick={() => onQueue(board, chosen, null)} />}
           >
-            Queue batch ({selected.length})
+            Queue batch ({chosen.length})
           </Tip>
         )}
       <Tip meaning="Stop choosing. Nothing changes." render={<Button variant="ghost" onClick={() => onChoose(null)} />}>
@@ -82,11 +82,11 @@ function ChoosingControls({ board, stage, purpose, selected, pending, onGroup, o
  * Execute are both visible in the lanes themselves, so a disabled button
  * carrying the reason would say a second time what the board already shows.
  */
-export function LaneControls({ board, stage, choosing, selected, count, executeOccupied, pending, onGroup, onQueue, onChoose, onStart }: LaneActions & {
+export function LaneControls({ board, stage, choosing, chosen, count, executeOccupied, pending, onGroup, onQueue, onChoose, onStart }: LaneActions & {
   board: string
   stage: Stage
   /** The lane's chosen items, in lane order. */
-  selected: readonly string[]
+  chosen: readonly string[]
   count: number
   executeOccupied: boolean
 }) {
@@ -98,7 +98,7 @@ export function LaneControls({ board, stage, choosing, selected, count, executeO
           board={board}
           stage={stage}
           purpose={choosing.purpose}
-          selected={selected}
+          chosen={chosen}
           pending={pending}
           onGroup={onGroup}
           onQueue={onQueue}

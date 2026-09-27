@@ -110,9 +110,11 @@ later edit on disk.
 
 The board's header starts with "All worktrees" and the worktree picker, which
 shows the worktree's name over the branch checked out in it, each line marked
-with an icon for what it is, and switches to any other worktree's board. The gear at the top right of every page holds the
-board's own settings, kept in this browser. Tips, off by default, makes every
-word and control say what it means when it is hovered or focused.
+with an icon for what it is, and switches to any other worktree's board. The
+gear at the top right of every page holds the board's own settings, kept in this
+browser. Tips, off by default, makes every word and control say what it means
+when it is hovered or focused. `?` on the index or a board lists the keys it
+answers to.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules
@@ -247,24 +249,26 @@ the branch and the pull request name, and are not modeled.
 
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It is a TanStack Start app in SPA mode. Every page is a
-file route at the address the daemon serves, and moving between pages loads a
-document. Every read is a TanStack Query query, read when its page mounts and,
-where its answer can change, again on the event that names it; a board's picker
-list is read once, and what the daemon says about itself when a page mounts and
-when a stream comes back, a changed `sourceStamp` reloading the page, drag and
-all. A board's page reads that description before it mounts instead, since it
-names the boards the daemon serves, and an address whose key it does not name
-draws the not-found page and reads nothing else. On the board and the index a
-drag or a write holds the events it names until it ends; the item page's writes
-hold nothing. `bun run build` prerenders one shell and writes it, with the one
-script and the one stylesheet it names, into `app/dist/client`, which the daemon
-serves; no Start server code runs in the daemon. It renders in its dark theme,
-which is Tokyo Night's night variant, defined in `app/src/styles.css`. Keep that
-theme and the stock component appearance. Card placement uses the native
-behavior of the established sortable library. Keep custom code limited to the
-board, Markdown workflow, and file boundary. Do not add separate mobile
-behavior, accessibility work, or concurrent-edit coordination unless Jason
-changes this contract.
+file route at the address the daemon serves, and moving between pages stays in
+the document: a link or a key that opens a page goes through the router, the
+page that leaves closes its stream and its dialogs, and Back returns to where
+the page was scrolled. Every read is a TanStack Query query, read when its page
+mounts and, where its answer can change, again on the event that names it; a
+board's picker list is read once, and what the daemon says about itself when a
+page mounts and when a stream comes back, a changed `sourceStamp` reloading the
+page, drag and all. A board's page reads that description before it mounts
+instead, since it names the boards the daemon serves, and an address whose key
+it does not name draws the not-found page and reads nothing else. On the board
+and the index a drag or a write holds the events it names until it ends; the
+item page's writes hold nothing. `bun run build` prerenders one shell and writes
+it, with the one script and the one stylesheet it names, into `app/dist/client`,
+which the daemon serves; no Start server code runs in the daemon. It renders in
+its dark theme, which is Tokyo Night's night variant, defined in
+`app/src/styles.css`. Keep that theme and the stock component appearance. Card
+placement uses the native behavior of the established sortable library. Keep
+custom code limited to the board, Markdown workflow, and file boundary. Do not
+add separate mobile behavior, accessibility work, or concurrent-edit
+coordination unless Jason changes this contract.
 
 Where data crosses a boundary, its shape is an Effect Schema, and the code's
 type for it is that schema's `Type`, never written by hand. This is an axiom,

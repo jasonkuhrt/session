@@ -1,14 +1,18 @@
+import { Link, useNavigate } from '@tanstack/react-router'
 import { House } from 'lucide-react'
 import type * as React from 'react'
 
 import type { DaemonCapabilities, PullRequestReport, PullRequestReports, WorktreeSummary } from '../../contract'
+import { toBoard } from '../lib/base'
 import type { StageRange } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { checkoutLabel } from '../lib/format'
 import { mainMeaning } from '../lib/index-meanings'
+import { selectionRing } from '../lib/selection'
 import { cn } from '../lib/utils'
 import { AgentPills } from './agent-pills'
 import { Copyable } from './copyable'
+import { useBindings } from './keys'
 import { PullRequestChip } from './pull-request-chip'
 import { StageGlyph } from './stage-glyph'
 import { Explained, useTip } from './tip'
@@ -37,9 +41,13 @@ const outsideGitMeaning = 'This folder is not a Git worktree, so it has no branc
 
 const notServedMeaning = 'The daemon cannot serve this worktree’s board, for the reason beside this.'
 
-/** How a card looks for what it is and what a drag is doing to it: dim when quiet, outlined where a held card would land, faint while it is the one held. */
+/**
+ * How a card looks for what it is and what a drag is doing to it: dim when
+ * quiet, outlined where a held card would land, faint while it is the one
+ * held, and ringed while it is marked as the selection.
+ */
 export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boolean; held: boolean }) =>
-  cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40')
+  cn('gap-0 py-0', quiet && 'opacity-60', lands && landing, held && 'opacity-40', selectionRing)
 
 /**
  * One worktree in two lines, since there are no columns to carry the rest:
@@ -52,14 +60,17 @@ export const cardClass = ({ quiet, lands, held }: { quiet: boolean; lands: boole
  * `meaning` is what the mark before the name says the worktree is here, and
  * `name` the name it is drawn under, where a head needs more than its own. A
  * head also opens its project's board, right after the name.
+ * While `selected`, the keys act on this worktree: Enter opens its board and
+ * `t` its terminal.
  */
-export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name, project = null }: {
+export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.name, project = null, selected = false }: {
   row: WorktreeSummary
   context: RowContext
   meaning?: string
   name?: string
   /** The way to the board of the project this row heads; none for a row that heads nothing. */
   project?: React.ReactNode
+  selected?: boolean
 }) {
   return (
     // The glyph's column is as wide as a glyph whether or not the row draws
@@ -80,11 +91,11 @@ export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.
           <Explained meaning={meaning}>
             <WorktreeMark />
           </Explained>
-          <WorktreeName row={row} name={name} />
+          <WorktreeName row={row} name={name} selected={selected} />
         </span>
         {project}
         <TrailerCount problems={row.trailerProblems} />
-        {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" /> : null}
+        {context.capabilities.terminal ? <TerminalAction path={row.path} name={row.name} size="icon-xs" bound={selected} /> : null}
         {context.capabilities.zed ? <ZedAction path={row.path} name={row.name} size="icon-xs" /> : null}
         <AgentPills agents={row.agents} now={context.now} />
       </div>
@@ -110,19 +121,32 @@ export function WorktreeRow({ row, context, meaning = listedMeaning, name = row.
  * section shares its name with another. Two worktrees that still share a name
  * share a key, and the daemon serves the board of the one it took on first.
  * Where it sits is its tip. It opens the worktree's board, unless the daemon
- * cannot serve one.
+ * cannot serve one, and so does Enter while the worktree is selected.
  */
-function WorktreeName({ row, name }: { row: WorktreeSummary; name: string }) {
+function WorktreeName({ row, name, selected }: { row: WorktreeSummary; name: string; selected: boolean }) {
   const tip = useTip()
+  const navigate = useNavigate()
+  useBindings(selected && row.conflict === null
+    ? [{
+      name: 'open',
+      sentence: 'Open this worktree’s board.',
+      // With a control focused, Enter is that control's.
+      act: (event) => {
+        if (event.target !== document.body) return false
+        void navigate(toBoard(row.name))
+        return true
+      },
+    }]
+    : [])
   return row.conflict === null
     ? (
-      <a
+      <Link
+        {...toBoard(row.name)}
         className="min-w-0 rounded-sm font-medium wrap-anywhere underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-        href={`/w/${row.key}/`}
         title={tip(row.path)}
       >
         {name}
-      </a>
+      </Link>
     )
     : <span className="min-w-0 font-medium wrap-anywhere text-muted-foreground" title={tip(row.path)}>{name}</span>
 }

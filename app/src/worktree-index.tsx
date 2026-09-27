@@ -2,6 +2,8 @@ import { DragDropProvider } from '@dnd-kit/react'
 import * as React from 'react'
 
 import type { EpicWrite, PullRequestReports, WorktreeSummary } from '../contract'
+import { KeyPage, SelectionKeys, type StepKeys } from './components/keys'
+import { ScrollRestored } from './components/scroll-restored'
 import type { EpicNameRequest } from './components/session-dialogs'
 import { NameDialog } from './components/session-dialogs'
 import { SettingsMenu } from './components/settings-menu'
@@ -20,9 +22,22 @@ import { dropOutcome, withEpics } from './lib/epics'
 import { unresolvedNotice } from './lib/index-meanings'
 import type { Placement } from './lib/order'
 import { withPlacement } from './lib/order'
+import { indexColumns, useSelection } from './lib/selection'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
 
 const skeletonCards = [1, 2, 3, 4, 5, 6]
+
+/**
+ * The steps of the selection on the index, said by order: a section's cards
+ * stand in columns, so the next worktree in one can be beside or above the
+ * last, and its sections are stepped through with `h` and `l` alone.
+ */
+const indexSteps: StepKeys = {
+  next: { name: 'next', sentence: 'Select the next worktree in this section.' },
+  previous: { name: 'previous', sentence: 'Select the previous worktree in this section.' },
+  left: { name: 'previousSection', sentence: 'Select a worktree in the previous section.' },
+  right: { name: 'nextSection', sentence: 'Select a worktree in the next section.' },
+}
 
 /** One line for the whole page: a source that failed, failed for every row. */
 const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
@@ -104,6 +119,10 @@ export function WorktreeIndex() {
   const rows = drawn === null ? null : withPlacement({ rows: withEpics({ rows: drawn, epics: writes }), placement: placing })
   const drawnRows = rows ?? []
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
+  // The worktrees as the sections draw them, which the keys step through, by
+  // path; a selected worktree the page no longer draws is no longer selected.
+  const columns = indexColumns(dashboard)
+  const { selected, select } = useSelection(columns)
   const sourceNotices = [
     ...unresolvedNotices(rows),
     ...agentNotices(rows),
@@ -166,6 +185,7 @@ export function WorktreeIndex() {
     stageRange: stageRangeOf(drawnRows),
     rows: drawnRows,
     writing,
+    selected,
     landingOn: null,
     marker: null,
     onRename: (card) => setNaming({ kind: 'rename', ids: card.rows.map((row) => row.path), epic: card.name }),
@@ -173,8 +193,10 @@ export function WorktreeIndex() {
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-dvh flex-col bg-background text-foreground">
+      <KeyPage scope="index" held={snapshot !== null} className="flex min-h-dvh flex-col bg-background text-foreground">
         <title>Worktrees</title>
+        <SelectionKeys columns={columns} selected={selected} onSelect={select} steps={indexSteps} />
+        <ScrollRestored ready={dashboard !== null} />
         {/* No heading: every card says what it is and how it moves from where
             it is, and the tab carries the page's name. */}
         <header className="flex items-center gap-8 border-b px-6 py-5">
@@ -242,7 +264,7 @@ export function WorktreeIndex() {
             if (name !== request.epic) void rename(request.epic, name)
           }}
         />
-      </div>
+      </KeyPage>
     </TooltipProvider>
   )
 }

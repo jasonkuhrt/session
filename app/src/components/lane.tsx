@@ -1,9 +1,11 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { useDroppable } from '@dnd-kit/react'
+import { Link } from '@tanstack/react-router'
 import type * as React from 'react'
 
 import type { Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
+import { toBoard } from '../lib/base'
 import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
 import { listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
@@ -29,9 +31,10 @@ export type LaneActions = CardActions & {
 }
 
 /**
- * One worktree's part of a lane: its board and its name, its entries in the
- * lane as they are drawn, how many items the stage holds on disk, which a
- * drag under way does not change, and whether its Execute is occupied.
+ * One worktree's part of a lane: the board its writes go to, the worktree's
+ * name, which its pages are addressed by, its entries in the lane as they are
+ * drawn, how many items the stage holds on disk, which a drag under way does
+ * not change, and whether its Execute is occupied.
  */
 export type LanePart = {
   readonly board: string
@@ -91,9 +94,9 @@ export function Lane({ part, stage, dragging, ...actions }: LaneActions & { part
             ? <ChooseEntries board={board} stage={stage} pending={actions.pending} onChoose={actions.onChoose} />
             : null}
         </LaneHeading>
-        <LaneControls {...actions} board={board} stage={stage} selected={chosenIn({ lane, selectedIds: actions.selectedIds })} count={count} executeOccupied={executeOccupied} />
+        <LaneControls {...actions} board={board} stage={stage} chosen={chosenIn({ lane, chosenIds: actions.chosenIds })} count={count} executeOccupied={executeOccupied} />
       </div>
-      <LaneList {...actions} board={board} stage={stage} lane={lane} dragging={dragging} endRef={endRef} className="min-h-32" endClassName="h-24" />
+      <LaneList {...actions} part={part} stage={stage} dragging={dragging} endRef={endRef} className="min-h-32" endClassName="h-24" />
     </section>
   )
 }
@@ -115,14 +118,14 @@ export function PartOfLane({ part, stage, dragging, ...actions }: LaneActions & 
   return (
     <div ref={wholeRef} className="min-w-0 space-y-2 border-t pt-3">
       <div ref={startRef} className="space-y-2">
-        <PartHeading board={board} name={name}>
+        <PartHeading name={name}>
           {offersChoice({ board, stage, count, choosing: actions.choosing })
             ? <ChooseEntries board={board} stage={stage} pending={actions.pending} onChoose={actions.onChoose} />
             : null}
         </PartHeading>
-        <LaneControls {...actions} board={board} stage={stage} selected={chosenIn({ lane, selectedIds: actions.selectedIds })} count={count} executeOccupied={executeOccupied} />
+        <LaneControls {...actions} board={board} stage={stage} chosen={chosenIn({ lane, chosenIds: actions.chosenIds })} count={count} executeOccupied={executeOccupied} />
       </div>
-      <LaneList {...actions} board={board} stage={stage} lane={lane} dragging={dragging} endRef={endRef} className="min-h-10" endClassName="h-10" />
+      <LaneList {...actions} part={part} stage={stage} dragging={dragging} endRef={endRef} className="min-h-10" endClassName="h-10" />
     </div>
   )
 }
@@ -154,20 +157,20 @@ export function LaneHeading({ stage, count, children }: { stage: Stage; count: n
  * everywhere, and the way to its own board, where its agents, its pull request
  * and its pages are.
  */
-function PartHeading({ board, name, children }: { board: string; name: string; children?: React.ReactNode }) {
+function PartHeading({ name, children }: { name: string; children?: React.ReactNode }) {
   const tip = useTip()
   return (
     // As tall as the controls beside it can be, so a worktree's name stands at one height across its row.
     <div className="flex min-h-6 items-center gap-2">
       <h3 className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         <WorktreeMark />
-        <a
-          href={`${board}/`}
+        <Link
+          {...toBoard(name)}
           className="min-w-0 rounded-sm font-medium wrap-anywhere text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
           title={tip(`Open the board of ${name} alone, with its agents, its pull request and its pages.`)}
         >
           {name}
-        </a>
+        </Link>
       </h3>
       <div className="ml-auto flex items-center gap-1">{children}</div>
     </div>

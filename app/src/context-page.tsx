@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { Check, ChevronRight, Copy } from 'lucide-react'
 import * as React from 'react'
 
@@ -8,7 +9,7 @@ import { useTip } from './components/tip'
 import { Button } from './components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './components/ui/collapsible'
 import { problemOf, worktreeOf } from './lib/api'
-import { absoluteHref, filePageHref, isMarkdownPath, rawFileHref, useBoardPath } from './lib/base'
+import { absoluteHref, isMarkdownPath, rawFileHref, toBoard, toFile, useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
@@ -59,6 +60,7 @@ function treeOf(entries: readonly ContextEntry[]): readonly Node[] {
 export function ContextPage() {
   const now = useNow()
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands, for its name and root, and `context/` for its entries, are read together.
   const { value, error } = useFollowed({ board, read: reads.context(board) })
   const [place, context] = value ?? [null, null]
@@ -77,9 +79,11 @@ export function ContextPage() {
     <BoardPageFrame
       title={listingMeta.context.label}
       boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this context belongs to."
       crumbs={[{ label: listingMeta.context.label, meaning: listingMeta.context.meaning }]}
       problem={error ?? problemOf(place)}
+      ready={value !== null || error !== null}
     >
       {context === null ? (error === null ? <PageLoading /> : null) : (
         <>
@@ -184,17 +188,18 @@ function DirectoryRow({ node, ...props }: TreeProps & { node: Node }) {
 function FileRow({ node, directory, now }: TreeProps & { node: Node }) {
   const tip = useTip()
   const board = useBoardPath()
+  const name = useBoardName()
   const { path, writtenAt } = node.entry
   const markdown = isMarkdownPath(path)
-  const href = markdown ? filePageHref({ board, path }) : rawFileHref({ board, path })
+  const href = rawFileHref({ board, path })
   const absolute = absoluteHref(href)
   return (
     <div className={cn(rowClass, 'group/file pl-8 hover:bg-muted')}>
       {markdown
         ? (
-          <a className={fileLink} href={href} title={tip(`Read ${path} on a page of its own.`)}>
+          <Link {...toFile({ name, path })} className={fileLink} title={tip(`Read ${path} on a page of its own.`)}>
             {node.name}
-          </a>
+          </Link>
         )
         : (
           <a

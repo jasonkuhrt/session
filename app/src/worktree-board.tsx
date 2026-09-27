@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { FocusResult } from '../contract'
@@ -9,9 +8,9 @@ import { SessionHeader } from './components/session-header'
 import { TrailerProblems } from './components/trailer-problems'
 import { useCapabilities } from './components/worktree-actions'
 import { SessionApi } from './lib/api'
-import { useBoardPath } from './lib/base'
+import { useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
-import { reads, reread } from './lib/reads'
+import { reads, reread, sinceMount } from './lib/reads'
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
@@ -25,7 +24,8 @@ const failureOf = (error: unknown, fallback: string) => (error === null ? null :
  * with it: a failed read keeps what it last had and says the latest one
  * failed. The trailers are the daemon's answer, derived from the branch and
  * the files, and a failed read of them says nothing: the session read beside
- * it reports an unreachable daemon.
+ * it reports an unreachable daemon. The session is drawn once this board has
+ * read it, not as an epic's or a project's board it came from last drew it.
  */
 function useBoardReads(board: string) {
   const session = useQuery(reads.session(board))
@@ -33,8 +33,8 @@ function useBoardReads(board: string) {
   const trailers = useQuery(reads.trailers(board))
   const links = useQuery(reads.links(board))
   return {
-    session: session.data ?? null,
-    loading: session.isPending,
+    session: sinceMount(session) ?? null,
+    loading: !session.isFetchedAfterMount,
     loadError: failureOf(session.error, 'Could not load the session'),
     agents: agents.data ?? null,
     agentsError: failureOf(agents.error, 'The agent listing could not be read'),
@@ -54,7 +54,7 @@ function useBoardReads(board: string) {
  */
 export function WorktreeBoard() {
   const board = useBoardPath()
-  const { key: name } = useParams({ from: '/w/$key' })
+  const name = useBoardName()
   const client = useQueryClient()
   const now = useNow()
   const capabilities = useCapabilities()
@@ -70,35 +70,37 @@ export function WorktreeBoard() {
   }, [board])
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
-      <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
-      <SessionHeader
-        filter={{ kind: 'worktree', name }}
-        worktree={session?.worktree}
-        rules={session?.rules ?? false}
-        links={links}
-        linksError={linksError}
-        terminal={capabilities.terminal}
-        zed={capabilities.zed}
-      />
-      <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
-      <TrailerProblems problems={trailers} />
-      <BoardSurface
-        parts={[{ board, name: session?.worktree?.name ?? name, session }]}
-        grouped={false}
-        loading={loading}
-        problems={loadError === null ? [] : [loadError]}
-        stream={{
-          board,
-          on: {
-            agents: () => reread({ client, queryKey: reads.agents(board).queryKey }),
-            trailers: () => reread({ client, queryKey: reads.trailers(board).queryKey }),
-            links: () => reread({ client, queryKey: reads.links(board).queryKey }),
-          },
-          held: [],
-        }}
-      />
-    </div>
+    <BoardSurface
+      head={
+        <>
+          {/* One tab per board, so a row of them is readable. React hoists this into the head. */}
+          <title>{session?.worktree ? `${session.worktree.name} · Session` : 'Session'}</title>
+          <SessionHeader
+            filter={{ kind: 'worktree', name }}
+            worktree={session?.worktree}
+            rules={session?.rules ?? false}
+            links={links}
+            linksError={linksError}
+            terminal={capabilities.terminal}
+            zed={capabilities.zed}
+          />
+          <AgentsStrip agents={agents} error={agentsError} now={now} onFocus={focusAgent} />
+          <TrailerProblems problems={trailers} />
+        </>
+      }
+      parts={[{ board, name, session }]}
+      grouped={false}
+      loading={loading}
+      problems={loadError === null ? [] : [loadError]}
+      stream={{
+        board,
+        on: {
+          agents: () => reread({ client, queryKey: reads.agents(board).queryKey }),
+          trailers: () => reread({ client, queryKey: reads.trailers(board).queryKey }),
+          links: () => reread({ client, queryKey: reads.links(board).queryKey }),
+        },
+        held: [],
+      }}
+    />
   )
 }

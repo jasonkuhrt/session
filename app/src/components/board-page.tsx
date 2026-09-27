@@ -1,8 +1,10 @@
+import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
-import { useBoardPath } from '../lib/base'
+import { type Destination, toIndex } from '../lib/base'
 import { indexMeaning } from '../lib/index-meanings'
 import { cn } from '../lib/utils'
+import { ScrollRestored } from './scroll-restored'
 import { SettingsMenu } from './settings-menu'
 import { useTip } from './tip'
 import { Alert, AlertDescription } from './ui/alert'
@@ -36,7 +38,7 @@ export type Crumb = {
   /** The sentence behind the step, on hover. */
   readonly meaning: string
   /** Where the step goes; a step without one is only a name, and the last step is the page itself. */
-  readonly href?: string
+  readonly link?: Destination
   /** Whether the step is a name the files use, such as an id or a path segment. */
   readonly literal?: boolean
 }
@@ -50,7 +52,7 @@ export type Crumb = {
  * lets a code block in the column run the window's width without counting a
  * scroll bar in it.
  */
-export function BoardPageFrame({ title, boardName, boardHref, boardMeaning, crumbs, problem, notice = null, children }: {
+export function BoardPageFrame({ title, boardName, boardLink, boardMeaning, crumbs, problem, notice = null, ready, children }: {
   /** What the page is, first in the tab's name. */
   title: string
   /**
@@ -58,8 +60,8 @@ export function BoardPageFrame({ title, boardName, boardHref, boardMeaning, crum
    * has been read, or its epic's or its project's, once the rows have been.
    */
   boardName: string | null
-  /** Where that board is, for a page under an epic's or a project's board; a worktree board's page finds it from its address. */
-  boardHref?: string | undefined
+  /** Where that board is: its worktree's board, or its epic's or its project's. */
+  boardLink: Destination
   /** What the board step of the trail means from this page. */
   boardMeaning: string
   crumbs: readonly Crumb[]
@@ -67,14 +69,17 @@ export function BoardPageFrame({ title, boardName, boardHref, boardMeaning, crum
   problem: string | null
   /** A line from the page that is not a problem, such as having caught up after a conflict. */
   notice?: string | null
+  /** Whether the page's first read has landed, which is when Back's scroll comes back to it. */
+  ready: boolean
   children: React.ReactNode
 }) {
   return (
     <TooltipProvider>
       <div className="@container min-h-dvh bg-background text-foreground">
+        <ScrollRestored ready={ready} />
         {/* One tab per page, so a row of them is readable. React hoists this into the head. */}
         <title>{boardName === null ? `${title} · Session` : `${title} · ${boardName} · Session`}</title>
-        <PageTrail boardName={boardName} boardHref={boardHref} boardMeaning={boardMeaning} crumbs={crumbs} />
+        <PageTrail boardName={boardName} boardLink={boardLink} boardMeaning={boardMeaning} crumbs={crumbs} />
         {problem === null ? null : (
           <Alert variant="destructive" className={`${readingColumn} mt-6`}>
             <AlertDescription>{problem}</AlertDescription>
@@ -98,14 +103,13 @@ export function BoardPageFrame({ title, boardName, boardHref, boardMeaning, crum
  * where you are. It is the page's only navigation, so it sits where a
  * window's navigation sits rather than inside the reading column.
  */
-function PageTrail({ boardName, boardHref, boardMeaning, crumbs }: {
+function PageTrail({ boardName, boardLink, boardMeaning, crumbs }: {
   boardName: string | null
-  boardHref: string | undefined
+  boardLink: Destination
   boardMeaning: string
   crumbs: readonly Crumb[]
 }) {
   const tip = useTip()
-  const boardPath = useBoardPath()
   const board = boardName ?? 'Board'
   // A step is known by the steps that lead to it, so two steps with one name,
   // such as a path's `a/a`, are still two.
@@ -121,9 +125,9 @@ function PageTrail({ boardName, boardHref, boardMeaning, crumbs }: {
           <BreadcrumbItem>
             <BreadcrumbLink
               render={
-                <a
+                <Link
+                  {...toIndex}
                   aria-label="All projects"
-                  href="/"
                   title={tip(indexMeaning)}
                 />
               }
@@ -133,7 +137,7 @@ function PageTrail({ boardName, boardHref, boardMeaning, crumbs }: {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbLink render={<a aria-label={board} href={boardHref ?? `${boardPath}/`} title={tip(boardMeaning)} />}>
+            <BreadcrumbLink render={<Link {...boardLink} aria-label={board} title={tip(boardMeaning)} />}>
               {board}
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -147,12 +151,12 @@ function PageTrail({ boardName, boardHref, boardMeaning, crumbs }: {
                       {crumb.label}
                     </BreadcrumbPage>
                   )
-                  : crumb.href === undefined
+                  : crumb.link === undefined
                   ? <span className={cn(crumb.literal && 'font-mono')} title={tip(crumb.meaning)}>{crumb.label}</span>
                   : (
                     <BreadcrumbLink
                       className={cn(crumb.literal && 'font-mono')}
-                      render={<a aria-label={crumb.label} href={crumb.href} title={tip(crumb.meaning)} />}
+                      render={<Link {...crumb.link} aria-label={crumb.label} title={tip(crumb.meaning)} />}
                     >
                       {crumb.label}
                     </BreadcrumbLink>

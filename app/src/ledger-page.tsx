@@ -1,4 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { LedgerEntry, WorktreeSummary } from '../contract'
@@ -9,14 +10,14 @@ import { useTip } from './components/tip'
 import { Card, CardContent } from './components/ui/card'
 import { WorktreeMark } from './components/worktree-marks'
 import { problemOf, worktreeOf } from './lib/api'
-import { BoardScope, useBoardPath } from './lib/base'
+import { BoardScope, toBoard, useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
-import { boardOf, filterPath, keyTaken, unionOf } from './lib/filter'
+import { boardOf, keyTaken, toFilter, unionOf } from './lib/filter'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
 import { listingMeta, unionLedgerMeaning } from './lib/listings'
-import { reads, reread } from './lib/reads'
+import { reads, reread, sinceMount } from './lib/reads'
 import { useStream } from './lib/stream'
 
 /** What each key of an entry says, beside its value. */
@@ -46,6 +47,7 @@ const keysOf = (entry: LedgerEntry) =>
 export function LedgerPage() {
   const now = useNow()
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands and the ledger's entries are read together, so the two never disagree.
   const { value, error } = useFollowed({ board, read: reads.ledger(board) })
   const [place, ledger] = value ?? [null, null]
@@ -53,9 +55,11 @@ export function LedgerPage() {
     <BoardPageFrame
       title={listingMeta.ledger.label}
       boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this ledger belongs to."
       crumbs={[{ label: listingMeta.ledger.label, meaning: listingMeta.ledger.meaning }]}
       problem={error ?? problemOf(place)}
+      ready={value !== null || error !== null}
     >
       {ledger === null ? (error === null ? <PageLoading /> : null) : (
         <>
@@ -100,15 +104,17 @@ const newestFirst = (left: Merged, right: Merged) => {
  * own session. A file one of them left out is named above the cards with its
  * worktree's name. It follows the root's one stream, as the board does:
  * `changed` there is every tracked session's, on which it reads every ledger
- * in view again, and `worktrees` says who is in view. An address no tracked
+ * in view again, and `worktrees` says who is in view. It draws only what it
+ * has read since it mounted, as the board does. An address no tracked
  * worktree is in draws the not-found page once the rows have said so.
  */
 export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   const now = useNow()
   const client = useQueryClient()
-  const rows = useQuery(reads.worktrees())
-  const union = rows.data === undefined ? undefined : unionOf({ filter, rows: rows.data, now })
-  const listedRows = rows.data ?? []
+  const rowsRead = useQuery(reads.worktrees())
+  const rows = sinceMount(rowsRead)
+  const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
+  const listedRows = rows ?? []
   const served = union?.rows.filter((row) => !keyTaken({ row, rows: listedRows })) ?? []
   const ledgers = useQueries({ queries: served.map((row) => reads.ledger(boardOf(row))) })
   const readRows = React.useCallback(() => reread({ client, queryKey: reads.worktrees().queryKey }), [client])
@@ -123,32 +129,33 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   if (union === null) return <NoPage />
 
   const listed = served.flatMap((row, index) => {
-    const listing = ledgers[index]?.data?.[1]
+    const listing = sinceMount(ledgers[index])?.[1]
     return listing === undefined ? [] : [{ row, listing }]
   })
   const entries = listed.flatMap(({ row, listing }) => listing.entries.map((entry): Merged => ({ row, entry }))).toSorted(newestFirst)
   const notices = listed.flatMap(({ row, listing }) => listing.notices.map((notice) => `${row.name}: ${notice}`))
   const problems = [
-    ...(rows.error === null ? [] : [messageOf(rows.error, 'Could not load the worktrees')]),
+    ...(rowsRead.error === null ? [] : [messageOf(rowsRead.error, 'Could not load the worktrees')]),
     ...(union?.rows ?? []).flatMap((row) => (keyTaken({ row, rows: listedRows }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
     ...served.flatMap((row, index) => {
       const read = ledgers[index]
       const error = read?.error ?? null
       // A worktree whose items cannot be read still has its ledger listed, as its own ledger page lists it, with the daemon's reason above the cards.
-      const problem = error === null ? problemOf(read?.data?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
+      const problem = error === null ? problemOf(sinceMount(read)?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
       return problem === null ? [] : [`${row.name}: ${problem}`]
     }),
   ]
   // As the board does: loading until a first ledger lands, and a worktree that joins the view later appears once its own does.
-  const loading = rows.isPending || (ledgers.length > 0 && ledgers.every((read) => read.isPending))
+  const loading = !rowsRead.isFetchedAfterMount || (ledgers.length > 0 && ledgers.every((read) => !read.isFetchedAfterMount))
   return (
     <BoardPageFrame
       title={listingMeta.ledger.label}
       boardName={union?.name ?? null}
-      boardHref={`${filterPath(filter)}/`}
+      boardLink={toFilter(filter)}
       boardMeaning="The board of the worktrees whose ledgers these are."
       crumbs={[{ label: listingMeta.ledger.label, meaning: unionLedgerMeaning }]}
       problem={problems.length === 0 ? null : problems.join(' ')}
+      ready={!loading}
     >
       {loading ? <PageLoading /> : (
         <>
@@ -193,13 +200,13 @@ function EntryCard({ entry, now, worktree }: { entry: LedgerEntry; now: number; 
             <span className="flex shrink-0 items-center gap-3">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <WorktreeMark />
-                <a
+                <Link
+                  {...toBoard(worktree.name)}
                   className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                  href={`${boardOf(worktree)}/`}
                   title={tip(`Written in ${worktree.name}: open its board.`)}
                 >
                   {worktree.name}
-                </a>
+                </Link>
               </span>
               {age}
             </span>

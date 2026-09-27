@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 
 import type { Session } from '../../contract'
 import { useNow } from '../lib/clock'
 import type { Filter, FilterOption, UnionFilter } from '../lib/filter'
-import { filterId, filterOf, filterOptions, filterPath, unionOf } from '../lib/filter'
+import { filterId, filterOf, filterOptions, toFilter, unionOf } from '../lib/filter'
 import { checkoutLabel } from '../lib/format'
-import { reads } from '../lib/reads'
+import { reads, sinceMount } from '../lib/reads'
 import { cn } from '../lib/utils'
 import { useTip } from './tip'
 import { Button } from './ui/button'
@@ -152,10 +153,12 @@ export function FilterPicker({ filter, worktree }: {
   // The registry of served worktrees lives at the root whichever page is open.
   // It is the picker's own concern, so no surface has to fetch it to have one,
   // and on a worktree's board it is read once: a failed read says nothing, and
-  // the header falls back to the plain name and branch.
-  const rows = useQuery(reads.worktrees()).data
+  // the header falls back to the plain name and branch. Only what this board
+  // read counts, not rows the page it came from last drew.
+  const rows = sinceMount(useQuery(reads.worktrees()))
   const now = useNow()
   const tip = useTip()
+  const navigate = useNavigate()
   if (filter.kind === 'worktree' && worktree === undefined) return null
 
   const lists = rows === undefined ? null : filterOptions({ rows, now })
@@ -185,7 +188,8 @@ export function FilterPicker({ filter, worktree }: {
       autoHighlight
       onValueChange={(next: FilterOption | null) => {
         if (next === null || isShown({ option: next, filter, worktree })) return
-        window.location.assign(`${filterPath(filterOf(next))}/`)
+        // Within the document, as a link to the board goes.
+        void navigate(toFilter(filterOf(next)))
       }}
     >
       <ComboboxTrigger

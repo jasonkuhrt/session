@@ -42,6 +42,10 @@ function laneEntries(items: readonly Item[]): LaneEntry[] {
 export const lanesOf = (stages: readonly StageFile[]): Lane[] =>
   stages.map((stage) => ({ stage: stage.stage, entries: laneEntries(stage.items) }))
 
+/** A lane's items in the order it draws them, a group's items in its place. */
+export const laneItems = (lane: Lane): Item[] =>
+  lane.entries.flatMap((entry) => (entry.kind === 'item' ? [entry.item] : entry.items))
+
 /**
  * The name dnd-kit knows a list of cards by: a lane's cards in no group share
  * one, and each group's cards have another, each under the board of the
@@ -139,11 +143,7 @@ export type Dragging = {
  * and, for the held card, its words; nothing for a card of another worktree,
  * which may carry the same id.
  */
-export const dragOf = ({ dragging, board, id }: {
-  readonly dragging: Dragging | null
-  readonly board: string
-  readonly id: string
-}) => {
+export const dragOf = ({ dragging, board, id }: { readonly dragging: Dragging | null; readonly board: string; readonly id: string }) => {
   const own = dragging?.board === board ? dragging : null
   return { lands: own?.onto === id, words: own?.id === id ? own.words : null }
 }

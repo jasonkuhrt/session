@@ -1,10 +1,12 @@
+import { Link } from '@tanstack/react-router'
+
 import type { ArchiveRecord } from '../contract'
 import { BoardPageFrame, ListingEmpty, PageLoading } from './components/board-page'
 import { Explained, useTip } from './components/tip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './components/ui/table'
 import { problemOf, worktreeOf } from './lib/api'
 import { archiveStateMeaning } from './lib/archive'
-import { filePageHref, useBoardPath } from './lib/base'
+import { toBoard, toFile, useBoardName, useBoardPath } from './lib/base'
 import { useFollowed } from './lib/follow'
 import { listingMeta } from './lib/listings'
 import { reads } from './lib/reads'
@@ -25,6 +27,7 @@ const columnMeaning = {
  */
 export function ArchivePage() {
   const board = useBoardPath()
+  const name = useBoardName()
   // Where the page stands and the archive's records are read together.
   const { value, error } = useFollowed({ board, read: reads.archive(board) })
   const [place, archive] = value ?? [null, null]
@@ -32,9 +35,11 @@ export function ArchivePage() {
     <BoardPageFrame
       title={listingMeta.archive.label}
       boardName={worktreeOf(place)}
+      boardLink={toBoard(name)}
       boardMeaning="The board of the session this archive belongs to."
       crumbs={[{ label: listingMeta.archive.label, meaning: listingMeta.archive.meaning }]}
       problem={error ?? problemOf(place)}
+      ready={value !== null || error !== null}
     >
       {archive === null ? (error === null ? <PageLoading /> : null) : archive.records.length === 0
         ? <ListingEmpty>No records.</ListingEmpty>
@@ -62,19 +67,19 @@ const recordLink = 'rounded-sm underline-offset-4 outline-none hover:underline f
 /** One record: the day, the item, its title, and how it left, as its name gives them. */
 function RecordRow({ record }: { record: ArchiveRecord }) {
   const tip = useTip()
-  const board = useBoardPath()
+  const name = useBoardName()
   const { date, id, title, state } = record
   if (date === null || id === null || title === null || state === null) {
     return (
       <TableRow>
         <TableCell colSpan={4} className="whitespace-normal wrap-anywhere">
-          <a
+          <Link
+            {...toFile({ name, path: record.path })}
             className={recordLink}
-            href={filePageHref({ board, path: record.path })}
             title={tip('This file’s name is not one the engine writes, so no day, item or state is read from it; it opens the file.')}
           >
             {record.name}
-          </a>
+          </Link>
         </TableCell>
       </TableRow>
     )
@@ -84,9 +89,9 @@ function RecordRow({ record }: { record: ArchiveRecord }) {
       <TableCell className="font-mono text-muted-foreground tabular-nums">{date}</TableCell>
       <TableCell className="font-mono">{id}</TableCell>
       <TableCell className="whitespace-normal">
-        <a className={recordLink} href={filePageHref({ board, path: record.path })} title={tip(`Read the record of ${id} on a page of its own.`)}>
+        <Link {...toFile({ name, path: record.path })} className={recordLink} title={tip(`Read the record of ${id} on a page of its own.`)}>
           {title}
-        </a>
+        </Link>
       </TableCell>
       <TableCell>
         <Explained meaning={archiveStateMeaning(state)}>{state}</Explained>

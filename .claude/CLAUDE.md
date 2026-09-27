@@ -166,20 +166,31 @@ params a schema rejects are no route, so the address draws the not-found page; a
 board's page reads the daemon's description once, before it mounts, and a key
 the description does not name draws the not-found page; the daemon answers an
 unknown key's page load with the shell, anything else with JSON 404; moving
-between pages loads a document. Every read is a TanStack Query query, read when
-its page mounts and, where its answer can change, again on the event that names
-it, one read per event since the stream carries no payload; a board's picker
-list is read once, and what the daemon says about itself when a page mounts and
-when a stream comes back, a changed `sourceStamp` reloading the page, drag and
-all. On the board and the index a drag or a write holds the events it names
-until it ends, and the item page's writes hold nothing; a write's answer lands
-only over reads that predate it.
+between pages stays in the document, a page being one component per address that
+closes its stream and its dialogs as it leaves and reads again when it mounts.
+Every read is a TanStack Query query, read when its page mounts and, where its
+answer can change, again on the event that names it, one read per event since
+the stream carries no payload; a board's picker list is read once, and what the
+daemon says about itself when a page mounts and when a stream comes back, a
+changed `sourceStamp` reloading the page, drag and all. On the board and the
+index a drag or a write holds the events it names until it ends, and the item
+page's writes hold nothing; a write's answer lands only over reads that predate
+it.
 
-The board's own settings are an Effect Schema kept in the browser's
-localStorage through `KeyValueStore`: how the board draws, never the work, and
-nothing in them reaches the daemon. A new setting is a field of the schema with
-its default, which is all its storage needs, and an item in the settings menu
-that says what it does.
+Every key the board answers to is a TanStack Hotkeys registration, made through
+`useBindings` or `useDialogKeys` with its sentence and its scope, index, board
+or dialog, in its `meta`, and registered only while its page can offer it; the
+legend on `?` is read from that registry, a key acts only while the keyboard is
+on its page, never in a field and never during a drag, it takes the browser's
+default only when it acts, a held key acts once unless it is a step, and its
+sentence is the tip of the control it presses where there is one.
+
+The board's own settings are an Effect Schema kept in the browser's localStorage
+through `KeyValueStore`: how the board draws, never the work, and nothing in
+them reaches the daemon, and the router keeps each history entry's scroll
+position in the tab's sessionStorage, as the browser did for a document load. A
+new setting is a field of the schema with its default, which is all its storage
+needs, and an item in the settings menu that says what it does.
 
 React Doctor never checks an entry's exports. Its entries are the files
 `tsconfig.json`'s `files` names, each one a command or tool starts from that no

@@ -24,20 +24,22 @@ const ProjectPath = Schema.String.check(Schema.isPattern(/^[^/]+(?:\/[^/]+)*$/u)
 
 /**
  * Every page of a project's board is under this route, which decodes the path
- * once; an address whose path no folder could have is no project's.
+ * once and encodes it into every address a link or a key builds; an address
+ * whose path no folder could have is no project's.
  */
 const ProjectParams = Schema.Struct({ key: ProjectPath })
 
 export const Route = createFileRoute('/p/$key')({
-  params: { parse: paramsOf(ProjectParams) },
+  params: { parse: paramsOf(ProjectParams), stringify: Schema.encodeSync(ProjectParams) },
   // A project is its repository's worktrees, or the one folder outside Git it
   // is, as the rows the board draws from say; a path no tracked worktree is
-  // under is no project's, and its address draws the not-found page before the
-  // page mounts.
+  // under, even when the rows are asked for again now, is no project's, and
+  // its address draws the not-found page before the page mounts.
   beforeLoad: ({ context, params }) =>
     noPageUnless({
       client: context.queryClient,
       read: reads.worktrees(),
+      again: reads.worktreesNow(),
       named: (rows) => hasMembers({ filter: { kind: 'project', path: params.key }, rows }),
     }),
 })

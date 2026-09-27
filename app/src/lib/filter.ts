@@ -1,5 +1,5 @@
 import type { WorktreeSummary } from '../../contract'
-import { boardPath, epicPath, projectPath } from './base'
+import { toBoard, toEpic, toProject } from './base'
 import type { ProjectSection } from './dashboard'
 import { dashboardOf, sectionKeyOf } from './dashboard'
 import { rankedFirst } from './order'
@@ -36,10 +36,10 @@ export const boardOf = (row: Pick<WorktreeSummary, 'key'>) => `/w/${row.key}`
 export const keyTaken = ({ row, rows }: { readonly row: WorktreeSummary; readonly rows: readonly WorktreeSummary[] }) =>
   row.conflict !== null && rows.some((other) => other.path !== row.path && other.key === row.key)
 
-/** Where a filter's board is: at this prefix with a trailing slash, and its ledger at `ledger` under it. */
-export const filterPath = (filter: Filter) => {
-  if (filter.kind === 'worktree') return boardPath(filter.name)
-  return filter.kind === 'epic' ? epicPath(filter.name) : projectPath(filter.path)
+/** A filter's board, as a link or a key goes to it. */
+export const toFilter = (filter: Filter) => {
+  if (filter.kind === 'worktree') return toBoard(filter.name)
+  return filter.kind === 'epic' ? toEpic(filter.name) : toProject(filter.path)
 }
 
 /**
@@ -81,7 +81,10 @@ const projectName = ({ rows, path, now }: { readonly rows: readonly WorktreeSumm
 
 /**
  * Whether any tracked worktree is in the union a filter names: what makes its
- * address a page, which the route asks before the page mounts.
+ * address a page, and the one test by which `unionOf` finds no union, so the
+ * route, which asks it before the page mounts, and the page, which asks
+ * `unionOf` of every answer of the rows it reads, never disagree about an
+ * address.
  */
 export const hasMembers = ({ filter, rows }: { readonly filter: UnionFilter; readonly rows: readonly WorktreeSummary[] }) =>
   rows.some((row) => inUnion(filter, row))

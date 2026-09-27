@@ -1,6 +1,8 @@
+import { Link } from '@tanstack/react-router'
 import { LayoutGrid } from 'lucide-react'
 
 import type { Links, Session } from '../../contract'
+import { toIndex } from '../lib/base'
 import type { Filter } from '../lib/filter'
 import { indexMeaning } from '../lib/index-meanings'
 import { FilterPicker } from './filter-picker'
@@ -56,14 +58,14 @@ export function SessionHeader({ filter, worktree, rules, links, linksError, term
           className="-ml-2.5"
           nativeButton={false}
           title={tip(indexMeaning)}
-          render={<a aria-label="All projects" href="/" />}
+          render={<Link {...toIndex} aria-label="All projects" />}
         >
           <LayoutGrid /> All projects
         </Button>
         {filter.kind === 'worktree' ? (worktree ? (
           <div className="flex items-center gap-1.5">
             <FilterPicker filter={filter} worktree={worktree} />
-            {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
+            {terminal ? <TerminalAction path={worktree.path} name={worktree.name} size="icon-sm" bound /> : null}
             {zed ? <ZedAction path={worktree.path} name={worktree.name} size="icon-sm" /> : null}
           </div>
         ) : null) : (

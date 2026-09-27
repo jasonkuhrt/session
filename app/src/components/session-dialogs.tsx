@@ -3,6 +3,7 @@ import * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
 import { useLastPresent } from '../lib/overlay'
+import { useDialogKeys } from './keys'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -158,6 +159,7 @@ export function NameDialog({
   }
   const nameId = React.useId()
   const copy = shown === null ? null : copyOf(shown)
+  useDialogKeys({ open: request !== null, onClose })
 
   return (
     <Dialog
@@ -215,6 +217,7 @@ export function CompleteDialog({
   // The board clears the item as the dialog closes; the sentence below still
   // has to name it on the way out.
   const shown = useLastPresent(item)
+  useDialogKeys({ open: item !== null, onClose: () => onOpenChange(false) })
 
   return (
     <Dialog open={Boolean(item)} onOpenChange={onOpenChange}>

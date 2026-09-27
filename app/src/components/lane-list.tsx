@@ -6,10 +6,10 @@ import type { Item, Stage } from '../../contract'
 import { isBatchedStage } from '../../contract'
 import { landing } from '../lib/drag'
 import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
-import { dragOf, landingIn, listId } from '../lib/lanes'
+import { dragOf, laneItems, landingIn, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { groupMeta } from '../lib/workflow'
-import type { LaneActions } from './lane'
+import type { LaneActions, LanePart } from './lane'
 import { Explained, Tip } from './tip'
 import { Button } from './ui/button'
 import { WorkflowCard } from './workflow-card'
@@ -20,10 +20,9 @@ import { WorkflowCard } from './workflow-card'
  * dropped there lands at the end of its lane, in no group. The list is
  * outlined while a held card of this worktree would land in it in no group.
  */
-export function LaneList({ board, stage, lane, dragging, endRef, className, endClassName, ...actions }: LaneActions & {
-  board: string
+export function LaneList({ part, stage, dragging, endRef, className, endClassName, ...actions }: LaneActions & {
+  part: LanePart
   stage: Stage
-  lane: LaneLayout
   /** The card being dragged, and what dropping it now would do; drawn only if it is this worktree's. */
   dragging: Dragging | null
   endRef: (element: Element | null) => void
@@ -31,6 +30,7 @@ export function LaneList({ board, stage, lane, dragging, endRef, className, endC
   className: string
   endClassName: string
 }) {
+  const { board, name, lane } = part
   // A card in no group is sorted among the lane's other cards in no group, so
   // its place in that list is what dnd-kit is told.
   const looseIndex = new Map<string, number>()
@@ -40,8 +40,8 @@ export function LaneList({ board, stage, lane, dragging, endRef, className, endC
   return (
     <div className={cn(className, 'space-y-3 rounded-lg', heldHere?.group === null && landing)}>
       {lane.entries.map(entry => (entry.kind === 'item'
-        ? <WorkflowCard key={entry.item.id} {...actions} {...dragOf({ dragging, board, id: entry.item.id })} board={board} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
-        : <GroupBlock key={`group:${entry.name}`} {...actions} board={board} stage={stage} name={entry.name} items={entry.items} dragging={dragging} landing={heldHere?.group === entry.name} />))}
+        ? <WorkflowCard key={entry.item.id} {...actions} {...dragOf({ dragging, board, id: entry.item.id })} board={board} worktree={name} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
+        : <GroupBlock key={`group:${entry.name}`} {...actions} board={board} worktree={name} stage={stage} name={entry.name} items={entry.items} dragging={dragging} landing={heldHere?.group === entry.name} />))}
       <div ref={endRef} className={endClassName} />
     </div>
   )
@@ -56,8 +56,10 @@ export function LaneList({ board, stage, lane, dragging, endRef, className, endC
  * joins it at its start or its end, by which half of it the card is over. A
  * group is one worktree's, and takes only that worktree's cards.
  */
-function GroupBlock({ board, stage, name, items, dragging, landing: lands, ...actions }: LaneActions & {
+function GroupBlock({ board, worktree, stage, name, items, dragging, landing: lands, ...actions }: LaneActions & {
   board: string
+  /** The name of the worktree the group is filed in. */
+  worktree: string
   stage: Stage
   name: string
   items: readonly Item[]
@@ -124,13 +126,11 @@ function GroupBlock({ board, stage, name, items, dragging, landing: lands, ...ac
           </Tip>
         ) : null}
       </div>
-      {items.map((item, index) => <WorkflowCard key={item.id} {...actions} {...dragOf({ dragging, board, id: item.id })} board={board} item={item} index={index} stage={stage} />)}
+      {items.map((item, index) => <WorkflowCard key={item.id} {...actions} {...dragOf({ dragging, board, id: item.id })} board={board} worktree={worktree} item={item} index={index} stage={stage} />)}
     </div>
   )
 }
 
 /** The lane's chosen items, in lane order: the ones of this part of it that are chosen. */
-export const chosenIn = ({ lane, selectedIds }: { readonly lane: LaneLayout; readonly selectedIds: ReadonlySet<string> }) =>
-  lane.entries
-    .flatMap(entry => (entry.kind === 'item' ? [entry.item] : entry.items))
-    .flatMap(item => (selectedIds.has(item.id) ? [item.id] : []))
+export const chosenIn = ({ lane, chosenIds }: { readonly lane: LaneLayout; readonly chosenIds: ReadonlySet<string> }) =>
+  laneItems(lane).flatMap(item => (chosenIds.has(item.id) ? [item.id] : []))
