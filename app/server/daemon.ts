@@ -30,7 +30,7 @@ import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import type {
   Activity,
   AgentsSummary,
-  DaemonCapabilities,
+  DaemonDescription,
   DaemonInfo,
   EpicRename,
   EpicRenamed,
@@ -45,12 +45,22 @@ import type {
   WorktreeRank,
   WorktreeSummary,
 } from '../contract.ts';
-import { DaemonInfoSchema, daemonPort, encodeWorktreeKey, WorktreeSummarySchema } from '../contract.ts';
+import {
+  DaemonDescriptionSchema,
+  DaemonInfoSchema,
+  daemonPort,
+  encodeWorktreeKey,
+  PullRequestReportsSchema,
+  RefusalSchema,
+  WorktreePathSchema,
+  WorktreeSummarySchema,
+} from '../contract.ts';
 import { agentsFor, notListed, watchedDirectories } from './agents/index.ts';
 import { focus } from './cmux.ts';
 import { renameEpic, setWorktreeEpic } from './epic.ts';
 import { makeSessionEvents, type SessionEventSource } from './events.ts';
 import {
+  answer,
   epicResponse,
   eventStream,
   focusResponse,
@@ -58,7 +68,9 @@ import {
   namedChannels,
   openResponse,
   orderResponse,
+  refuse,
   renameResponse,
+  sharedWrite,
   staticResponse,
 } from './http.ts';
 import { archiveDirectory, contextDirectory, ignoreDirectory, ledgerDirectory, metaDirectory } from './layout.ts';
@@ -69,6 +81,7 @@ import {
   pullRequestFor,
   pullRequestReport,
 } from './links/index.ts';
+import { oneLine } from './model.ts';
 import { setRank } from './order.ts';
 import { aliasHostnames } from './portless.ts';
 import { makeRepository, RepositoryError, type SessionRepository } from './repository.ts';
@@ -145,8 +158,10 @@ const DaemonStateSchema = Schema.Struct({
 });
 const DaemonStateJson = Schema.fromJsonString(DaemonStateSchema);
 const DaemonInfoJson = Schema.fromJsonString(DaemonInfoSchema);
-const WorktreeRowsJson = WorktreeSummarySchema.pipe(Schema.Array, Schema.fromJsonString);
-const DaemonRefusalJson = Schema.fromJsonString(Schema.Struct({ error: Schema.String }));
+/** The index's rows, which `GET /api/worktrees` and a take-on answer. */
+const WorktreeRowsSchema = Schema.Array(WorktreeSummarySchema);
+const WorktreeRowsJson = Schema.fromJsonString(WorktreeRowsSchema);
+const DaemonRefusalJson = Schema.fromJsonString(RefusalSchema);
 type DaemonState = typeof DaemonStateSchema.Type;
 
 export const sourceStamp = Effect.gen(function*() {
@@ -167,13 +182,28 @@ export const sourceStamp = Effect.gen(function*() {
   return newest?.toISOString() ?? 'unknown';
 });
 
+/**
+ * The state file, decoded; null when no daemon has written one. A file that
+ * cannot be read, or does not hold the list of worktrees, fails with the
+ * sentence that says so, never read as a list of none: the daemon names it in
+ * its log as it starts, and a command that needs a worktree's siblings refuses
+ * with it.
+ */
 const readState = (settings: DaemonSettings) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     if (!(yield* fs.exists(settings.statePath))) return null;
     const encoded = yield* fs.readFileString(settings.statePath);
     return yield* Schema.decodeEffect(DaemonStateJson)(encoded);
-  }).pipe(Effect.orElseSucceed(() => null));
+  }).pipe(
+    Effect.mapError((cause) =>
+      new DaemonError({
+        message: `${settings.statePath} does not hold the worktrees the daemon tracks: ${oneLine(cause.message)}. ` +
+          '`session open` in a worktree takes it on again and rewrites the file.',
+        cause,
+      })
+    ),
+  );
 
 /**
  * Written whole, through a neighbour renamed into place, so a reader, the next
@@ -197,7 +227,7 @@ const writeState = (settings: DaemonSettings, state: DaemonState) =>
  * The worktrees the daemon tracks, as its state file lists them: what a
  * running daemon wrote on its last change, and what the next one tracks again.
  * A command reads it to know a worktree's siblings, which are tracked ones;
- * none when no daemon has written it.
+ * none when no daemon has written it, and a refusal when it cannot be read.
  */
 export const trackedPaths = Effect.gen(function*() {
   const state = yield* readState(yield* daemonSettings);
@@ -471,13 +501,11 @@ export const restartDaemon = Effect.gen(function*() {
   return { settings, root: repositoryRoot, stopped: probe.kind === 'ours' ? probe.info : null, started };
 });
 
-/** Track this worktree with the daemon and let it rediscover its siblings. */
+/** Track this worktree with the daemon and let it rediscover its siblings: the worktree by its path, encoded as it leaves. */
 export const trackWorktree = (input: { readonly settings: DaemonSettings; readonly path: string }) =>
-  HttpClient.execute(
-    HttpClientRequest.post(
-      `http://127.0.0.1:${input.settings.port}/api/worktrees/refresh`,
-    ).pipe(HttpClientRequest.bodyJsonUnsafe({ path: input.path })),
-  ).pipe(
+  HttpClientRequest.post(`http://127.0.0.1:${input.settings.port}/api/worktrees/refresh`).pipe(
+    HttpClientRequest.schemaBodyJson(WorktreePathSchema)({ path: input.path }),
+    Effect.flatMap((request) => HttpClient.execute(request)),
     Effect.provide(FetchHttpClient.layer),
     Effect.mapError((cause) => new DaemonError({ message: 'The daemon refused the worktree.', cause })),
   );
@@ -625,8 +653,9 @@ const mapWorktrees = <A, B>(
     }),
   );
 
-const json = (value: unknown, status = 200) =>
-  Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
+const answerRows = answer(WorktreeRowsSchema);
+const answerPullRequests = answer(PullRequestReportsSchema);
+const answerDescription = answer(DaemonDescriptionSchema);
 
 /** How old an overlay a board may be served before the daemon lists again. */
 const agentsFreshnessMilliseconds = 30_000;
@@ -1054,7 +1083,8 @@ export const runDaemon = async () => {
       entry.trailerEvents.changed();
       worktreeEvents.changed();
     } catch (error) {
-      // The session could not be read; its board already says so. The last
+      // The session could not be read, which its board says too, or a flaw of
+      // the pass's own reading failed it; this line says which. The last
       // answer stands until a pass can be made.
       console.error(`${entry.path}: trailers not reconciled: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -1574,8 +1604,8 @@ export const runDaemon = async () => {
     const entry = [...tracked.values()]
       .toSorted((left, right) => right.key.length - left.key.length)
       .find((candidate) => rest === candidate.key || rest.startsWith(`${candidate.key}/`));
-    if (entry === undefined) return json({ error: 'No such worktree.' }, 404);
-    if (entry.conflict !== null) return json({ error: entry.conflict }, 409);
+    if (entry === undefined) return refuse({ error: 'No such worktree.', status: 404 });
+    if (entry.conflict !== null) return refuse({ error: entry.conflict, status: 409 });
     // Relative, so the address the browser used (a proxy's, or the raw port) is kept.
     if (rest === entry.key) return new Response(null, { status: 307, headers: { location: `/w/${entry.key}/` } });
     const target = new URL(url);
@@ -1605,7 +1635,7 @@ export const runDaemon = async () => {
   };
 
   /** Who the daemon is, which the CLI checks, and what it can do for a page, which a page checks. */
-  const describe = async (): Promise<DaemonInfo & DaemonCapabilities> => ({
+  const describe = async (): Promise<DaemonDescription> => ({
     pid: process.pid,
     port: settings.port,
     startedAt,
@@ -1711,7 +1741,7 @@ export const runDaemon = async () => {
    * for pull requests hears every answer to the asks it starts.
    */
   const indexEvents = (url: URL) => {
-    const channels = namedChannels({
+    const named = namedChannels({
       url,
       channels: [
         { name: 'agents', events: agentsEvents },
@@ -1719,8 +1749,8 @@ export const runDaemon = async () => {
         { name: 'pull-requests', events: pullRequestEvents },
       ],
     });
-    const stream = eventStream(channels);
-    if (channels.some((channel) => channel.name === 'pull-requests')) void freshenPullRequests();
+    const stream = eventStream(named);
+    if (named.channels.some((channel) => channel.name === 'pull-requests')) void freshenPullRequests();
     return stream;
   };
 
@@ -1746,40 +1776,48 @@ export const runDaemon = async () => {
   const handle = async (request: Request): Promise<Response> => {
     try {
       if (!(await answersTo(request.headers.get('host')))) {
-        return json({
+        return refuse({
           error: `This daemon answers only at 127.0.0.1:${settings.port}, localhost:${settings.port} and its portless name.`,
-        }, 403);
+          status: 403,
+        });
       }
       const url = new URL(request.url);
-      if (request.method === 'GET' && url.pathname === '/api/daemon') return json(await describe());
+      if (request.method === 'GET' && url.pathname === '/api/daemon') return answerDescription(await describe());
       if (request.method === 'GET' && url.pathname === '/api/events') return indexEvents(url);
-      if (request.method === 'GET' && url.pathname === '/api/pull-requests') return json(pullRequestReports());
+      if (request.method === 'GET' && url.pathname === '/api/pull-requests') return answerPullRequests(pullRequestReports());
       if (request.method === 'GET' && url.pathname === '/api/worktrees') {
         await sweepTracked();
         await freshenAgents();
-        return json(await summaries());
+        return answerRows(await summaries());
       }
       const write = request.method === 'POST' ? rootWrites.get(url.pathname) : undefined;
       if (write !== undefined) return await write(request);
       if (request.method === 'POST' && url.pathname === '/api/worktrees/refresh') {
-        const body = await request.json().catch(() => ({}));
-        const path = typeof body === 'object' && body !== null && 'path' in body ? body.path : undefined;
-        if (typeof path === 'string') await track([path]);
-        await discover();
-        await listAgents();
-        const rows = await summaries();
-        worktreeEvents.changed();
-        return json(rows);
+        // The worktree a command takes on, by its path, decoded as every root write's body is.
+        return await sharedWrite({
+          request,
+          schema: WorktreePathSchema,
+          respond: async ({ path }) => {
+            await track([path]);
+            await discover();
+            await listAgents();
+            const rows = await summaries();
+            worktreeEvents.changed();
+            return answerRows(rows);
+          },
+        });
       }
       if (url.pathname === '/w' || url.pathname.startsWith('/w/')) return await board(request, url);
       return await staticResponse({ directory: distDirectory, shell: shellFile, url, method: request.method });
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : 'Unexpected daemon error.' }, 500);
+      return refuse({ error: error instanceof Error ? error.message : 'Unexpected daemon error.', status: 500 });
     }
   };
 
-  const previous = await runNode(readState(settings));
-  await track(previous?.worktrees ?? []);
+  // A state file that cannot be read tracks nothing from it, and the log says why; the next write replaces it.
+  const previous = await runNode(readState(settings).pipe(Effect.result));
+  if (Result.isFailure(previous)) console.error(previous.failure.message);
+  await track(Result.isSuccess(previous) ? previous.success?.worktrees ?? [] : []);
   await watchAgents();
 
   // SSE streams are quiet between events; Bun would close them after ten seconds.

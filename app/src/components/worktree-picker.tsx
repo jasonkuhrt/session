@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
-import type { Session } from '../../contract'
+import type { Session, WorktreeSummary } from '../../contract'
 import { checkoutLabel } from '../lib/format'
 import { reads } from '../lib/reads'
 import { cn } from '../lib/utils'
@@ -17,8 +17,8 @@ import {
   ComboboxTrigger,
 } from './ui/combobox'
 
-/** A worktree this board can switch to. */
-type Option = { key: string; name: string; path: string; branch: string | null; detached: boolean }
+/** A worktree this board can switch to, as the index's row names it. */
+type Option = Pick<WorktreeSummary, 'key' | 'name' | 'path' | 'branch' | 'detached'>
 
 /**
  * How the picker names a worktree, on the control and in the list alike: its

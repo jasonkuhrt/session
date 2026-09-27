@@ -223,7 +223,6 @@
           },
           {
             "include": [
-              "app/server/agents/app-server.ts",
               "app/server/agents/claude.ts",
               "app/server/agents/codex.ts",
               "app/server/daemon.ts",
@@ -241,16 +240,6 @@
                 // except the daemon's one log descriptor, which Effect's file
                 // handle does not expose and a detached spawn needs.
                 "nodeBuiltinImport": "off"
-              }
-            }
-          },
-          {
-            "include": ["src/session/scripts/session.ts"],
-            "options": {
-              "diagnosticSeverity": {
-                // The refresh command's stdout is a human-readable protocol;
-                // JSON.stringify preserves its stable two-space formatting.
-                "preferSchemaOverJson": "off"
               }
             }
           }

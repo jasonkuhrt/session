@@ -40,12 +40,19 @@ const tlsFile = 'proxy.tls';
 /** The hostname-to-port table, which outlives any one proxy. */
 const routesFile = 'routes.json';
 
-const RoutesJson = Schema.Struct({ hostname: Schema.String, port: Schema.Int }).pipe(
-  Schema.Array,
-  Schema.fromJsonString,
-);
+/** One route of portless's table: a hostname, and the port it serves. */
+const RouteSchema = Schema.Struct({ hostname: Schema.String, port: Schema.Int });
+type Route = typeof RouteSchema.Type;
 
-type Route = { readonly hostname: string; readonly port: number };
+const RoutesJson = RouteSchema.pipe(Schema.Array, Schema.fromJsonString);
+
+/**
+ * A whole number as one of portless's files holds it, `proxy.pid` or
+ * `proxy.port`: the digits of a positive integer, with space around them.
+ */
+const decodeWholeNumber = Schema.decodeUnknownOption(
+  Schema.Trim.pipe(Schema.decodeTo(Schema.FiniteFromString), Schema.decodeTo(Schema.Int.check(Schema.isGreaterThan(0)))),
+);
 
 /** Where the board can be reached, and why it is not the nicer address. */
 export type BoardAddress = {
@@ -90,12 +97,9 @@ const processAlive = (pid: number): boolean => {
   }
 };
 
-/** A whole number a file holds, or null when it holds nothing usable. */
-const numberIn = (contents: Option.Option<string>): number | null => {
-  if (Option.isNone(contents)) return null;
-  const value = Number(contents.value.trim());
-  return Number.isInteger(value) && value > 0 ? value : null;
-};
+/** A whole number a file holds, decoded, or null when it holds nothing usable. */
+const numberIn = (contents: Option.Option<string>): number | null =>
+  Option.isNone(contents) ? null : Option.getOrNull(decodeWholeNumber(contents.value));
 
 const readState = (directory: string) =>
   Effect.gen(function*() {

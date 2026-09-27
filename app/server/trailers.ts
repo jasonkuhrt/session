@@ -1,8 +1,9 @@
 import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
 import type { TrailerProblem } from '../contract.ts';
 import { doneTrailer } from '../contract.ts';
 import { capture } from './command.ts';
-import type { CommitClaim, SessionRepository } from './repository.ts';
+import type { SessionRepository } from './repository.ts';
 
 /**
  * Items closed by the commits that finish them.
@@ -34,9 +35,24 @@ const idsIn = (value: string): string[] => value.split(/[\s,]+/u).filter((id) =>
 const linedIds = (message: string): string[] =>
   [...message.matchAll(new RegExp(`^${doneTrailer}:(.*)$`, 'gimu'))].flatMap((match) => idsIn(match[1] ?? ''));
 
-/** What a commit says it finished, and the ids it names where Git does not read a trailer. */
-type Claim = CommitClaim & { readonly strays: readonly string[] };
+/** What one commit says it finished: its full hash, its subject, and the ids its `Session-Done` trailers name. */
+export const CommitClaimSchema = Schema.Struct({
+  hash: Schema.String,
+  subject: Schema.String,
+  ids: Schema.Array(Schema.String),
+});
+export type CommitClaim = typeof CommitClaimSchema.Type;
 
+/** What a commit says it finished, and the ids it names on `Session-Done:` lines Git does not read as trailers. */
+const ClaimSchema = Schema.Struct({
+  ...CommitClaimSchema.fields,
+  strays: Schema.Array(Schema.String),
+});
+type Claim = typeof ClaimSchema.Type;
+
+const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(ClaimSchema));
+
+/** `git log`'s records, one per commit, each read into the claim it makes; the caller decodes them. */
 const parseClaims = (stdout: string): Claim[] => {
   const claims: Claim[] = [];
   for (const record of stdout.split('\0')) {
@@ -51,9 +67,11 @@ const parseClaims = (stdout: string): Claim[] => {
 };
 
 /**
- * This branch's commits that no remote has, oldest first. First parent only,
- * so a merge brings in no other branch's claims; a repository Git cannot read
- * has no claims.
+ * This branch's commits that no remote has, oldest first, read from Git's log
+ * and decoded. First parent only, so a merge brings in no other branch's
+ * claims; a repository Git cannot read has no claims. The claims are strings
+ * the reading has already checked, so only a flaw of this reading fails the
+ * decode, and then the pass, which the daemon's log says.
  */
 const unpushedClaims = (worktree: string) =>
   capture({
@@ -72,8 +90,9 @@ const unpushedClaims = (worktree: string) =>
     cwd: worktree,
     timeout: '10 seconds',
   }).pipe(
-    Effect.map((result) => (result.exitCode === 0 ? parseClaims(result.stdout) : [])),
-    Effect.orElseSucceed((): Claim[] => []),
+    Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+    Effect.orElseSucceed(() => null),
+    Effect.flatMap((stdout) => (stdout === null ? Effect.succeed<ReadonlyArray<Claim>>([]) : decodeClaims(parseClaims(stdout)))),
   );
 
 /** Act on every unpushed claim, and say which ones could not be acted on. */

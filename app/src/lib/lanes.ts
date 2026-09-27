@@ -1,4 +1,4 @@
-import type { Item, Stage, StageFile } from '../../contract'
+import type { Item, MoveItem, Stage, StageFile } from '../../contract'
 
 /**
  * One entry of a lane in file order: an item filed directly in the stage, or a
@@ -18,14 +18,9 @@ export type Lane = { readonly stage: Stage; readonly entries: readonly LaneEntry
  * group goes in front of a card of that group, `beforeId`. A card in no group
  * goes in front of the lane's next entry, which is a card in no group,
  * `beforeId`, or a group, `beforeGroup`. With neither it goes to the end of
- * its group, or of the lane.
+ * its group, or of the lane. It is the move's own fields, every one given.
  */
-export type Placement = {
-  readonly to: Stage
-  readonly group: string | null
-  readonly beforeId: string | null
-  readonly beforeGroup: string | null
-}
+export type Placement = Required<Pick<MoveItem, 'to' | 'group' | 'beforeId' | 'beforeGroup'>>
 
 type Neighbour = Pick<Placement, 'beforeId' | 'beforeGroup'>
 

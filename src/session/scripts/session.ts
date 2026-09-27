@@ -10,8 +10,9 @@ import * as Option from 'effect/Option';
 import * as Path from 'effect/Path';
 import * as Result from 'effect/Result';
 import * as Schema from 'effect/Schema';
-import type { Session, SessionSchema, Stage } from '../../../app/contract.ts';
-import { stageNames } from '../../../app/contract.ts';
+import * as Struct from 'effect/Struct';
+import type { FileInventory, Session, Stage } from '../../../app/contract.ts';
+import { RefreshSchema, stageNames } from '../../../app/contract.ts';
 import {
   boardKey,
   daemonOnPort,
@@ -25,8 +26,8 @@ import {
 import { setWorktreeEpic } from '../../../app/server/epic.ts';
 import { type Rankable, setRank } from '../../../app/server/order.ts';
 import { publicOrigin } from '../../../app/server/portless.ts';
-import { quote } from '../../../app/server/model.ts';
-import type { FileInventory, SessionRepository } from '../../../app/server/repository.ts';
+import { oneLine, quote } from '../../../app/server/model.ts';
+import type { SessionRepository } from '../../../app/server/repository.ts';
 import { makeRepository } from '../../../app/server/repository.ts';
 import { headCommit } from '../../../app/server/git.ts';
 import { ensureSession, resolveWorktreeSession, type WorktreeSession } from '../../../app/server/worktree.ts';
@@ -114,10 +115,11 @@ class SessionCliError extends Data.TaggedError('SessionCliError')<{
   readonly message: string;
 }> {}
 
-const PreviousRefresh = Schema.Struct({
-  inventory: Schema.Record(Schema.String, Schema.String),
-});
-const PreviousRefreshJson = Schema.fromJsonString(PreviousRefresh);
+/** What `refresh` prints, encoded as it leaves, in the two-space layout it has always had. */
+const RefreshJson = Schema.fromJsonString(RefreshSchema, { space: 2 });
+
+/** What `refresh --previous` reads of an earlier refresh's output: its inventory. */
+const PreviousRefreshJson = Schema.fromJsonString(RefreshSchema.mapFields(Struct.pick(['inventory'])));
 
 type Options = {
   readonly command: Command;
@@ -301,13 +303,13 @@ const stageIn = (session: Session, stage: Stage) =>
   session.stages.find((entry) => entry.stage === stage)!;
 
 /** What `check` prints for a sound session: its revision, and how many items it holds, or that it holds none. */
-const checkLine = (session: typeof SessionSchema.Type): string => {
+const checkLine = (session: Session): string => {
   const total = itemCount(session);
   return `OK ${session.revision}, ${total === 0 ? 'empty' : counted(total, 'item')}`;
 };
 
 /** What `ls` prints: a line per item in listing order, its ID, path and title in columns, of one stage alone when one is named. */
-const itemLines = (session: typeof SessionSchema.Type, only?: Stage): ReadonlyArray<string> => {
+const itemLines = (session: Session, only?: Stage): ReadonlyArray<string> => {
   const items = session.stages
     .filter((entry) => only === undefined || entry.stage === only)
     .flatMap((entry) => entry.items);
@@ -398,21 +400,31 @@ const relaunchDaemon = Effect.gen(function*() {
   );
 });
 
+/**
+ * The inventory of the earlier refresh `--previous` names, read and decoded.
+ * A file that cannot be read, or that is not a refresh's output, is refused
+ * with its path, what is wrong with it, and the fix, never read as an empty
+ * inventory.
+ */
+const previousInventory = (path: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    return (yield* Schema.decodeEffect(PreviousRefreshJson)(yield* fs.readFileString(path))).inventory;
+  }).pipe(
+    Effect.mapError((cause) =>
+      new SessionCliError({
+        message: `--previous names ${path}, which holds no earlier refresh's inventory: ${oneLine(cause.message)}. ` +
+          'Save what `session refresh` prints to a file, and pass that file.',
+      })
+    ),
+  );
+
 const refresh = (options: Options, repository: SessionRepository, directory: string) =>
   Effect.gen(function*() {
     const { inventory, skipped } = yield* repository.inventory;
-    let previous: FileInventory = {};
-    if (options.previous !== undefined) {
-      const fs = yield* FileSystem.FileSystem;
-      const encoded = yield* fs.readFileString(options.previous);
-      previous = (yield* Schema.decodeEffect(PreviousRefreshJson)(encoded)).inventory;
-    }
+    const previous: FileInventory = options.previous === undefined ? {} : yield* previousInventory(options.previous);
     yield* Console.log(
-      JSON.stringify(
-        { directory, inventory, changes: changesFrom(previous, inventory), skipped },
-        null,
-        2,
-      ),
+      yield* Schema.encodeEffect(RefreshJson)({ directory, inventory, changes: changesFrom(previous, inventory), skipped }),
     );
   });
 
@@ -666,7 +678,7 @@ const ledgerSection = (repository: SessionRepository) =>
  */
 const itemsSection = (
   repository: SessionRepository,
-  checked: Result.Result<typeof SessionSchema.Type, unknown>,
+  checked: Result.Result<Session, unknown>,
   first: string,
 ) =>
   Effect.gen(function*() {

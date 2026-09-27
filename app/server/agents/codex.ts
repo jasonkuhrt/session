@@ -5,6 +5,7 @@ import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { CodexThread } from '../../contract.ts';
 import { capture } from '../command.ts';
@@ -23,17 +24,22 @@ import { realPaths } from '../paths.ts';
 
 /**
  * Threads per tracked worktree path, and what could not be answered about
- * them. Two things can fail independently: the listing itself, and the writer
- * locks that say which threads are open, so the notices are a list.
+ * them. Two things can fail independently for every worktree: the listing
+ * itself, and the writer locks that say which threads are open, so the
+ * notices are a list. One more can fail for one worktree alone, its own
+ * reply, whose notice is that worktree's.
  */
 export type CodexListing = {
   readonly byWorktree: ReadonlyMap<string, ReadonlyArray<CodexThread>>;
   readonly notices: ReadonlyArray<string>;
+  /** The notices of one worktree alone, by its path: its reply could not be read. */
+  readonly worktreeNotices: ReadonlyMap<string, ReadonlyArray<string>>;
 };
 
 const unavailable = 'Codex is not installed, so its threads are not listed.';
 const timedOut = 'Codex did not answer in time, so its threads are not listed.';
 const locksUnreadable = "Codex's writer locks could not be read, so which threads are open is unknown.";
+const replyUnread = "Codex answered in a shape this build does not read, so this worktree's threads are not listed.";
 
 /** Spawn, handshake and one query per worktree; measured at 75 ms for two. */
 const budget = '3 seconds';
@@ -48,11 +54,15 @@ export const lockDirectory = Effect.gen(function*() {
   return join(yield* Config.String('HOME'), '.codex/thread-writer-locks');
 }).pipe(Effect.orElseSucceed(() => null));
 
+/** The thread ids `lsof` names by their locks, decoded. */
+const decodeHeld = Schema.decodeUnknownOption(Schema.Array(Schema.String));
+
 /**
  * `lsof` names the pid holding each lock, which a directory listing cannot: a
  * process that died leaves its file behind until the next thread is loaded. An
  * unreadable directory is not "nothing is loaded", so it answers `null` and the
- * board says nothing at all about those threads.
+ * board says nothing at all about those threads; so does an answer whose ids
+ * do not decode.
  */
 const loadedIds = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem;
@@ -68,12 +78,12 @@ const loadedIds = Effect.gen(function*() {
   // Nothing open under the directory is exit 1 with nothing to say; a real
   // complaint means the answer is unknown rather than empty.
   if (result.exitCode !== 0 && result.stderr !== '') return null;
-  const held = new Set<string>();
+  const held: string[] = [];
   for (const line of result.stdout.split('\n')) {
     if (!line.startsWith('n') || !line.endsWith('.lock')) continue;
-    held.add(line.slice(line.lastIndexOf('/') + 1, -'.lock'.length));
+    held.push(line.slice(line.lastIndexOf('/') + 1, -'.lock'.length));
   }
-  return held;
+  return Option.match(decodeHeld(held), { onNone: () => null, onSome: (ids) => new Set(ids) });
 }).pipe(Effect.orElseSucceed(() => null));
 
 /** A thread's own name, else the first line of what was said to it. */
@@ -115,6 +125,7 @@ const describe = (thread: ThreadRow, loaded: ReadonlySet<string> | null): CodexT
 };
 
 const empty = new Map<string, ReadonlyArray<ThreadRow>>();
+const none = new Set<string>();
 
 /**
  * A failed spawn and a stalled one are told apart because they mean different
@@ -123,11 +134,11 @@ const empty = new Map<string, ReadonlyArray<ThreadRow>>();
 const rows = (roots: ReadonlyMap<string, string>) =>
   listThreads(roots).pipe(
     Effect.timeout(budget),
-    Effect.map((byWorktree) => ({ byWorktree, notice: null as string | null })),
+    Effect.map(({ byWorktree, unread }) => ({ byWorktree, unread, notice: null as string | null })),
     Effect.catch((error) =>
-      Effect.succeed({ byWorktree: empty, notice: Cause.isTimeoutError(error) ? timedOut : unavailable }),
+      Effect.succeed({ byWorktree: empty, unread: none, notice: Cause.isTimeoutError(error) ? timedOut : unavailable }),
     ),
-    Effect.catchCause(() => Effect.succeed({ byWorktree: empty, notice: unavailable })),
+    Effect.catchCause(() => Effect.succeed({ byWorktree: empty, unread: none, notice: unavailable })),
   );
 
 /** The listing for every tracked worktree, or the reason there is none. */
@@ -147,12 +158,14 @@ export const codexThreads = (
     const notices = [listing.notice, loaded === null ? locksUnreadable : null].filter(
       (notice) => notice !== null,
     );
-    return { byWorktree, notices };
+    const worktreeNotices = new Map([...listing.unread].map((path) => [path, [replyUnread]] as const));
+    return { byWorktree, notices, worktreeNotices };
   }).pipe(
     Effect.catchCause(() =>
       Effect.succeed({
         byWorktree: new Map<string, ReadonlyArray<CodexThread>>(),
         notices: [unavailable],
+        worktreeNotices: new Map<string, ReadonlyArray<string>>(),
       }),
     ),
   );

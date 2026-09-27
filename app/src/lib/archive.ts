@@ -1,5 +1,11 @@
+import { Schema } from 'effect'
+
 import type { ArchiveRecord, Item } from '../../contract'
+import { ItemSchema } from '../../contract'
 import { SessionApi } from './api'
+
+/** An archived record read as the item it was, decoded before the page reads it. */
+const decodeItem = Schema.decodeUnknownSync(ItemSchema)
 
 /**
  * What a state word in an archived record's name says about how the item
@@ -44,7 +50,8 @@ export type ArchivedItem = { readonly record: ArchiveRecord; readonly item: Item
  * two filed on the same day are told apart only by name. A record's text is
  * the item's file as it was filed, with the note of a commit that closed it at
  * the end, so its first line is the item's heading; a record edited by hand
- * past that is shown whole, under the title its name gives.
+ * past that is shown whole, under the title its name gives. The item it reads
+ * ends in a decode.
  */
 export async function readArchivedItem({ board, id, signal }: {
   /** The board's prefix, whose session's archive is read. */
@@ -62,13 +69,13 @@ export async function readArchivedItem({ board, id, signal }: {
   const titled = first.startsWith(heading)
   return {
     record,
-    item: {
+    item: decodeItem({
       id,
       title: titled ? first.slice(heading.length).trim() : record.title ?? id,
       body: (titled ? rest.join('\n') : text).trim(),
       summary: '',
       group: null,
       path: record.path,
-    },
+    }),
   }
 }

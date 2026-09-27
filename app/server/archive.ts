@@ -1,8 +1,9 @@
 import * as DateTime from 'effect/DateTime';
 import * as Effect from 'effect/Effect';
+import * as Schema from 'effect/Schema';
 import { stageNames } from '../contract.ts';
 import { archiveDirectory } from './layout.ts';
-import { itemIdSource } from './model.ts';
+import { itemIdSource, recordDecoder } from './model.ts';
 
 /**
  * Archived records: how a filed item's file is named, how that name is read
@@ -33,22 +34,26 @@ const archivedName = new RegExp(
 );
 
 /** What an archived record's name says: the day it was filed, the item, its title, and the state it left in. */
-export type ArchiveName = {
-  readonly day: string;
-  readonly id: string;
-  readonly title: string;
-  readonly state: string;
-};
+export const ArchiveNameSchema = Schema.Struct({
+  day: Schema.String,
+  id: Schema.String,
+  title: Schema.String,
+  state: Schema.String,
+});
+export type ArchiveName = typeof ArchiveNameSchema.Type;
+
+const decodeArchiveName = recordDecoder(ArchiveNameSchema);
 
 /**
  * The one reader of archive names, whole or not at all: null for any name that
  * is not exactly one `archiveFilePath` writes, so a record renamed by hand is
- * listed as it is and is not taken for the item's record.
+ * listed as it is and is not taken for the item's record. What a name says is
+ * decoded before it is read.
  */
 export const parseArchiveName = (name: string): ArchiveName | null => {
   const match = archivedName.exec(name);
   if (match === null) return null;
-  return { day: match[1]!, id: match[2]!, title: match[3]!, state: match[4]! };
+  return decodeArchiveName({ day: match[1], id: match[2], title: match[3], state: match[4] }, `${archiveDirectory}/${name}`);
 };
 
 const closedHeading = '### Closed by commit';

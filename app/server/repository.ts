@@ -4,16 +4,19 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
 import * as Semaphore from 'effect/Semaphore';
 import type {
   ArchiveListing,
   ArchiveRecord,
   ContextEntry,
   ContextListing,
+  FileInventory,
   Item,
   LedgerEntry,
   LedgerListing,
   Session,
+  SkippedEntry,
   Stage,
   StageFile,
 } from '../contract.ts';
@@ -32,6 +35,7 @@ import {
   renderStageDirectory,
   type StageFileEntry,
   type StageTreeEntry,
+  StageTreeEntrySchema,
 } from './layout.ts';
 import {
   type LedgerParse,
@@ -48,6 +52,7 @@ import {
   type ItemDraft,
   makeItem,
   quote,
+  recordReading,
   SessionError,
   validateGroupName,
   validateItem,
@@ -57,6 +62,7 @@ import {
 import {
   epicLinkProblem,
   epicNameProblem,
+  isRank,
   leftoverStageFile,
   metaEntryProblem,
   metaLinkProblem,
@@ -64,29 +70,17 @@ import {
   parseEpicFile,
   parseRankFile,
   rankLinkProblem,
+  renderEpicFile,
+  renderRankFile,
   rootEntryProblem,
 } from './root.ts';
+import type { CommitClaim } from './trailers.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
 const encoder = new TextEncoder();
 const gitignorePath = '.gitignore';
 const gitignoreContent = '*\n';
-
-export type FileInventory = Record<string, string>;
-
-/** An entry a refresh could not take into the inventory, and why. */
-export type SkippedEntry = {
-  readonly path: string;
-  readonly reason: string;
-};
-
-/** What one commit says it finished. */
-export type CommitClaim = {
-  readonly hash: string;
-  readonly subject: string;
-  readonly ids: ReadonlyArray<string>;
-};
 
 /**
  * What became of one id a commit named. `honoured` covers an item filed now, an
@@ -125,6 +119,9 @@ const attempt = <A>(operation: () => A) =>
 
 const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+/** A stage directory as it was read from disk, decoded before it is parsed. */
+const decodeStageTree = recordReading(Schema.Array(StageTreeEntrySchema));
 
 /** One file to write, or to delete when `content` is null. */
 type FileChange = {
@@ -498,7 +495,9 @@ export const makeRepository = (directory: string) =>
           }
           entries.push({ name, type: 'directory', content: '', children });
         }
-        return entries;
+        return yield* Effect.fromResult(decodeStageTree(entries)).pipe(
+          Effect.mapError((flaw) => new RepositoryError({ kind: 'validation', message: `${relative(root, stagePath)}: ${flaw}.` })),
+        );
       });
 
     /** The names in the session root, sorted, and none while there is no root. */
@@ -1225,7 +1224,7 @@ export const makeRepository = (directory: string) =>
         if (name.startsWith('.')) continue;
         const info = yield* fs.stat(join(archive, name)).pipe(Effect.option);
         if (Option.isNone(info) || info.value.type !== 'File') continue;
-        const parsed = parseArchiveName(name);
+        const parsed = yield* attempt(() => parseArchiveName(name));
         entries.push({
           name,
           path: `${archiveDirectory}/${name}`,
@@ -1673,7 +1672,7 @@ export const makeRepository = (directory: string) =>
             const rank = join(absolute(metaDirectory), rankFact);
             if ((yield* isLink(rank)) || (yield* pathType(rank)) === 'File') yield* fs.remove(rank);
           }
-          if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, `${name}\n`);
+          if (name !== null) yield* replaceFile(`${metaDirectory}/${epicFact}`, yield* attempt(() => renderEpicFile(name)));
           else if (removed) yield* fs.remove(target.path);
           return { previous, removed };
         }).pipe(Effect.mapError(asRepositoryError)),
@@ -1693,7 +1692,7 @@ export const makeRepository = (directory: string) =>
       semaphore.withPermit(
         Effect.gen(function*() {
           const { rank } = input;
-          if (rank !== null && !(Number.isSafeInteger(rank) && rank >= 0)) {
+          if (rank !== null && !isRank(rank)) {
             return yield* new RepositoryError({ kind: 'validation', message: `Not ordered: ${rank} is not a non-negative integer.` });
           }
           const target = yield* factTarget(rankFact);
@@ -1703,7 +1702,7 @@ export const makeRepository = (directory: string) =>
               message: `${metaDirectory}/${rankFact} changed on disk since it was read; try again.`,
             });
           }
-          if (rank !== null) yield* replaceFile(`${metaDirectory}/${rankFact}`, `${rank}\n`);
+          if (rank !== null) yield* replaceFile(`${metaDirectory}/${rankFact}`, yield* attempt(() => renderRankFile(rank)));
           else if (target.present) yield* fs.remove(target.path);
         }).pipe(Effect.mapError(asRepositoryError)),
       );
@@ -1759,7 +1758,7 @@ export const makeRepository = (directory: string) =>
               message: 'Not logged: the title is too long to name a file; shorten it.',
             });
           }
-          const content = renderLedgerEntry(fields);
+          const content = yield* attempt(() => renderLedgerEntry(fields));
           const read = parseLedgerEntry({ name, content });
           if (read.entry === undefined) {
             return yield* new RepositoryError({ kind: 'validation', message: `Not logged: ${read.problem.text}` });
@@ -1839,7 +1838,8 @@ export const makeRepository = (directory: string) =>
             return entries;
           });
         const files = yield* walk('', realRoot, new Set());
-        return { inventory: Object.fromEntries(files) as FileInventory, skipped };
+        const hashes: FileInventory = Object.fromEntries(files);
+        return { inventory: hashes, skipped };
       }),
     );
 

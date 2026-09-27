@@ -4,6 +4,7 @@ import * as Config from 'effect/Config';
 import * as Effect from 'effect/Effect';
 import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
+import * as Schema from 'effect/Schema';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
 import type { OpenResult } from '../contract.ts';
 import { capture, say } from './command.ts';
@@ -70,6 +71,9 @@ const launchdEnvironment = Effect.gen(function*() {
   return environment;
 });
 
+/** The shell `dscl` names on its `UserShell:` line, decoded; none when the line names none. */
+const decodeShell = Schema.decodeUnknownOption(Schema.NonEmptyString);
+
 /**
  * The user's login shell as their user record names it, which is the shell
  * launchd gives an app. The daemon's own `SHELL` is whatever started it, an
@@ -77,7 +81,9 @@ const launchdEnvironment = Effect.gen(function*() {
  */
 const loginShell = (user: string) =>
   capture({ command: 'dscl', args: ['.', '-read', `/Users/${user}`, 'UserShell'], timeout: '5 seconds' }).pipe(
-    Effect.map((result) => (result.exitCode === 0 ? /^UserShell:\s*(\S+)/mu.exec(result.stdout)?.[1] ?? null : null)),
+    Effect.map((result) =>
+      result.exitCode === 0 ? Option.getOrNull(decodeShell(/^UserShell:\s*(\S+)/mu.exec(result.stdout)?.[1])) : null
+    ),
     Effect.orElseSucceed(() => null),
   );
 

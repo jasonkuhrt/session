@@ -4,8 +4,8 @@ import * as FileSystem from 'effect/FileSystem';
 import * as Option from 'effect/Option';
 import * as Result from 'effect/Result';
 import type { ChildProcessSpawner } from 'effect/unstable/process/ChildProcessSpawner';
-import type { Repository } from '../contract.ts';
-import { type Checkout, type GitWorktree, listGitWorktrees, locateGit, WorktreeError } from './git.ts';
+import type { Checkout, Repository } from '../contract.ts';
+import { type GitWorktree, listGitWorktrees, locateGit, WorktreeError } from './git.ts';
 import { makeRepository } from './repository.ts';
 
 /** Outside Git nothing is checked out. */

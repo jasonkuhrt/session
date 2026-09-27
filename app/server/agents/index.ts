@@ -49,7 +49,7 @@ export const agentsFor = (
       summaries.set(path, {
         claude: claude.byWorktree.get(path) ?? [],
         codex: codex.byWorktree.get(path) ?? [],
-        notices,
+        notices: [...notices, ...(codex.worktreeNotices.get(path) ?? [])],
         fetchedAt,
       });
     }

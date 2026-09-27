@@ -1,4 +1,4 @@
-import type { WorktreeSummary } from '../../contract'
+import type { OrderWrite, WorktreeSummary } from '../../contract'
 
 /**
  * The index's hand-set order, as the rows carry it: a worktree's rank among
@@ -11,7 +11,7 @@ import type { WorktreeSummary } from '../../contract'
  */
 
 /** Something the index orders by rank: its rank, or null, and the path that settles a tie. */
-type Rankable = { readonly rank: number | null; readonly path: string }
+type Rankable = Pick<WorktreeSummary, 'rank' | 'path'>
 
 /**
  * An order with the ranked entries first: ranked before unranked, then by
@@ -50,9 +50,9 @@ function siblingsOf(rows: readonly WorktreeSummary[], row: WorktreeSummary): Wor
  * A placement a drop writes: the worktree, the ranked sibling it goes before
  * or null, and the unranked siblings drawn above where it was dropped, which
  * are ranked first so it lands there. With neither it goes last among the
- * ranked.
+ * ranked. It is what the order route takes.
  */
-export type Placement = { readonly path: string; readonly before: string | null; readonly after: readonly string[] }
+export type Placement = OrderWrite
 
 /**
  * The rows with a placement drawn, while it is written, as the epics a drop
