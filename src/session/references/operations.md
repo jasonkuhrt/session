@@ -1191,11 +1191,15 @@ Ledger.
 
 A page of an epic or a project follows the root's stream, one however many
 worktrees are in view, since a browser keeps six connections to one address,
-and every stream holds one. `changed` there is every tracked session's, settled
-across all of them as a board's own is, and at least every two seconds while
-writes keep coming; on it the page reads every session or ledger in view again.
-`worktrees` says the rows changed, which is how a worktree joining or leaving
-the epic, or taken on or dropped, joins or leaves the view. A drag or a write
+and every stream holds one. `changed` there is every change under any tracked
+worktree's `.session`, `context/` and `ledger/` included, fed by the same watch
+that feeds `worktrees` and settled as `worktrees` is, once the writes of every
+worktree have settled for half a second and at least every two seconds while
+they keep coming; on it the page reads every session or ledger in view again.
+It carries nothing but its name, and a stream that does not name it, as the
+index's does not, never carries it. `worktrees` says the rows changed, which is
+how a worktree joining or leaving the epic, or taken on or dropped, joins or
+leaves the view. A drag or a write
 holds both, and one read of the sessions and the rows catches up when it ends.
 A worktree's own board keeps its own stream, as before. The root answers every
 path under `/e/` and `/p/` with the app, dots included, since an epic's name and
