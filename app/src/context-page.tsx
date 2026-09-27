@@ -76,7 +76,7 @@ export function ContextPage() {
   return (
     <BoardPageFrame
       title={listingMeta.context.label}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
       boardMeaning="The board of the session this context belongs to."
       crumbs={[{ label: listingMeta.context.label, meaning: listingMeta.context.meaning }]}
       problem={error ?? problemOf(place)}

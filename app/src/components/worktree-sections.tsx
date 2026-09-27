@@ -3,6 +3,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/react'
 import { House } from 'lucide-react'
 import type * as React from 'react'
 
+import { projectPath } from '../lib/base'
 import type { AcrossSection, ProjectSection as ProjectSectionShape, SectionHead } from '../lib/dashboard'
 import { acrossName, sectionRowOf } from '../lib/dashboard'
 import { draggedId, targetId } from '../lib/epics'
@@ -12,6 +13,7 @@ import {
   folderHeadMeaning,
   mainMeaning,
   notTrackedMeaning,
+  projectBoardMeaning,
   quietAcrossMeaning,
   quietHeadMeaning,
   trackedHeadMeaning,
@@ -20,11 +22,12 @@ import {
 import { sectionsList } from '../lib/order'
 import { cn } from '../lib/utils'
 import { LandingLine, markedSide } from './landing-line'
-import { Explained, useTip } from './tip'
+import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
+import { Button } from './ui/button'
 import type { DragContext } from './worktree-cards'
 import { EpicCard, LooseCard, NewEpicTarget } from './worktree-cards'
-import { WorktreeMark } from './worktree-marks'
+import { ProjectMark, WorktreeMark } from './worktree-marks'
 import type { RowContext } from './worktree-row'
 import { Checkout, WorktreeRow } from './worktree-row'
 
@@ -45,6 +48,29 @@ const headGrid = 'grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-3 ga
 const headRule = 'border-b px-3 pb-3 text-base'
 
 /**
+ * The way from a project's head to the project's board: the lanes of every
+ * worktree of its repository, or of the folder outside Git it is, each under
+ * its name. Every head carries it, whatever heads the project.
+ */
+function ProjectBoardLink({ section }: { section: ProjectSectionShape }) {
+  return (
+    <Tip
+      meaning={projectBoardMeaning({ name: section.name, folder: section.head.kind === 'folder' })}
+      render={
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          nativeButton={false}
+          render={<a aria-label={`Open the board of the project ${section.name}`} href={`${projectPath(section.key)}/`} />}
+        />
+      }
+    >
+      <ProjectMark />
+    </Tip>
+  )
+}
+
+/**
  * A section's head, and where a quiet section says it is dim, in the words
  * true of what it heads; its cards are dim by what happens in each. A main
  * worktree's head is what holds its section, by `holdRef`.
@@ -60,7 +86,7 @@ function Head({ section, context, holdRef }: {
   if (head.kind !== 'tracked') {
     return (
       <div title={title} className={cn(headRule, quiet && 'opacity-60')}>
-        <NamedHead head={head} name={name} />
+        <NamedHead head={head} name={name} project={<ProjectBoardLink section={section} />} />
       </div>
     )
   }
@@ -76,7 +102,13 @@ function Head({ section, context, holdRef }: {
       title={title}
       className={cn(headRule, 'cursor-grab outline-none', quiet && 'opacity-60')}
     >
-      <WorktreeRow row={head.row} context={context} meaning={trackedHeadMeaning(head.row)} name={name} />
+      <WorktreeRow
+        row={head.row}
+        context={context}
+        meaning={trackedHeadMeaning(head.row)}
+        name={name}
+        project={<ProjectBoardLink section={section} />}
+      />
     </div>
   )
 }
@@ -90,7 +122,12 @@ function Head({ section, context, holdRef }: {
  * checked out and no session belongs there; a folder outside Git is named
  * alone, since it has no Git to ask.
  */
-function NamedHead({ head, name }: { head: Exclude<SectionHead, { kind: 'tracked' }>; name: string }) {
+function NamedHead({ head, name, project }: {
+  head: Exclude<SectionHead, { kind: 'tracked' }>
+  name: string
+  /** The way to the project's board. */
+  project: React.ReactNode
+}) {
   const tip = useTip()
   const path = head.kind === 'folder' ? head.path : head.repository.path
   return (
@@ -115,6 +152,7 @@ function NamedHead({ head, name }: { head: Exclude<SectionHead, { kind: 'tracked
         {head.kind === 'untracked' ? <Badge variant="outline" title={tip(notTrackedMeaning)}>Not tracked</Badge> : null}
         {head.kind === 'bare' ? <Badge variant="outline" title={tip(bareHeadMeaning)}>Git directory</Badge> : null}
         {head.kind === 'folder' ? <Badge variant="outline" title={tip(folderHeadMeaning)}>Outside Git</Badge> : null}
+        {project}
       </div>
       {head.kind === 'untracked' ? (
         <div className="col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">

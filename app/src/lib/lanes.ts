@@ -44,11 +44,24 @@ export const lanesOf = (stages: readonly StageFile[]): Lane[] =>
 
 /**
  * The name dnd-kit knows a list of cards by: a lane's cards in no group share
- * one, and each group's cards have another. A group's name holds no `/`, so no
- * group's list can be named like a lane's.
+ * one, and each group's cards have another, each under the board of the
+ * worktree they are filed in, since the lanes of several worktrees stand side
+ * by side on an epic's board and a project's. A group's name holds no `/`, so
+ * no group's list can be named like a lane's, and a board's prefix is encoded
+ * and holds no space, so no list of one board can be named like another's.
  */
-export const listId = ({ stage, group }: { readonly stage: Stage; readonly group: string | null }) =>
-  group === null ? stage : `${stage}/${group}`
+export const listId = ({ board, stage, group }: {
+  readonly board: string
+  readonly stage: Stage
+  readonly group: string | null
+}) => (group === null ? `${board} ${stage}` : `${board} ${stage}/${group}`)
+
+/**
+ * The name dnd-kit knows a card by: the board of the worktree it is filed in
+ * and its id, since two worktrees can each file an item under one id, and a
+ * board's prefix holds no space.
+ */
+export const cardId = ({ board, id }: { readonly board: string; readonly id: string }) => `${board} ${id}`
 
 /** A card where it is drawn: its lane, its group or null, its entry in the lane, and its place in its group. */
 type Located = {

@@ -10,7 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ENameRouteRouteImport } from './routes/e/$name/route'
+import { Route as PKeyRouteRouteImport } from './routes/p/$key/route'
 import { Route as WKeyRouteRouteImport } from './routes/w/$key/route'
+import { Route as ENameIndexRouteImport } from './routes/e/$name/index'
+import { Route as ENameLedgerRouteImport } from './routes/e/$name/ledger'
+import { Route as PKeyIndexRouteImport } from './routes/p/$key/index'
+import { Route as PKeyLedgerRouteImport } from './routes/p/$key/ledger'
 import { Route as WKeyIndexRouteImport } from './routes/w/$key/index'
 import { Route as WKeyArchiveRouteImport } from './routes/w/$key/archive'
 import { Route as WKeyContextRouteImport } from './routes/w/$key/context'
@@ -23,10 +29,40 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ENameRouteRoute = ENameRouteRouteImport.update({
+  id: '/e/$name',
+  path: '/e/$name',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PKeyRouteRoute = PKeyRouteRouteImport.update({
+  id: '/p/$key',
+  path: '/p/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WKeyRouteRoute = WKeyRouteRouteImport.update({
   id: '/w/$key',
   path: '/w/$key',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ENameIndexRoute = ENameIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ENameRouteRoute,
+} as any)
+const ENameLedgerRoute = ENameLedgerRouteImport.update({
+  id: '/ledger',
+  path: '/ledger',
+  getParentRoute: () => ENameRouteRoute,
+} as any)
+const PKeyIndexRoute = PKeyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PKeyRouteRoute,
+} as any)
+const PKeyLedgerRoute = PKeyLedgerRouteImport.update({
+  id: '/ledger',
+  path: '/ledger',
+  getParentRoute: () => PKeyRouteRoute,
 } as any)
 const WKeyIndexRoute = WKeyIndexRouteImport.update({
   id: '/',
@@ -61,19 +97,29 @@ const WKeyItemIdRoute = WKeyItemIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/e/$name': typeof ENameRouteRouteWithChildren
+  '/p/$key': typeof PKeyRouteRouteWithChildren
   '/w/$key': typeof WKeyRouteRouteWithChildren
+  '/e/$name/ledger': typeof ENameLedgerRoute
+  '/p/$key/ledger': typeof PKeyLedgerRoute
   '/w/$key/archive': typeof WKeyArchiveRoute
   '/w/$key/context': typeof WKeyContextRoute
   '/w/$key/ledger': typeof WKeyLedgerRoute
+  '/e/$name/': typeof ENameIndexRoute
+  '/p/$key/': typeof PKeyIndexRoute
   '/w/$key/': typeof WKeyIndexRoute
   '/w/$key/file/$': typeof WKeyFileSplatRoute
   '/w/$key/item/$id': typeof WKeyItemIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/e/$name/ledger': typeof ENameLedgerRoute
+  '/p/$key/ledger': typeof PKeyLedgerRoute
   '/w/$key/archive': typeof WKeyArchiveRoute
   '/w/$key/context': typeof WKeyContextRoute
   '/w/$key/ledger': typeof WKeyLedgerRoute
+  '/e/$name': typeof ENameIndexRoute
+  '/p/$key': typeof PKeyIndexRoute
   '/w/$key': typeof WKeyIndexRoute
   '/w/$key/file/$': typeof WKeyFileSplatRoute
   '/w/$key/item/$id': typeof WKeyItemIdRoute
@@ -81,10 +127,16 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/e/$name': typeof ENameRouteRouteWithChildren
+  '/p/$key': typeof PKeyRouteRouteWithChildren
   '/w/$key': typeof WKeyRouteRouteWithChildren
+  '/e/$name/ledger': typeof ENameLedgerRoute
+  '/p/$key/ledger': typeof PKeyLedgerRoute
   '/w/$key/archive': typeof WKeyArchiveRoute
   '/w/$key/context': typeof WKeyContextRoute
   '/w/$key/ledger': typeof WKeyLedgerRoute
+  '/e/$name/': typeof ENameIndexRoute
+  '/p/$key/': typeof PKeyIndexRoute
   '/w/$key/': typeof WKeyIndexRoute
   '/w/$key/file/$': typeof WKeyFileSplatRoute
   '/w/$key/item/$id': typeof WKeyItemIdRoute
@@ -93,29 +145,45 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/e/$name'
+    | '/p/$key'
     | '/w/$key'
+    | '/e/$name/ledger'
+    | '/p/$key/ledger'
     | '/w/$key/archive'
     | '/w/$key/context'
     | '/w/$key/ledger'
+    | '/e/$name/'
+    | '/p/$key/'
     | '/w/$key/'
     | '/w/$key/file/$'
     | '/w/$key/item/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/e/$name/ledger'
+    | '/p/$key/ledger'
     | '/w/$key/archive'
     | '/w/$key/context'
     | '/w/$key/ledger'
+    | '/e/$name'
+    | '/p/$key'
     | '/w/$key'
     | '/w/$key/file/$'
     | '/w/$key/item/$id'
   id:
     | '__root__'
     | '/'
+    | '/e/$name'
+    | '/p/$key'
     | '/w/$key'
+    | '/e/$name/ledger'
+    | '/p/$key/ledger'
     | '/w/$key/archive'
     | '/w/$key/context'
     | '/w/$key/ledger'
+    | '/e/$name/'
+    | '/p/$key/'
     | '/w/$key/'
     | '/w/$key/file/$'
     | '/w/$key/item/$id'
@@ -123,6 +191,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ENameRouteRoute: typeof ENameRouteRouteWithChildren
+  PKeyRouteRoute: typeof PKeyRouteRouteWithChildren
   WKeyRouteRoute: typeof WKeyRouteRouteWithChildren
 }
 
@@ -135,12 +205,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/e/$name': {
+      id: '/e/$name'
+      path: '/e/$name'
+      fullPath: '/e/$name'
+      preLoaderRoute: typeof ENameRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/p/$key': {
+      id: '/p/$key'
+      path: '/p/$key'
+      fullPath: '/p/$key'
+      preLoaderRoute: typeof PKeyRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/w/$key': {
       id: '/w/$key'
       path: '/w/$key'
       fullPath: '/w/$key'
       preLoaderRoute: typeof WKeyRouteRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/e/$name/': {
+      id: '/e/$name/'
+      path: '/'
+      fullPath: '/e/$name/'
+      preLoaderRoute: typeof ENameIndexRouteImport
+      parentRoute: typeof ENameRouteRoute
+    }
+    '/e/$name/ledger': {
+      id: '/e/$name/ledger'
+      path: '/ledger'
+      fullPath: '/e/$name/ledger'
+      preLoaderRoute: typeof ENameLedgerRouteImport
+      parentRoute: typeof ENameRouteRoute
+    }
+    '/p/$key/': {
+      id: '/p/$key/'
+      path: '/'
+      fullPath: '/p/$key/'
+      preLoaderRoute: typeof PKeyIndexRouteImport
+      parentRoute: typeof PKeyRouteRoute
+    }
+    '/p/$key/ledger': {
+      id: '/p/$key/ledger'
+      path: '/ledger'
+      fullPath: '/p/$key/ledger'
+      preLoaderRoute: typeof PKeyLedgerRouteImport
+      parentRoute: typeof PKeyRouteRoute
     }
     '/w/$key/': {
       id: '/w/$key/'
@@ -187,6 +299,34 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ENameRouteRouteChildren {
+  ENameLedgerRoute: typeof ENameLedgerRoute
+  ENameIndexRoute: typeof ENameIndexRoute
+}
+
+const ENameRouteRouteChildren: ENameRouteRouteChildren = {
+  ENameLedgerRoute: ENameLedgerRoute,
+  ENameIndexRoute: ENameIndexRoute,
+}
+
+const ENameRouteRouteWithChildren = ENameRouteRoute._addFileChildren(
+  ENameRouteRouteChildren,
+)
+
+interface PKeyRouteRouteChildren {
+  PKeyLedgerRoute: typeof PKeyLedgerRoute
+  PKeyIndexRoute: typeof PKeyIndexRoute
+}
+
+const PKeyRouteRouteChildren: PKeyRouteRouteChildren = {
+  PKeyLedgerRoute: PKeyLedgerRoute,
+  PKeyIndexRoute: PKeyIndexRoute,
+}
+
+const PKeyRouteRouteWithChildren = PKeyRouteRoute._addFileChildren(
+  PKeyRouteRouteChildren,
+)
+
 interface WKeyRouteRouteChildren {
   WKeyArchiveRoute: typeof WKeyArchiveRoute
   WKeyContextRoute: typeof WKeyContextRoute
@@ -211,6 +351,8 @@ const WKeyRouteRouteWithChildren = WKeyRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ENameRouteRoute: ENameRouteRouteWithChildren,
+  PKeyRouteRoute: PKeyRouteRouteWithChildren,
   WKeyRouteRoute: WKeyRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport

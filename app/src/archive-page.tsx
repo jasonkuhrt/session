@@ -31,7 +31,7 @@ export function ArchivePage() {
   return (
     <BoardPageFrame
       title={listingMeta.archive.label}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
       boardMeaning="The board of the session this archive belongs to."
       crumbs={[{ label: listingMeta.archive.label, meaning: listingMeta.archive.meaning }]}
       problem={error ?? problemOf(place)}

@@ -1,48 +1,63 @@
 import { useParams } from '@tanstack/react-router'
 import { Option, Schema } from 'effect'
+import * as React from 'react'
 
 import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
 
 /**
- * The daemon serves the index at `/`, each board at `/w/<key>/`, and the
- * board's pages under it: one item at `item/<ID>`, the session's ledger,
- * context and archive at `ledger`, `context` and `archive`, and one file of
- * the session at `file/<path>`. The key is a worktree's name, encoded segment
- * by segment, and may hold more than one segment. A board's requests, its
- * Markdown links and its event stream hang off its prefix whichever of its
- * pages is open.
+ * The daemon serves the index at `/` and a board for each filter: a
+ * worktree's at `/w/<key>/`, an epic's at `/e/<name>/` and a project's at
+ * `/p/<path>/`. A worktree's board has its pages under it: one item at
+ * `item/<ID>`, the session's ledger, context and archive at `ledger`,
+ * `context` and `archive`, and one file of the session at `file/<path>`. An
+ * epic's board and a project's have one page under them, the ledger of every
+ * worktree in view. A worktree's key is its name and a project's its path,
+ * each encoded segment by segment, so either may hold more than one segment;
+ * an epic's name holds no slash. A worktree board's requests, its Markdown
+ * links and its event stream hang off its prefix whichever of its pages is
+ * open, and a part of a page that belongs to one worktree's board names its
+ * board through `BoardScope`.
  */
 
 /** The three listings a board serves beside its lanes, by the name of their page. */
 export type Listing = 'ledger' | 'context' | 'archive'
 
 /**
- * A board's address and the page under it. The key is everything before the
- * first segment that names a page, which is what the daemon's own longest-key
- * match resolves in every real name. A listing's page has no trailing slash,
- * because a board always has one: the daemon sends `/w/<key>` on to
- * `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of a worktree whose
- * name ends in a segment called `ledger`.
+ * The pages under a board whose key may hold a slash, after the key: a
+ * worktree's item, listings and file, and a project's ledger. The key is
+ * everything before the first segment that names a page, which is what the
+ * daemon's own longest-key match resolves in every real name. A listing's page
+ * has no trailing slash, because a board always has one: the daemon sends
+ * `/w/<key>` on to `/w/<key>/`, so `/w/<key>/ledger/` can only be the board of
+ * a worktree whose name ends in a segment called `ledger`, and
+ * `/p/<path>/ledger/` the board of a project whose folder is called `ledger`.
  */
-const boardPage = /^\/w\/(.+?)\/(item\/[^/]+\/*|ledger|context|archive|file\/.+)$/u
+const keyedPages = {
+  w: /^\/w\/(.+?)\/(item\/[^/]+\/*|ledger|context|archive|file\/.+)$/u,
+  p: /^\/p\/(.+?)\/(ledger)$/u,
+} as const
+
+/** Which board an address is under, when its key may hold a slash: a worktree's, `w`, or a project's, `p`. */
+const keyedBoard = /^\/([pw])\//u
 
 /**
- * The address the browser shows, as the router matches it: a board's key
- * folded into one segment, each slash in it written `%2F`, because a route's
- * parameter is one segment. The router decodes the parameter to the
- * worktree's name. Any other address is matched as it is.
+ * The address the browser shows, as the router matches it: a worktree's or a
+ * project's key folded into one segment, each slash in it written `%2F`,
+ * because a route's parameter is one segment. The router decodes the
+ * parameter to the name or the path. Any other address is matched as it is.
  */
-export const foldBoardKey = (pathname: string): string => {
-  if (!pathname.startsWith('/w/')) return pathname
-  const page = boardPage.exec(pathname)
-  if (page !== null) return `/w/${page[1]!.replaceAll('/', '%2F')}/${page[2]!}`
-  const key = pathname.slice('/w/'.length).replace(/\/+$/u, '')
-  return key === '' ? pathname : `/w/${key.replaceAll('/', '%2F')}/`
+export const foldKey = (pathname: string): string => {
+  const board = keyedBoard.exec(pathname)?.[1]
+  if (board !== 'w' && board !== 'p') return pathname
+  const page = keyedPages[board].exec(pathname)
+  if (page !== null) return `/${board}/${page[1]!.replaceAll('/', '%2F')}/${page[2]!}`
+  const key = pathname.slice(`/${board}/`.length).replace(/\/+$/u, '')
+  return key === '' ? pathname : `/${board}/${key.replaceAll('/', '%2F')}/`
 }
 
 /** The address the router writes, as the browser shows it: the key's slashes unfolded again. */
-export const unfoldBoardKey = (pathname: string): string =>
-  pathname.replace(/^\/w\/([^/]+)/u, (_, key: string) => `/w/${key.replaceAll('%2F', '/')}`)
+export const unfoldKey = (pathname: string): string =>
+  pathname.replace(/^\/([pw])\/([^/]+)/u, (_, board: string, key: string) => `/${board}/${key.replaceAll('%2F', '/')}`)
 
 /**
  * A route's params as its schema decodes them, or false when they are not the
@@ -59,24 +74,45 @@ export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S)
 /** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */
 export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`
 
+/** An epic's name or an item's id as the address carries it: one URI component. */
+const encodedComponent = Schema.encodeSync(Schema.StringFromUriComponent)
+
+/** An epic's board's prefix, from its name. */
+export const epicPath = (name: string) => `/e/${encodedComponent(name)}`
+
 /**
- * The prefix of the board whose page is open, from the worktree's name the
- * address carries, or nothing on the index, which belongs to no board.
+ * A project's board's prefix, from its path: the path under `/p`, encoded
+ * segment by segment as a worktree's key is, its leading slash the one after
+ * `/p`.
+ */
+export const projectPath = (path: string) => `/p${encodeWorktreeKey(path)}`
+
+/**
+ * The board a part of a page belongs to, where one page draws the worktrees
+ * of more than one board: an epic's or a project's board, and their ledger.
+ * Everything addressed under a worktree's board, a card's link and a Markdown
+ * link among them, reads its board here first.
+ */
+export const BoardScope = React.createContext<string | null>(null)
+
+/**
+ * The prefix of the worktree board a part of the page belongs to: its
+ * `BoardScope`, or else the board the address is under; nothing on the index
+ * and on an epic's or a project's page outside such a part, which belong to
+ * no one worktree's board.
  */
 export function useBoardPath() {
-  const { key } = useParams({ strict: false })
-  return key === undefined ? '' : boardPath(key)
+  const scoped = React.useContext(BoardScope)
+  const params = useParams({ from: '/w/$key', shouldThrow: false })
+  return scoped ?? (params === undefined ? '' : boardPath(params.key))
 }
 
 /** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
 const encodedPath = Schema.encodeSync(AddressPathSchema)
 
-/** An item's id as the address carries it: one URI component. */
-const encodedId = Schema.encodeSync(Schema.StringFromUriComponent)
-
 /** The page for one item of a board. The one place the route is spelled. */
 export const itemHref = ({ board, id }: { readonly board: string; readonly id: string }) =>
-  `${board}/item/${encodedId(id)}`
+  `${board}/item/${encodedComponent(id)}`
 
 /** The page of one of a board's listings. */
 export const listingHref = ({ board, listing }: { readonly board: string; readonly listing: Listing }) =>

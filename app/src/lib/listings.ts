@@ -21,3 +21,7 @@ export const listingMeta: Record<Listing, { label: string; meaning: string }> = 
     meaning: 'The archive: every item filed away, finished or set aside, newest first.',
   },
 }
+
+/** The ledger an epic's board and a project's carry: every worktree's in view, merged. */
+export const unionLedgerMeaning =
+  'The ledger of every worktree in view: their entries merged, newest first, each named for the worktree it was written in.'

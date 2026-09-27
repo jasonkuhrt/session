@@ -1,15 +1,16 @@
 import { CollisionPriority } from '@dnd-kit/abstract'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDraggable, useDroppable } from '@dnd-kit/react'
-import { Boxes, Pencil, Plus } from 'lucide-react'
+import { Pencil, Plus } from 'lucide-react'
 import * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
+import { epicPath } from '../lib/base'
 import type { EpicCardShape, IndexCard } from '../lib/dashboard'
 import { landing } from '../lib/drag'
 import { draggedId, movable, targetId } from '../lib/epics'
 import type { Marker } from '../lib/order'
-import { epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
+import { epicBoardMeaning, epicMeaning, epicRowMeaning, looseMeaning, quietCardMeaning, worktreeCountMeaning } from '../lib/index-meanings'
 import { epicList } from '../lib/order'
 import { cn } from '../lib/utils'
 import { LandingLine, markedSide } from './landing-line'
@@ -17,6 +18,7 @@ import { Explained, Tip, useTip } from './tip'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
+import { EpicMark } from './worktree-marks'
 import type { RowContext } from './worktree-row'
 import { cardClass, WorktreeRow } from './worktree-row'
 
@@ -56,6 +58,9 @@ function useBothRefs(first: (element: Element | null) => void, second: (element:
     second(element)
   }, [first, second])
 }
+
+/** An epic's name as the link to its board, drawn as a worktree's name is. */
+const epicLink = 'rounded-sm underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50'
 
 /** What a card that others land in is to the library: the pointer alone decides it, and it outranks the space around it. */
 const cardDrop = { collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Normal } as const
@@ -105,9 +110,10 @@ function EpicRow({ row, epic, context }: { row: WorktreeSummary; epic: string; c
 }
 
 /**
- * An epic's heading, which is what holds the card: its mark, its name, how
- * many worktrees are in it, and, while `onRename` is given, a way to rename
- * it. `movable` says whether it can be held now.
+ * An epic's heading, which is what holds the card: its mark, which says what
+ * an epic is, its name, which opens its board, how many worktrees are in it,
+ * and, while `onRename` is given, a way to rename it. `movable` says whether
+ * it can be held now.
  */
 function EpicHeading({ card, movable: canMove, onRename, ref }: {
   card: EpicCardShape
@@ -127,9 +133,11 @@ function EpicHeading({ card, movable: canMove, onRename, ref }: {
       aria-label={`Drag the epic ${card.name}`}
       className={cn('flex items-center gap-2 border-b px-3 py-2 outline-none', canMove && 'cursor-grab')}
     >
-      <Boxes aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Explained meaning={epicMeaning(card.name)} className="shrink-0">
+        <EpicMark />
+      </Explained>
       <h2 className="min-w-0 text-sm font-medium wrap-anywhere">
-        <Explained meaning={epicMeaning(card.name)}>{card.name}</Explained>
+        <a className={epicLink} href={`${epicPath(card.name)}/`} title={tip(epicBoardMeaning(card.name))}>{card.name}</a>
       </h2>
       <Badge variant="secondary" title={tip(worktreeCountMeaning)}>{card.rows.length}</Badge>
       {onRename === undefined ? null : (

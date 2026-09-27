@@ -88,7 +88,7 @@ export function FilePage({ path }: { path: string }) {
   return (
     <BoardPageFrame
       title={name}
-      worktree={worktreeOf(place)}
+      boardName={worktreeOf(place)}
       boardMeaning="The board of the session this file belongs to."
       crumbs={crumbsOf(board, path)}
       problem={error ?? problemOf(place)}

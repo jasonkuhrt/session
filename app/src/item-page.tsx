@@ -95,9 +95,10 @@ export function ItemPage({ id }: { id: string }) {
   // does: an item it filed away is shown in the archive rather than as gone.
   // The write stays pending until it has landed, so nothing on the page acts
   // on the session it replaced.
+  const sessions = React.useMemo(() => new Map([[board, session]]), [board, session])
   const { pending, failure, refreshed, mutate, follow } = useSessionMutations({
-    session,
-    onSession: (next) => landWrite({
+    sessions,
+    onSession: (_board, next) => landWrite({
       client,
       queryKey: itemRead(board, id).queryKey,
       answer: () => landed({ board, id, session: next }),
@@ -114,7 +115,7 @@ export function ItemPage({ id }: { id: string }) {
     on: {
       changed: () => follow(async () => {
         await reload()
-        return client.getQueryData(itemRead(board, id).queryKey)?.session ?? null
+        return new Map([[board, client.getQueryData(itemRead(board, id).queryKey)?.session ?? null]])
       }),
     },
   })
@@ -127,7 +128,7 @@ export function ItemPage({ id }: { id: string }) {
   return (
     <BoardPageFrame
       title={id}
-      worktree={session?.worktree?.name ?? null}
+      boardName={session?.worktree?.name ?? null}
       boardMeaning="The board this item is on."
       crumbs={[{ label: id, meaning: `The item ${id}, on a page of its own.`, literal: true }]}
       problem={problem}
@@ -160,7 +161,7 @@ export function ItemPage({ id }: { id: string }) {
             place={{ kind: 'stage', stage: found.stage }}
             directory={found.directory}
             pending={pending}
-            onMove={(to) => void mutate('/api/move', { id: found.item.id, to })}
+            onMove={(to) => void mutate(board, '/api/move', { id: found.item.id, to })}
             onComplete={() => setCompleting(found.item)}
           />
         )}
@@ -171,7 +172,7 @@ export function ItemPage({ id }: { id: string }) {
         onOpenChange={(open) => !open && setCompleting(null)}
         onComplete={async () => {
           // The item leaves Execute for `archive/`, and the page stays with it there.
-          if (completing && await mutate('/api/complete', { id: completing.id })) setCompleting(null)
+          if (completing && await mutate(board, '/api/complete', { id: completing.id })) setCompleting(null)
         }}
       />
     </BoardPageFrame>

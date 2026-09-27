@@ -190,7 +190,9 @@ export type ArchiveListing = typeof ArchiveListingSchema.Type;
  * page names the ones it reads, and its stream carries only those: the daemon
  * re-reads some sources only while a page is listening for them.
  *
- * - `changed`: a file under the worktree's `.session` was written
+ * - `changed`: a file under the worktree's `.session` was written; on the
+ *   root's stream, under any tracked worktree's, which is what an epic's or a
+ *   project's page follows
  * - `agents`: the Claude Code registry or a Codex writer lock changed
  * - `trailers`: the unpushed commits' trailer problems changed
  * - `links`: gh or linear was asked about the worktree's links again
