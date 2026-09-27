@@ -118,7 +118,10 @@ document to read. Tips are shown only while the Tips setting is on, and it is
 off by default, because a sentence under every passing pointer gets in the way
 more than it helps; every tooltip and explanatory `title` goes through `Tip`,
 `Explained` or `useTip`, so the one setting governs all of them, and the
-settings menu says what each setting does in the menu itself. A control that
+settings menu says what each setting does in the menu itself. The card a
+`@reference` to a term opens shows the meaning the document's `Term | Meaning`
+table gives it, which is the document's own content rather than a tip, so it
+shows whether or not Tips is on and does not go through `Tip`. A control that
 cannot act is not drawn, rather than drawn disabled with a reason, unless it
 belongs to a fixed set that shows the shape of the flow, such as the five stages
 on an item's page: then it is drawn very dim, as dim under the pointer as beside
@@ -153,11 +156,12 @@ rewrite folds into one segment; its params decode through Effect Schemas, and
 params a schema rejects are no route, so the address draws the not-found page;
 moving between pages loads a document. Every read is a TanStack Query query,
 read when its page mounts and, where its answer can change, again on the event
-that names it, one read per event since the stream carries no payload; the
-daemon's capabilities and a board's picker list are read once. On the board and
-the index a drag or a write holds the events it names until it ends, and the
-item page's writes hold nothing; a write's answer lands only over reads that
-predate it.
+that names it, one read per event since the stream carries no payload; a board's
+picker list is read once, and what the daemon says about itself when a page
+mounts and when a stream comes back, a changed `sourceStamp` reloading the page,
+drag and all. On the board and the index a drag or a write holds the events it
+names until it ends, and the item page's writes hold nothing; a write's answer
+lands only over reads that predate it.
 
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and

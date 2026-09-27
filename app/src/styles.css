@@ -184,9 +184,16 @@
   transition: text-decoration-color 120ms ease;
 }
 .markdown-reader a:hover { text-decoration-color: currentColor; }
-.markdown-reader code { background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
+/*
+ * Inline code stands out from the sentence it sits in: it is drawn in the hue
+ * the Code colour setting chooses, which the settings set on the document's
+ * root as `--code`, over the muted ground. A block is already set apart as a
+ * band of its own, so it keeps the text's colour. Until the settings are read
+ * `--code` is unset, and inline code is drawn in the text's colour too.
+ */
+.markdown-reader code { color: var(--code); background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }
 .markdown-reader pre { overflow-x: auto; background: var(--muted); padding: 1em; border-radius: var(--radius); font-size: .9em; line-height: 1.6; }
-.markdown-reader pre code { padding: 0; background: none; font-size: 1em; }
+.markdown-reader pre code { color: inherit; padding: 0; background: none; font-size: 1em; }
 /*
  * Code is not prose: its lines are as long as they are, and the reading
  * column cuts them. On a page that is its Markdown, an item's or a file's, a
@@ -209,6 +216,20 @@
 .markdown-reader blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
 .markdown-reader table { width: 100%; border-collapse: collapse; font-size: .95em; }
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }
+/*
+ * A term a document's `Term | Meaning` table defines, in its Term cell and
+ * wherever the document names it, is drawn in the hue the Term colour setting
+ * chooses, which the settings set on the document's root as `--term`. The
+ * Term cell is the term's defining instance, a `dfn`, drawn as the term it is
+ * rather than in the browser's italics. A term's row is where a card's
+ * "Table" link lands, so it stops clear of the page's sticky trail.
+ */
+.markdown-reader .term { color: var(--term); }
+.markdown-reader dfn.term { font-style: normal; }
+.markdown-reader tr[id] { scroll-margin-top: 5rem; }
+/* A term's meaning in its card: read as the reader reads, at the card's size, with nothing under its last line. */
+.markdown-reader.markdown-meaning { font-size: inherit; line-height: 1.55; }
+.markdown-meaning > :last-child { margin-bottom: 0; }
 
 /*
  * The index's cards, one grid under each repository's head and one for the
