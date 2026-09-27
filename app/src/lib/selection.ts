@@ -1,3 +1,9 @@
+import * as React from 'react'
+
+import type { Session } from '../../contract'
+import type { Dashboard } from './dashboard'
+import { laneItems, lanesOf } from './lanes'
+
 /**
  * The selection: the one card the keys act on, which the page rings. A page's
  * cards stand in columns, a board's lanes or the index's sections, each read
@@ -8,12 +14,6 @@
  * first column that holds one. The selection is kept by its card's id, so it
  * follows a card that moves, and a card that has gone takes it with it.
  */
-
-import * as React from 'react'
-
-import type { Session } from '../../contract'
-import type { Dashboard } from './dashboard'
-import { laneItems, lanesOf } from './lanes'
 
 /** A step of the selection, named for the keys that take it. */
 export type Step = 'next' | 'previous' | 'left' | 'right'
@@ -39,6 +39,16 @@ export const indexColumns = (dashboard: Dashboard | null): string[][] =>
     )
   )
 
+/** Where a card stands: its column and its place in it; null when no column holds it. */
+const placeOf = ({ columns, id }: { readonly columns: Columns; readonly id: string | null }) => {
+  if (id === null) return null
+  for (const [column, cards] of columns.entries()) {
+    const row = cards.indexOf(id)
+    if (row !== -1) return { column, row }
+  }
+  return null
+}
+
 /**
  * A page's selection over its columns: the card the keys act on, by id, for
  * as long as the page draws it, and the way to select another.
@@ -46,16 +56,6 @@ export const indexColumns = (dashboard: Dashboard | null): string[][] =>
 export function useSelection(columns: Columns) {
   const [id, select] = React.useState<string | null>(null)
   return { selected: placeOf({ columns, id }) === null ? null : id, select }
-}
-
-/** Where a card stands: its column and its place in it; null when no column holds it. */
-export const placeOf = ({ columns, id }: { readonly columns: Columns; readonly id: string | null }) => {
-  if (id === null) return null
-  for (const [column, cards] of columns.entries()) {
-    const row = cards.indexOf(id)
-    if (row !== -1) return { column, row }
-  }
-  return null
 }
 
 /** The nearest column from `from` in the direction `by` that holds a card, or null past the last. */
