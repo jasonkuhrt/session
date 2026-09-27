@@ -673,18 +673,18 @@ once the daemon tracks it, which `session open` in it does, it heads the
 repository as its row, under its own name, with its Git directory in the tip of
 the mark before that name. A folder outside Git is headed by its name, marked
 Outside Git. Every head carries a book, a repository's mark, after its name,
-which opens the project's board, below. A section carries its head's name, and two sections whose heads
-would carry the same name carry each the name of the folder what its head names
-is in before it, as a linked worktree is named whose folder shares its main
-worktree's name. Below its head a section
-holds the project's cards: a card per epic whose worktrees all belong to it,
-headed by the epic's name, which opens the epic's board, below, how many
-worktrees are in it and an icon that renames it, with its worktrees inside, and a card of its own for each of its worktrees
-in no epic. An epic whose worktrees belong to more than one project is drawn
-once, in a section of its own, Across projects, since it is the one thing higher
-than a project, and a project whose worktrees are all in such epics is its head
-alone. So every worktree the index lists is drawn once: as a head, in an epic's
-card, or as a card of its own.
+which opens the project's board, below. A section carries its head's name, and
+two sections whose heads would carry the same name carry each the name of the
+folder what its head names is in before it, as a linked worktree is named whose
+folder shares its main worktree's name. Below its head a section holds the
+project's cards: a card per epic whose worktrees all belong to it, headed by
+the epic's name, which opens the epic's board, below, how many worktrees are in
+it and an icon that renames it, with its worktrees inside, and a card of its
+own for each of its worktrees in no epic. An epic whose worktrees belong to
+more than one project is drawn once, in a section of its own, Across projects,
+since it is the one thing higher than a project, and a project whose worktrees
+are all in such epics is its head alone. So every worktree the index lists is
+drawn once: as a head, in an epic's card, or as a card of its own.
 
 The sections whose main worktree was placed by hand come first, in the order of
 their ranks, and keep their places when they go quiet, dim but not last. The
@@ -1284,8 +1284,9 @@ neither's card answers for the other's. A worktree whose key reaches another
 worktree's board, the later of two tracked under one name, is not served, and
 says so above the lanes; a session that could not be read says why there too.
 An address no tracked worktree is in, an epic nothing names or a path no
-worktree is under, draws the not-found page with its link to All projects once
-the rows have been read.
+worktree is under, draws the not-found page with its link to All projects
+before the page mounts, from the rows at hand and, when those do not name it,
+from the rows asked for again, so it draws no header, no lanes and no stream.
 
 The ledger of an epic's board or a project's, at `/e/<name>/ledger` and
 `/p/<path>/ledger`, merges the entries of every worktree in view, newest first
@@ -1369,10 +1370,11 @@ did; `h` and `l` are listed only while two lanes or sections hold anything.
 Enter is listed while something is selected, and on the index only for a
 worktree the daemon serves. The brackets move the selected item through the
 same route the stage control on its page uses, its own worktree's on an
-epic's or a project's board, one stage back or forward in the flow, and each is listed only while the rules let the item go there, the
-way the stage control draws a stage it cannot reach dim: from Triage there is
-no stage back, Queue and Execute are entered only by composing and starting a
-batch, and an Execute item leaves only by being completed. A bracket does
+epic's or a project's board, one stage back or forward in the flow, and each
+is listed only while the rules let the item go there, the way the stage
+control draws a stage it cannot reach dim: from Triage there is no stage back,
+Queue and Execute are entered only by composing and starting a batch, and an
+Execute item leaves only by being completed. A bracket does
 nothing while another write is under way, and a write the engine refuses
 reads as a failed drag does, in the daemon's words above the lanes. `t` is
 listed while `cmux` is on the daemon's PATH, as the terminal icon is drawn,
@@ -1413,10 +1415,11 @@ does not name it, so a worktree taken on after the document loaded opens
 from the index. An epic's board and a project's are known by the index's
 rows, asked again the same way, so an epic a drag on the index made a moment
 ago opens from it. A move to another board, item or file mounts the page
-afresh, with nothing kept from the one before. The address bar shows each page's address,
-and Back, Forward and a reload return to it scrolled where it was left, once
-its reads have landed; a page reached by a link starts at the top. A middle
-click or a click with a modifier still opens a page in a tab of its own.
+afresh, with nothing kept from the one before. The address bar shows each
+page's address, and Back, Forward and a reload return to it scrolled where it
+was left, once its reads have landed; a page reached by a link starts at the
+top. A middle click or a click with a modifier still opens a page in a tab of
+its own.
 
 ## Agents on the board
 
