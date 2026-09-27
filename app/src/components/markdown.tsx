@@ -22,7 +22,8 @@ const NoneLines = React.createContext(noNoneLines)
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
-  input: (props) => <input {...props} disabled />,
+  // react-markdown hands every component its hast node; an element is given only its own props.
+  input: ({ node: _node, ...props }) => <input {...props} disabled />,
   p: ({ node, ...props }) => <Paragraph line={node?.position?.start.line} {...props} />,
 } satisfies Components
 
