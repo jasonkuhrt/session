@@ -1,10 +1,4 @@
-# Session A required section with nothing to hold says so with the one word
-`None`, exactly so, alone on its line and all the section holds:
-`app/stage-rules.ts` has the one reading of a required section, as empty, none
-or content, which the engine, the board's moves, the item page and a card's line
-share, so `None` passes wherever a section is required, nothing reads it as
-content, and the item page draws it very dim with its sentence as the tip; no
-other keyword exists.
+# Session
 
 Before editing this project, read and follow the durable
 [Project contracts](../README.md#project-contracts). Preserve them unless Jason
@@ -17,7 +11,13 @@ directory of numbered item files, named for its place in the flow and its name,
 lifecycle. The board is a viewer with workflow actions and never writes an
 item's content. The ledger is the session's log: dated, immutable entries under
 `ledger/`, written with `session log` or by hand; the engine never writes one of
-its own, and the board only shows them.
+its own, and the board only shows them. A required section with nothing to hold
+says so with the one word `None`, exactly so, alone on its line and all the
+section holds: `app/stage-rules.ts` has the one reading of a required section,
+as empty, none or content, which the engine, the board's moves, the item page
+and a card's line share, so `None` passes wherever a section is required,
+nothing reads it as content, and the item page draws it very dim with its
+sentence as the tip; no other keyword exists.
 
 Commands scaffold the session as they go, its `meta/` of per-worktree facts
 included, so nothing depends on an imperative setup step, and the CLI never
