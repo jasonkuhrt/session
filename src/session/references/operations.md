@@ -1003,14 +1003,14 @@ the app's own files, which is that file. It is an
 ordinary link, so it opens in a tab like any other. The page carries the stage
 control, which moves an item in one click and leaves you on the page in its new
 stage. All five stages are always drawn, because together they show the shape
-of the flow: a stage the item cannot reach is drawn very dim and says on hover
-what is needed first. "Complete work" is there for an item in Execute, and
-leaves you on the page with the item archived. Settle missing content with the
-agent or in the editor. Where the one word `None` is all a required section
-holds, the reader draws it very dim, and its tip says the section is
-intentionally empty. A code block on the page is a band across the window's
-full width, its text starting where the prose starts, and a line longer than
-the room to the right scrolls inside the band.
+of the flow: a stage the item cannot reach is drawn very dim, as dim under the
+pointer as beside it, and says on hover what is needed first. "Complete work"
+is there for an item in Execute, and leaves you on the page with the item
+archived. Settle missing content with the agent or in the editor. Where the one
+word `None` is all a required section holds, the reader draws it very dim, and
+its tip says the section is intentionally empty. A code block on the page is a
+band across the window's full width, its text starting where the prose starts,
+and a line longer than the room to the right scrolls inside the band.
 
 An item filed under `archive/`, by "Complete work", `done`, `archive` or a
 commit's trailer, keeps its page. When no stage holds the id, the page reads
