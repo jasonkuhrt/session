@@ -63,6 +63,19 @@ stores a section, and every section, the one across projects included, is
 ordered and dimmed as cards are, a project counting every worktree of it
 wherever it is drawn.
 
+The board is the filtered union of sessions: `/w/<key>/` is one worktree's
+board, `/e/<name>/` an epic's and `/p/<path>/` a project's, whose worktrees are
+read from the rows `/api/worktrees` serves and stored nowhere. An epic's or a
+project's board is a view of items: every lane holds each worktree's part under
+its name, a worktree's parts stand in one row, each name opens that worktree's
+own `/w/` board, every card is keyed by worktree and id for a drag and for the
+keys alike, every write goes to that worktree's own board with its own revision,
+a card released over another worktree's lanes writes nothing, and none of a
+worktree's own surfaces, its agents, pull request, issues, trailers, terminal or
+Zed, is drawn there. Such a page gates on the rows before it mounts, and follows
+one stream at the root, whose `changed` is every tracked session's, settled as
+`worktrees` is, and which only a page that names it receives.
+
 A main worktree is the one whose Git directory is its repository's own, as `git
 rev-parse` says when asked without the variables that aim Git at another
 repository, never the one found at its own path in `git worktree list`: Git
@@ -160,22 +173,25 @@ stylesheet it names, and the daemon serves that shell, `no-store`, at every
 page's address, while an unknown API path answers JSON 404 at the root as it
 does under a board; no Start server code runs in the daemon, and nothing a route
 module or the root route imports reads a browser global when it loads, since the
-prerender loads them all. A page is a file route whose worktree key the router's
-rewrite folds into one segment; its params decode through Effect Schemas, and
-params a schema rejects are no route, so the address draws the not-found page; a
-board's page reads the daemon's description once, before it mounts, and a key
+prerender loads them all. A page is a file route whose worktree key or project
+path the router's rewrite folds into one segment; its params decode through
+Effect Schemas, and params a schema rejects are no route, so the address draws
+the not-found page; a board's page reads the daemon's description once, before
+it mounts, an epic's or a project's page reads the index's rows the same way,
+and a name or path no tracked worktree is in draws the not-found page, and a key
 the description does not name draws the not-found page; the daemon answers an
 unknown key's page load with the shell, anything else with JSON 404; moving
 between pages stays in the document, a page being one component per address that
 closes its stream and its dialogs as it leaves and reads again when it mounts.
 Every read is a TanStack Query query, read when its page mounts and, where its
 answer can change, again on the event that names it, one read per event since
-the stream carries no payload; a board's picker list is read once, and what the
-daemon says about itself when a page mounts and when a stream comes back, a
-changed `sourceStamp` reloading the page, drag and all. On the board and the
-index a drag or a write holds the events it names until it ends, and the item
-page's writes hold nothing; a write's answer lands only over reads that predate
-it.
+the stream carries no payload; a worktree board's picker list is read once, and
+an epic's or a project's board reads its rows again on `worktrees`, since they
+are its membership, and what the daemon says about itself when a page mounts and
+when a stream comes back, a changed `sourceStamp` reloading the page, drag and
+all. On the board and the index a drag or a write holds the events it names
+until it ends, and the item page's writes hold nothing; a write's answer lands
+only over reads that predate it.
 
 Every key the board answers to is a TanStack Hotkeys registration, made through
 `useBindings` or `useDialogKeys` with its sentence and its scope, index, board
