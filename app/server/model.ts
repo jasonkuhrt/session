@@ -4,7 +4,7 @@ import * as Schema from 'effect/Schema';
 import * as Struct from 'effect/Struct';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, ItemSchema, stageDirectory } from '../contract.ts';
-import { emptySections, scanFences } from '../stage-rules.ts';
+import { emptySections, noneLines, scanFences } from '../stage-rules.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
@@ -71,10 +71,13 @@ const summaryLength = 180;
  * The text of a body's first paragraph, in a list or a quote as much as at the
  * top, as a reader sees it, without the Markdown marks around its words; empty
  * when the body has none. Headings, code, tables and HTML are not paragraphs,
- * so a body that opens with an example reads from the paragraph after it, and
- * a footnote, which the page draws at its foot, is not where the body starts.
+ * so a body that opens with an example reads from the paragraph after it; a
+ * footnote, which the page draws at its foot, is not where the body starts,
+ * and neither is the word `None` where it says a required section is
+ * intentionally empty, which the stage rules read as saying nothing.
  */
 const firstParagraph = (body: string): string => {
+  const none = noneLines(body);
   const pending: MarkdownNode[] = [markdown.parse(body)];
   for (let node = pending.shift(); node !== undefined; node = pending.shift()) {
     if (node.type === 'footnoteDefinition') continue;
@@ -82,6 +85,8 @@ const firstParagraph = (body: string): string => {
       pending.unshift(...(node.children ?? []));
       continue;
     }
+    const line = node.position?.start.line;
+    if (line !== undefined && none.has(line)) continue;
     const text = textOf(node).replaceAll(/\s+/gu, ' ').trim();
     if (text !== '') return [...text].slice(0, summaryLength).join('');
   }
