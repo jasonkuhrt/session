@@ -4,7 +4,7 @@ import * as Schema from 'effect/Schema';
 import * as Struct from 'effect/Struct';
 import type { Item, Stage } from '../contract.ts';
 import { isBatchedStage, ItemSchema, stageDirectory } from '../contract.ts';
-import { emptySections, noneLines, scanFences } from '../stage-rules.ts';
+import { emptySections, lineEnding, noneLines, scanFences } from '../stage-rules.ts';
 import { markdown, type MarkdownNode } from './markdown.ts';
 
 export class SessionError extends Data.TaggedError('SessionError')<{
@@ -52,6 +52,13 @@ export const recordDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schem
 
 const decodeItem = recordDecoder(ItemSchema);
 const encodeDraft = Schema.encodeSync(ItemDraftSchema);
+
+/**
+ * A session file's lines, split at every line ending Markdown knows, which is
+ * how every reader of the files counts them: the item files, the ledger, and
+ * the notes a commit leaves in an item.
+ */
+export const linesOf = (text: string): string[] => text.split(lineEnding);
 
 /** Quote a name inside a message without reaching for JSON. */
 export const quote = (value: string): string => `"${value}"`;
@@ -194,7 +201,7 @@ export const parseItemFile = (input: {
   readonly group: string | null;
   readonly content: string;
 }): Item => {
-  const lines = input.content.replaceAll('\r\n', '\n').split('\n');
+  const lines = linesOf(input.content);
   const heading: RegExpExecArray = itemHeading.exec(lines[0] ?? '') ??
     fail(`${input.path}:1: an item file starts with \`## ${input.id} — <title>\`.`);
   if (heading[1] !== input.id) {

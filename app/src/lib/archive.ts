@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 
 import type { ArchiveRecord, Item } from '../../contract'
 import { ItemSchema } from '../../contract'
+import { lineEnding } from '../../stage-rules'
 import { SessionApi } from './api'
 
 /** An archived record read as the item it was, decoded before the page reads it. */
@@ -63,16 +64,16 @@ export async function readArchivedItem({ board, id, signal }: {
   // The listing is newest day first, then by name.
   const record = records.find((candidate) => candidate.id === id)
   if (record === undefined) return null
-  const text = (await SessionApi.file(board, record.path, signal)).replaceAll('\r\n', '\n')
+  const lines = (await SessionApi.file(board, record.path, signal)).split(lineEnding)
   const heading = `## ${id} — `
-  const [first = '', ...rest] = text.split('\n')
+  const [first = '', ...rest] = lines
   const titled = first.startsWith(heading)
   return {
     record,
     item: decodeItem({
       id,
       title: titled ? first.slice(heading.length).trim() : record.title ?? id,
-      body: (titled ? rest.join('\n') : text).trim(),
+      body: (titled ? rest : lines).join('\n').trim(),
       summary: '',
       group: null,
       path: record.path,

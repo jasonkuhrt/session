@@ -16,15 +16,19 @@ const everyRequiredSection: ReadonlyArray<RequiredSection> = [...new Set(Object.
 
 /**
  * Every line ending Markdown knows: a line feed, a carriage return, or the two
- * together. A reading that splits a body here counts its lines as the page
- * that draws it does.
+ * together. Every reader of a session's text splits it here, so each counts a
+ * file's lines as the page that draws it does, and as every other reader.
  */
 export const lineEnding = /\r\n|\r|\n/u;
 
 const fenceMarker = /^\s*(`{3,}|~{3,})/u;
 
-/** A heading that ends a section: one to three `#` marks and a space. */
-const sectionEnd = /^#{1,3}\s/u;
+/**
+ * A heading that ends a section: one to three `#` marks and a space or a tab,
+ * which is what CommonMark takes for a heading. Any other space after the
+ * marks, a no-break space for one, leaves the line a paragraph's.
+ */
+const sectionEnd = /^#{1,3}[ \t]/u;
 
 /**
  * The one word that says a required section is intentionally empty. It is
