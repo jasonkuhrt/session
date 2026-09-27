@@ -25,7 +25,7 @@ const noCapabilities: DaemonCapabilities = { terminal: false, zed: false }
  */
 export function useCapabilities(): DaemonCapabilities {
   // A failed read draws nothing, and has nothing to say twice.
-  return useQuery(reads.capabilities()).data ?? noCapabilities
+  return useQuery(reads.daemon()).data ?? noCapabilities
 }
 
 type ActionProps = {

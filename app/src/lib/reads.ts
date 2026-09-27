@@ -6,11 +6,11 @@ import { DaemonApi, IndexApi, readPlace, SessionApi } from './api'
  * Every read a page makes, as TanStack Query holds it: one query per source,
  * keyed by the board's prefix where the source is a board's, so each is read
  * on its own. A query is read when its page mounts it and, where its answer
- * can change, again on the stream's event that names it. The daemon's
- * capabilities, on the index and a board, and a board's picker list are read
- * once, since no stream there says either changed. Nothing is read on
- * focus, on reconnect or on a timer. The item and file pages compose their
- * reads where they draw them, under the keys `[board, 'item', id]` and
+ * can change, again on the stream's event that names it. What the daemon says
+ * about itself, on every page with a stream, and a board's picker list are
+ * read once, since no stream says either changed. Nothing is read on focus,
+ * on reconnect or on a timer. The item and file pages compose their reads
+ * where they draw them, under the keys `[board, 'item', id]` and
  * `[board, 'file', path]`.
  */
 export const reads = {
@@ -21,9 +21,18 @@ export const reads = {
   pullRequests: () =>
     queryOptions({ queryKey: ['pull-requests'], queryFn: ({ signal }) => IndexApi.pullRequests(signal) }),
 
-  /** What the daemon can do for a page: a terminal through cmux, and Zed. */
-  capabilities: () =>
-    queryOptions({ queryKey: ['daemon'], queryFn: ({ signal }) => DaemonApi.capabilities(signal) }),
+  /**
+   * What the daemon says about itself: what it can do for a page, a terminal
+   * through cmux and Zed, and the sources it was started from, which name the
+   * build the page was loaded from. It is kept for as long as the document is,
+   * whichever page of it is drawn, since the build stays the one it loaded.
+   */
+  daemon: () =>
+    queryOptions({
+      queryKey: ['daemon'],
+      queryFn: ({ signal }) => DaemonApi.describe(signal),
+      gcTime: Number.POSITIVE_INFINITY,
+    }),
 
   /** A board's session: its stages and their items, with the revision a write is made against. */
   session: (board: string) =>

@@ -8,7 +8,7 @@ import {
   AgentsSummarySchema,
   ArchiveListingSchema,
   ContextListingSchema,
-  DaemonCapabilitiesSchema,
+  DaemonDescriptionSchema,
   EpicRenamedSchema,
   EpicRenameSchema,
   EpicWriteSchema,
@@ -49,7 +49,7 @@ const decodeAgents = Schema.decodeUnknownEffect(AgentsSummarySchema)
 const decodeTrailers = Schema.decodeUnknownEffect(Schema.Array(TrailerProblemSchema))
 const decodeLinks = Schema.decodeUnknownEffect(LinksSchema)
 const decodePullRequests = Schema.decodeUnknownEffect(PullRequestReportsSchema)
-const decodeCapabilities = Schema.decodeUnknownEffect(DaemonCapabilitiesSchema)
+const decodeDescription = Schema.decodeUnknownEffect(DaemonDescriptionSchema)
 const decodeFocus = Schema.decodeUnknownEffect(FocusResultSchema)
 const decodeOpen = Schema.decodeUnknownEffect(OpenResultSchema)
 const decodeLedger = Schema.decodeUnknownEffect(LedgerListingSchema)
@@ -240,12 +240,13 @@ export const IndexApi = {
 }
 
 /**
- * What the daemon itself answers, at the root whichever page is asking: what
- * it can do for a page, and a terminal or Zed in any worktree it tracks.
+ * What the daemon itself answers, at the root whichever page is asking: who
+ * it is, the sources it was started from and what it can do for a page, and a
+ * terminal or Zed in any worktree it tracks.
  */
 export const DaemonApi = {
-  capabilities: (signal?: AbortSignal) =>
-    run(send(get('/api/daemon'), decodeCapabilities), signal),
+  describe: (signal?: AbortSignal) =>
+    run(send(get('/api/daemon'), decodeDescription), signal),
 
   /** Asks for a terminal in the worktree at this path: its cmux workspace brought forward, or a new one. */
   terminal: (path: string) => run(send(post('/api/terminal', WorktreePathSchema, { path }), decodeOpen)),
