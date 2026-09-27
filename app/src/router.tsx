@@ -43,6 +43,7 @@ export function getRouter() {
   })
   return createRouter({
     routeTree,
+    context: { queryClient },
     trailingSlash: 'preserve',
     // A page is one component per address: a move to another board, item or
     // file of the same page mounts it afresh, with its own state, reads and

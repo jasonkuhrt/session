@@ -1,4 +1,5 @@
-import { linkOptions, useParams } from '@tanstack/react-router'
+import type { QueryClient, QueryExecuteOptions, QueryKey } from '@tanstack/react-query'
+import { linkOptions, notFound, useParams } from '@tanstack/react-router'
 import { Option, Schema } from 'effect'
 
 import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
@@ -54,6 +55,33 @@ export const unfoldBoardKey = (pathname: string): string =>
 export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) => {
   const decode = Schema.decodeUnknownOption(schema)
   return (raw: unknown): S['Type'] | false => Option.getOrElse(decode(raw), () => false as const)
+}
+
+/**
+ * The other half of an address that is no page: one whose params decode but
+ * name nothing there is. The read that says what an address may name is made
+ * before the page mounts, and when its answer does not hold what this address
+ * names, the root draws the not-found page and the page reads nothing, no
+ * session and no stream. A board is gated on the daemon's description, which
+ * names the boards it serves; a page drawn from the index's rows would be
+ * gated on those. The answer is kept for the document, so the page that draws
+ * the same read shows it rather than asking again. A read that fails says
+ * nothing about the address, and the page draws as it would without the gate.
+ */
+export async function noPageUnless<T, K extends QueryKey>({ client, read, named }: {
+  readonly client: QueryClient
+  /** The read whose answer says what an address may name. */
+  readonly read: QueryExecuteOptions<T, Error, T, T, K>
+  /** Whether that answer holds what this address names. */
+  readonly named: (answer: T) => boolean
+}): Promise<void> {
+  let answer: T
+  try {
+    answer = await client.query({ ...read, gcTime: Number.POSITIVE_INFINITY })
+  } catch {
+    return
+  }
+  if (!named(answer)) throw notFound()
 }
 
 /** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */

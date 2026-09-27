@@ -1,4 +1,5 @@
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import * as Arr from 'effect/Array';
 import * as Crypto from 'effect/Crypto';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
@@ -80,7 +81,7 @@ import {
   renderRankFile,
   rootEntryProblem,
 } from './root.ts';
-import type { CommitClaim } from './trailers.ts';
+import type { CommitClaim, DoneLine } from './trailers.ts';
 
 /* eslint-disable max-lines, max-lines-per-function -- The repository is one serialized transaction boundary; splitting its closures would obscure the invariants they share. */
 
@@ -89,14 +90,22 @@ const gitignorePath = '.gitignore';
 const gitignoreContent = '*\n';
 
 /**
- * What became of one id a commit named. `honoured` covers an item filed now, an
- * item already filed, and an item a person brought back after this commit
- * filed it; none of those is anything to report.
+ * What became of one `Session-Done:` line a commit holds, which is filed whole
+ * or not at all:
+ * - `empty`: the line names nothing, so nothing is filed
+ * - `unknown`: `words` name no item of the session, open or archived, so
+ *   nothing on the line is filed
+ * - `outside`: every word names an item, but Git does not read the line as a
+ *   trailer, so nothing on it is filed
+ * - `filed`: every word names an item and the line is a trailer, so each item
+ *   was filed now, or already was, or was brought back by a person after this
+ *   commit filed it; `failures` are the ids whose filing failed, and why
  */
-export type CommitOutcome =
-  | { readonly kind: 'honoured' }
-  | { readonly kind: 'unknown' }
-  | { readonly kind: 'failed'; readonly message: string };
+type LineOutcome =
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'unknown'; readonly words: Arr.NonEmptyReadonlyArray<string> }
+  | { readonly kind: 'outside' }
+  | { readonly kind: 'filed'; readonly failures: ReadonlyArray<{ readonly id: string; readonly message: string }> };
 
 export class RepositoryError extends Data.TaggedError('RepositoryError')<{
   readonly kind: 'conflict' | 'io' | 'not-found' | 'validation';
@@ -1281,14 +1290,18 @@ export const makeRepository = (directory: string) =>
       }).pipe(Effect.mapError(asRepositoryError));
 
     /**
-     * Honour what commits say they finished, oldest commit first, deciding
-     * each one on what the files say under the session's own lock. An open item
-     * is filed as done from whichever stage it is in, because the commit is the
-     * evidence of completion and the route through Execute that `completeItem`
-     * insists on does not apply; the item's text gains the commit's note, which
-     * is what says afterwards why it left. An item whose text or archived
-     * record already carries that note was filed by this commit before and has
-     * been brought back by a person, so it is left where it is.
+     * Honour what commits say they finished, oldest commit first and line by
+     * line, deciding each line on what the files say under the session's own
+     * lock. A line is filed whole or not at all: when a word on it names no item
+     * of the session, open or archived, nothing on it is filed, and a line that
+     * names nothing, or that Git does not read as a trailer, files nothing
+     * either. An open item is filed as
+     * done from whichever stage it is in, because the commit is the evidence of
+     * completion and the route through Execute that `completeItem` insists on
+     * does not apply; the item's text gains the commit's note, which is what
+     * says afterwards why it left. An item whose text or archived record
+     * already carries that note was filed by this commit before and has been
+     * brought back by a person, so it is left where it is.
      *
      * One read serves a pass that closes nothing, which is almost every pass.
      */
@@ -1297,33 +1310,51 @@ export const makeRepository = (directory: string) =>
         Effect.gen(function*() {
           let loaded = yield* loadUnlocked;
           let archived = yield* archivedRecords;
-          const outcomes: Array<{ readonly claim: CommitClaim; readonly id: string; readonly outcome: CommitOutcome }> =
-            [];
-          const decide = (claim: CommitClaim, id: string) =>
+          /** Whether an item of the session has this id, open or archived, as the files say now. */
+          const names = (id: string) =>
+            loaded.stages.some((stage) => stage.items.some((item) => item.id === id)) ||
+            archived.some((record) => record.id === id);
+          /** File one item a trailer names, unless it is filed already: null, or why filing it failed. */
+          const file = (claim: CommitClaim, id: string) =>
             Effect.gen(function*() {
               const found = yield* attempt(() => findRequiredItem(loaded.stages, id)).pipe(Effect.option);
-              if (Option.isNone(found)) {
-                return archived.some((record) => record.id === id)
-                  ? ({ kind: 'honoured' } as const)
-                  : ({ kind: 'unknown' } as const);
-              }
+              if (Option.isNone(found)) return null;
               const { item, stage } = found.value;
-              if (commitsThatClosed(item.body).has(claim.hash)) return { kind: 'honoured' } as const;
-              if ((yield* archivedClosings(archived, id)).has(claim.hash)) return { kind: 'honoured' } as const;
-              const outcome = yield* fileAway({ id, state: 'done', loaded, from: stage, note: closedByCommitNote(claim) })
+              if (commitsThatClosed(item.body).has(claim.hash)) return null;
+              if ((yield* archivedClosings(archived, id)).has(claim.hash)) return null;
+              const failure = yield* fileAway({ id, state: 'done', loaded, from: stage, note: closedByCommitNote(claim) })
                 .pipe(
                   Effect.flatMap((changes) => applyChanges(changes).pipe(Effect.mapError(asRepositoryError))),
-                  Effect.match({
-                    onFailure: (error): CommitOutcome => ({ kind: 'failed', message: error.message }),
-                    onSuccess: (): CommitOutcome => ({ kind: 'honoured' }),
-                  }),
+                  Effect.match({ onFailure: (error) => error.message, onSuccess: () => null }),
                 );
               loaded = yield* loadUnlocked;
               archived = yield* archivedRecords;
-              return outcome;
+              return failure;
             });
+          const outcomes: Array<{ readonly claim: CommitClaim; readonly line: DoneLine; readonly outcome: LineOutcome }> =
+            [];
           for (const claim of claims) {
-            for (const id of claim.ids) outcomes.push({ claim, id, outcome: yield* decide(claim, id) });
+            for (const line of claim.lines) {
+              if (line.words.length === 0) {
+                outcomes.push({ claim, line, outcome: { kind: 'empty' } });
+                continue;
+              }
+              const missing = line.words.filter((word) => !names(word));
+              if (Arr.isArrayNonEmpty(missing)) {
+                outcomes.push({ claim, line, outcome: { kind: 'unknown', words: missing } });
+                continue;
+              }
+              if (!line.trailer) {
+                outcomes.push({ claim, line, outcome: { kind: 'outside' } });
+                continue;
+              }
+              const failures: Array<{ readonly id: string; readonly message: string }> = [];
+              for (const id of line.words) {
+                const message = yield* file(claim, id);
+                if (message !== null) failures.push({ id, message });
+              }
+              outcomes.push({ claim, line, outcome: { kind: 'filed', failures } });
+            }
           }
           return outcomes;
         }),
