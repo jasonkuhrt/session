@@ -37,6 +37,14 @@ export const SettingsSchema = Schema.Struct({
    * board's link colour, so code in it would read as a link.
    */
   codeColor: HueSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('green'))),
+  /**
+   * The hue a term a document defines is drawn in: its Term cell and every
+   * reference to it. Magenta by default: it is not the code colour, nor the
+   * link colour blue, nor yellow and red, which the board keeps for someone
+   * waited on and for danger, and of the hues left it stands out most on the
+   * page.
+   */
+  termColor: HueSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('magenta'))),
 })
 
 export type Settings = typeof SettingsSchema.Type
@@ -91,12 +99,14 @@ const snapshot = () => {
 }
 
 /**
- * Draws what the settings colour: the variable the stylesheet reads, set on
+ * Draws what the settings colour: the variables the stylesheet reads, set on
  * the document's root, so every reader on the page follows a change at once.
  * Called only once settings are read in a browser, never when the module loads.
  */
 const paint = (settings: Settings) => {
-  document.documentElement.style.setProperty('--code', `var(--tn-${settings.codeColor})`)
+  const { style } = document.documentElement
+  style.setProperty('--code', `var(--tn-${settings.codeColor})`)
+  style.setProperty('--term', `var(--tn-${settings.termColor})`)
 }
 
 const publish = (next: SettingsState) => {

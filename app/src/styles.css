@@ -216,6 +216,20 @@
 .markdown-reader blockquote { border-left: 2px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
 .markdown-reader table { width: 100%; border-collapse: collapse; font-size: .95em; }
 .markdown-reader :is(th,td) { padding: .5em; border-bottom: 1px solid var(--border); text-align: left; }
+/*
+ * A term a document's `Term | Meaning` table defines, in its Term cell and
+ * wherever the document names it, is drawn in the hue the Term colour setting
+ * chooses, which the settings set on the document's root as `--term`. The
+ * Term cell is the term's defining instance, a `dfn`, drawn as the term it is
+ * rather than in the browser's italics. A term's row is where a card's
+ * "Table" link lands, so it stops clear of the page's sticky trail.
+ */
+.markdown-reader .term { color: var(--term); }
+.markdown-reader dfn.term { font-style: normal; }
+.markdown-reader tr[id] { scroll-margin-top: 5rem; }
+/* A term's meaning in its card: read as the reader reads, at the card's size, with nothing under its last line. */
+.markdown-reader.markdown-meaning { font-size: inherit; line-height: 1.55; }
+.markdown-meaning > :last-child { margin-bottom: 0; }
 
 /*
  * The index's cards, one grid under each repository's head and one for the

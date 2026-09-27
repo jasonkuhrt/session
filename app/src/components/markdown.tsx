@@ -1,16 +1,22 @@
+import { PreviewCard } from '@base-ui/react/preview-card'
 import * as React from 'react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { absoluteHref, isMarkdownPath, useBoardPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
+import { type Glossary, glossaryOf, remarkTerms } from '../lib/terms'
 import { cn } from '../lib/utils'
 import { copyLabel, useCopy } from './copyable'
+import { useTip } from './tip'
 import { Button } from './ui/button'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
   input: (props) => <input {...props} disabled />,
+  // Markdown draws no span of its own: each is a reference the terms plugin marked with the term it names.
+  span: ({ children, node }) => <TermReference term={node?.properties['dataTerm']}>{children}</TermReference>,
 } satisfies Components
 
 export function Markdown({ children, collapseEvidence = false, page = false }: {
@@ -22,26 +28,113 @@ export function Markdown({ children, collapseEvidence = false, page = false }: {
    */
   page?: boolean
 }) {
+  // The terms are the whole document's, so a reference finds its term on either side of the Evidence heading.
+  const glossary = React.useMemo(() => glossaryOf(children), [children])
   const evidenceMatch = collapseEvidence ? /^###\s+Evidence\s*$/imu.exec(children) : null
   const primary = evidenceMatch ? children.slice(0, evidenceMatch.index) : children
-  const evidence = evidenceMatch ? children.slice(evidenceMatch.index + evidenceMatch[0].length).trim() : null
+  const afterHeading = evidenceMatch ? children.slice(evidenceMatch.index + evidenceMatch[0].length) : ''
+  const evidence = evidenceMatch ? afterHeading.trim() : null
+  // Where the Evidence's text starts in the document, by which the terms plugin knows a row the glossary names.
+  const evidenceAt = children.length - afterHeading.trimStart().length
 
-  return (
+  const reader = (
     <div className={cn('markdown-reader', page && 'markdown-page')}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {primary}
-      </ReactMarkdown>
+      <MarkdownPart glossary={glossary} offset={0}>{primary}</MarkdownPart>
       {evidence ? (
         <details className="evidence-panel">
           <summary>Evidence</summary>
           <div className="pt-4">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {evidence}
-            </ReactMarkdown>
+            <MarkdownPart glossary={glossary} offset={evidenceAt}>{evidence}</MarkdownPart>
           </div>
         </details>
       ) : null}
     </div>
+  )
+  return glossary.reference === null ? reader : <TermCards glossary={glossary}>{reader}</TermCards>
+}
+
+/**
+ * Some of a document, read as GitHub reads Markdown, with the document's
+ * terms drawn when it defines any; `offset` is where this text starts in the
+ * document. A document without terms goes through GitHub's reading alone.
+ */
+function MarkdownPart({ glossary, offset, children }: { glossary: Glossary; offset: number; children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={glossary.reference === null ? [remarkGfm] : [remarkGfm, [remarkTerms, { glossary, offset }]]}
+      components={markdownComponents}
+    >
+      {children}
+    </ReactMarkdown>
+  )
+}
+
+/**
+ * The terms of the document being read, and the one card its references open.
+ * A meaning drawn in that card has no card of its own, so the terms in it are
+ * coloured and open nothing.
+ */
+type Terms = { readonly glossary: Glossary; readonly card: PreviewCard.Handle<unknown> | null }
+
+const TermsContext = React.createContext<Terms | null>(null)
+
+/**
+ * A document that defines terms, with the card its references share: resting
+ * the pointer on one shows the meaning of the term it names. The meaning is
+ * the document's content, not a tip, so it shows whether or not Tips is on.
+ */
+function TermCards({ glossary, children }: { glossary: Glossary; children: React.ReactNode }) {
+  const [card] = React.useState(() => PreviewCard.createHandle<unknown>())
+  const terms = React.useMemo(() => ({ glossary, card }), [glossary, card])
+  return (
+    <TermsContext value={terms}>
+      {children}
+      <HoverCard handle={card}>
+        {({ payload }) => <TermCard glossary={glossary} term={typeof payload === 'string' ? payload : null} />}
+      </HoverCard>
+    </TermsContext>
+  )
+}
+
+/**
+ * A reference to a term, drawn in the term colour. In the document it opens
+ * its term's card while the pointer rests on it; it is never a link, so a
+ * click does nothing. Inside a card it opens nothing.
+ */
+function TermReference({ term, children }: { term: unknown; children: React.ReactNode }) {
+  const terms = React.use(TermsContext)
+  if (typeof term !== 'string' || terms === null) return <span>{children}</span>
+  if (terms.card === null) return <span className="term">{children}</span>
+  return (
+    <HoverCardTrigger handle={terms.card} payload={term} render={<span className="term" />}>
+      {children}
+    </HoverCardTrigger>
+  )
+}
+
+/** The card of the term a reference names: its meaning, read as Markdown, over the way to its row in the table. */
+function TermCard({ glossary, term }: { glossary: Glossary; term: string | null }) {
+  const tip = useTip()
+  const inCard = React.useMemo(() => ({ glossary, card: null }), [glossary])
+  const definition = term === null ? undefined : glossary.terms.get(term)
+  // A meaning is prose to read, so the card is wider than the stock one's sixteen rem.
+  return (
+    <HoverCardContent className="w-80">
+      {definition === undefined ? null : (
+        <TermsContext value={inCard}>
+          <div className="markdown-reader markdown-meaning">
+            <MarkdownPart glossary={glossary} offset={0}>{definition.meaning}</MarkdownPart>
+          </div>
+          <a
+            className="mt-2 inline-block text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+            href={`#${definition.id}`}
+            title={tip(`Go to the row of the table that defines ${term}.`)}
+          >
+            Table
+          </a>
+        </TermsContext>
+      )}
+    </HoverCardContent>
   )
 }
 

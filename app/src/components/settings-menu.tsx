@@ -41,6 +41,12 @@ export function SettingsMenu({ className }: { className?: string }) {
             value={settings.codeColor}
             onChange={(codeColor) => changeSettings({ codeColor })}
           />
+          <ColourSetting
+            name="Term colour"
+            does="A term a page's Term | Meaning table defines is drawn in this hue, in the table and wherever the page names it."
+            value={settings.termColor}
+            onChange={(termColor) => changeSettings({ termColor })}
+          />
         </DropdownMenuGroup>
         {problem === null ? null : <p className="px-1.5 py-1 text-xs text-destructive wrap-anywhere">{problem}</p>}
       </DropdownMenuContent>
