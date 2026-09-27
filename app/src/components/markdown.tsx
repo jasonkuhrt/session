@@ -14,7 +14,8 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
-  input: (props) => <input {...props} disabled />,
+  // The syntax tree react-markdown passes along is not an attribute of the box it draws.
+  input: ({ node: _node, ...props }) => <input {...props} disabled />,
   // Markdown draws no span of its own: each is a reference the terms plugin marked with the term it names.
   span: ({ children, node }) => <TermReference term={node?.properties['dataTerm']}>{children}</TermReference>,
 } satisfies Components
