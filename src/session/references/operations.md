@@ -1271,8 +1271,9 @@ and the left and right arrows are not bound there: the sections stand one
 above another, so no arrow says which way the next one is. A selection is
 kept by the item's id or the worktree's path, so it
 follows an item a bracket moves into another lane, and an item or a worktree
-that leaves the page takes the selection with it. The selected card is
-scrolled into view whenever it stands somewhere new. A step that has nowhere
+that leaves the page takes the selection with it. A step brings the selected
+card into view, and so does a bracket once its move has landed; a read that
+moves cards around never scrolls the page. A step that has nowhere
 further to go does nothing, and an arrow then scrolls the page as it always
 did; `h` and `l` are listed only while two lanes or sections hold anything.
 
@@ -1312,8 +1313,14 @@ the picker and a key that opens a page go through the router, which is safe
 because the board is one script, so no page's code is fetched after the
 document loaded. The page that leaves closes its event stream and any dialog
 or legend it had open and drops its reads; the page that arrives reads what
-it shows and opens its own stream, as it did when every move loaded a
-document. A move to another board, item or file mounts the page afresh, with
+it shows and draws only what it has read, and opens its own stream, as it
+did when every move loaded a document. What the daemon says about itself is
+the one answer the document keeps, since its stamp names the build the
+document loaded: each page's stream asks the daemon again when it opens, and
+a daemon started from other sources reloads the page. A board is known by
+the daemon's list of the boards it serves, asked again when the kept list
+does not name it, so a worktree taken on after the document loaded opens
+from the index. A move to another board, item or file mounts the page afresh, with
 nothing kept from the one before. The address bar shows each page's address,
 and Back, Forward and a reload return to it scrolled where it was left, once
 its reads have landed; a page reached by a link starts at the top. A middle
