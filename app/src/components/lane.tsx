@@ -249,9 +249,11 @@ function GroupBlock({ stage, name, items, dragging, landing: lands, ...actions }
   })
   // The heading is a place of its own, the group's end, as the index's epic
   // card takes a worktree dropped on it: the pointer alone decides it, and it
-  // outranks the group around it. Keys step a card among places by rank
-  // before distance, so a heading that outranks them would take every step;
-  // it is no place for a card they carry.
+  // outranks the group around it. It spans the group's top edge, so a card
+  // brought from above meets the heading before any part of the group that
+  // would place it first. Keys step a card among places by rank before
+  // distance, so a heading that outranks them would take every step; it is
+  // no place for a card they carry.
   const { ref: headingRef } = useDroppable({
     id: `heading:${listId({ stage, group: name })}`,
     type: 'group',
@@ -268,7 +270,8 @@ function GroupBlock({ stage, name, items, dragging, landing: lands, ...actions }
   const canUngroup = !isBatchedStage(stage) && ids.length > 0
   return (
     <div ref={ref} className={cn('space-y-2 rounded-xl border p-2', lands && landing)}>
-      <div ref={headingRef} className="flex items-start gap-1">
+      {/* Out to the group's border on three sides, so the top edge is the heading's; it draws where it always has. */}
+      <div ref={headingRef} className="-mx-2 -mt-2 flex items-start gap-1 px-2 pt-2">
         <h3 className="min-w-0 flex-1 py-1 text-xs font-medium tracking-wide break-words text-foreground">
           <Explained meaning={groupMeta[stage].heading} className="block">{name}</Explained>
         </h3>

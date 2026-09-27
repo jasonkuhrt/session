@@ -11,7 +11,7 @@ import {
   validateGroupName,
   validateItem,
 } from './model.ts';
-import { numberEntries } from './numbering.ts';
+import { type Candidate, itemCandidate, keptNumbers, numberEntries } from './numbering.ts';
 
 /**
  * Directory-layout rules. The session root holds a closed set of entries, and
@@ -235,28 +235,22 @@ const itemFile =(directory: string, prefix: number, item: ItemDraft): StageFileE
 });
 
 /**
- * The prefix each entry keeps: an item's and a group's own, and, for a group
- * with no directory yet, the one its first item had as a file of its own,
- * while that still falls between the prefixes kept before and after it. A
- * group gathered where that item stood so takes its number, and one gathered
- * anywhere else is numbered as any new entry is.
+ * The number each entry of a stage directory keeps: an item's, as
+ * `itemCandidate` has it, a group's own, and, for a group with no directory
+ * yet, the one its first item had as a file of its own while that still
+ * fits, so a group gathered where that item stood takes its number and one
+ * gathered anywhere else is numbered as any new entry is.
  */
 const keptPrefixes = (
   entries: ReadonlyArray<TopLevelEntry>,
   known: ReturnType<typeof currentPrefixes>,
-): Array<number | null> => {
-  const own = entries.map((entry) =>
-    (entry.kind === 'item' ? known.items.get(entry.item.id) : known.groups.get(entry.name)) ?? null
-  );
-  const kept: Array<number | null> = [];
-  for (const [index, entry] of entries.entries()) {
-    const first = entry.kind === 'group' && own[index] === null ? known.items.get(entry.items[0]!.id) : undefined;
-    const before = kept.findLast((value) => value !== null) ?? 0;
-    const after = own.slice(index + 1).find((value) => value !== null);
-    kept.push(first !== undefined && first > before && (after === undefined || first < after) ? first : own[index] ?? null);
-  }
-  return kept;
-};
+  placed: string | undefined,
+): Array<number | null> =>
+  keptNumbers(entries.map((entry): Candidate => {
+    if (entry.kind === 'item') return itemCandidate({ prefix: known.items.get(entry.item.id), placed: entry.item.id === placed });
+    const own = known.groups.get(entry.name) ?? null;
+    return own === null ? { own, tentative: known.items.get(entry.items[0]!.id) } : { own };
+  }));
 
 /**
  * The item files a stage directory should hold for these items, in this order:
@@ -266,17 +260,23 @@ export const renderStageDirectory = (input: {
   readonly stage: Stage;
   readonly items: ReadonlyArray<ItemDraft>;
   readonly current: ReadonlyArray<StageFileEntry>;
+  /** The item a move places within this stage, whose prefix on disk is where it was. */
+  readonly placed?: string | undefined;
 }): StageFileEntry[] => {
   const { stage } = input;
   const known = currentPrefixes(input.current);
   const entries = topLevelEntries(stage, input.items);
-  const prefixes = numberEntries(keptPrefixes(entries, known));
+  const prefixes = numberEntries(keptPrefixes(entries, known, input.placed));
   const parent = stageDirectory(stage);
   return entries.flatMap((entry, index) => {
     const prefix = prefixes[index]!;
     if (entry.kind === 'item') return [itemFile(parent, prefix, entry.item)];
     const directory = `${parent}/${formatPrefix(prefix)}-${entry.name}`;
-    const inner = numberEntries(entry.items.map((item) => known.items.get(`${entry.name}/${item.id}`) ?? null));
+    const inner = numberEntries(
+      keptNumbers(entry.items.map((item) =>
+        itemCandidate({ prefix: known.items.get(`${entry.name}/${item.id}`), placed: item.id === input.placed })
+      )),
+    );
     return entry.items.map((item, position) => itemFile(directory, inner[position]!, item));
   });
 };

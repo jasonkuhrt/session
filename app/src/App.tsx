@@ -148,8 +148,7 @@ function App() {
           </div>
         ) : session ? (
           <Board
-            stages={session.stages}
-            revision={session.revision}
+            session={session}
             pending={pending}
             choosing={choosing}
             onChoose={choose}

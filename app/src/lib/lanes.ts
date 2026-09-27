@@ -114,7 +114,7 @@ export function placementOf({ lanes, id }: { readonly lanes: readonly Lane[]; re
 export type Dragging = {
   /** The card held. */
   readonly id: string
-  /** Where it would land if it were dropped now; null while it would make a group instead. */
+  /** Where it would land if it were dropped now, drawn there or not; null while it would make a group instead. */
   readonly landing: Placement | null
   /** The card in no group it would make a group with if it were dropped now. */
   readonly onto: string | null
@@ -130,10 +130,16 @@ export const dragOf = ({ dragging, id }: { readonly dragging: Dragging | null; r
   words: dragging?.id === id ? dragging.words : null,
 })
 
+/** Where a card is drawn: its lane, and its group or none; null for a card the lanes do not draw. */
+export function placeOfCard({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }) {
+  const located = locate(lanes, id)
+  return located === null ? null : { stage: located.lane.stage, group: located.group }
+}
+
 /** The lane a card in no group is drawn in; null for a card in a group, or one the lanes do not draw. */
 export function laneOfLooseCard({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }): Stage | null {
-  const located = locate(lanes, id)
-  return located === null || located.group !== null ? null : located.lane.stage
+  const place = placeOfCard({ lanes, id })
+  return place === null || place.group !== null ? null : place.stage
 }
 
 /**
@@ -151,6 +157,23 @@ export function moveWords({ origin, placement }: { readonly origin: Placement; r
 
 /** The words over a held card that a drop would make a group of with the card it is over. */
 export const newGroupWords = (title: string) => `New group with “${title}”`
+
+/**
+ * Whether a card is drawn in this lane ahead of the group named, in no group
+ * or in a group before it: drawing it into the group would lift the group,
+ * its heading included, by the card's height.
+ */
+export function isDrawnAhead({ lanes, id, stage, group }: {
+  readonly lanes: readonly Lane[]
+  readonly id: string
+  readonly stage: Stage
+  readonly group: string
+}) {
+  const located = locate(lanes, id)
+  if (located === null || located.lane.stage !== stage) return false
+  const at = located.lane.entries.findIndex((entry) => entry.kind === 'group' && entry.name === group)
+  return at !== -1 && located.entry < at
+}
 
 /** Whether a card is already in this list, in the lanes as they are drawn. */
 export function isInList({ lanes, id, stage, group }: {

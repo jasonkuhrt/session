@@ -9,16 +9,22 @@ import * as Semaphore from 'effect/Semaphore';
 import type {
   ArchiveListing,
   ArchiveRecord,
+  CompleteItem,
   ContextEntry,
   ContextListing,
   FileInventory,
+  GroupItems,
   Item,
   LedgerEntry,
   LedgerListing,
+  MoveItem,
+  QueueBatch,
   Session,
   SkippedEntry,
   Stage,
   StageFile,
+  StartBatch,
+  UngroupItems,
 } from '../contract.ts';
 import { isBatchedStage, rulesFile, stageDirectory, stageNames } from '../contract.ts';
 import { archiveDay, archiveFilePath, closedByCommitNote, commitsThatClosed, parseArchiveName } from './archive.ts';
@@ -204,10 +210,11 @@ const diffFiles = (
   return changes;
 };
 
-const stageChanges = (state: StageState, items: ReadonlyArray<ItemDraft>): FileChange[] =>
+/** The files that carry `items` in the stage, less those on disk; `placed` is an item a move places within the stage. */
+const stageChanges = (state: StageState, items: ReadonlyArray<ItemDraft>, placed?: string): FileChange[] =>
   diffFiles(
     state.files,
-    renderStageDirectory({ stage: state.stage, items, current: state.files }),
+    renderStageDirectory({ stage: state.stage, items, current: state.files, placed }),
   );
 
 /** Where an item sits in a stage, as a refusal names it. */
@@ -867,24 +874,16 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    const moveItem = (input: {
-      readonly id: string;
-      readonly to: Stage;
-      readonly beforeId?: string | null | undefined;
-      /**
-       * A group of the target stage the item goes in front of, which puts it
-       * in no group: groups do not nest. Given instead of `beforeId`.
-       */
-      readonly beforeGroup?: string | null | undefined;
-      /**
-       * The group it lands in, which the target stage must already hold, or
-       * null for none. Left out, an item keeps its group inside its own stage
-       * and has none in another, as leaving Queue drops the batch, and none
-       * when it goes in front of a group.
-       */
-      readonly group?: string | null | undefined;
-      readonly revision: string;
-    }) =>
+    /**
+     * Move an item to a stage, in front of `beforeId` or `beforeGroup`, into
+     * `group` or none. `beforeGroup` names a group of the target stage the
+     * item goes in front of, which puts it in no group: groups do not nest.
+     * `group` is the group it lands in, which the target stage must already
+     * hold, or null for none; left out, an item keeps its group inside its own
+     * stage and has none in another, as leaving Queue drops the batch, and none
+     * when it goes in front of a group.
+     */
+    const moveItem = (input: MoveItem) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
@@ -978,7 +977,7 @@ export const makeRepository = (directory: string) =>
                 start: keepsPlace ? source.items.findIndex((candidate) => candidate.id === input.id) : undefined,
               })
             );
-            return yield* attempt(() => stageChanges(source, items));
+            return yield* attempt(() => stageChanges(source, items, input.id));
           }
 
           const items = yield* attempt(() =>
@@ -994,17 +993,12 @@ export const makeRepository = (directory: string) =>
     /**
      * Gather items of one flat stage into the group of that name. A group the
      * stage does not hold yet starts at its end, or in the place of the item
-     * `at` names, one of them and in no group; one it holds takes the items at
-     * its own end, in the order given. An item already in it stays where it
-     * is, so gathering is about belonging and `mv --before` about order.
+     * `at` names, one of them and in no group, which is gathered first; one it
+     * holds takes the items at its own end, in the order given, `at` first. An
+     * item already in it stays where it is, so gathering is about belonging
+     * and `mv --before` about order.
      */
-    const groupItems = (input: {
-      readonly name: string;
-      readonly ids: ReadonlyArray<string>;
-      /** The item, of those gathered and in no group, in whose place a group the stage does not hold yet starts. */
-      readonly at?: string | undefined;
-      readonly revision: string;
-    }) =>
+    const groupItems = (input: GroupItems) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const name = input.name.trim();
@@ -1042,10 +1036,13 @@ export const makeRepository = (directory: string) =>
             });
           }
           const state = stageOf(loaded, stage);
+          // The item `at` names comes first, so the group starts with it, in
+          // its place and with its number, whatever the order of `ids`.
+          const gathered = anchor === undefined ? found : [anchor, ...found.filter((entry) => entry !== anchor)];
           const items = yield* attempt(() => {
             validateGroupName(stage, name);
             let placed: ReadonlyArray<ItemDraft> = state.items;
-            for (const { item } of found) {
+            for (const { item } of gathered) {
               if (item.group === name) continue;
               const joined = draftOf(item, name);
               validateItem(stage, joined);
@@ -1072,7 +1069,7 @@ export const makeRepository = (directory: string) =>
      * order given. An item in no group stays where it is. Queue and Execute
      * refuse, because every item there belongs to a batch.
      */
-    const ungroupItems = (input: { readonly ids: ReadonlyArray<string>; readonly revision: string }) =>
+    const ungroupItems = (input: UngroupItems) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* namedItems(loaded, input.ids, 'Ungrouping');
@@ -1100,11 +1097,7 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    const queueBatch = (input: {
-      readonly name: string;
-      readonly ids: ReadonlyArray<string>;
-      readonly revision: string;
-    }) =>
+    const queueBatch = (input: QueueBatch) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const name = input.name.trim();
@@ -1148,7 +1141,7 @@ export const makeRepository = (directory: string) =>
         }),
       );
 
-    const startBatch = (input: { readonly revision: string }) =>
+    const startBatch = (input: StartBatch) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const queue = stageOf(loaded, 'Queue');
@@ -1224,7 +1217,7 @@ export const makeRepository = (directory: string) =>
         return [{ path, content }, ...changes];
       });
 
-    const completeItem = (input: { readonly id: string; readonly revision: string }) =>
+    const completeItem = (input: CompleteItem) =>
       mutate(input.revision, (loaded) =>
         Effect.gen(function*() {
           const found = yield* attempt(() => findRequiredItem(loaded.stages, input.id));
