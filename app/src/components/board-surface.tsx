@@ -16,7 +16,7 @@ import { Skeleton } from './ui/skeleton'
 import type { Choosing } from './workflow-card'
 
 /** One worktree's part of a board, before its session is known: its board's prefix, its name, and its session once the first read has landed. */
-export type SurfacePart = { readonly board: string; readonly name: string; readonly session: Session | null }
+type SurfacePart = { readonly board: string; readonly name: string; readonly session: Session | null }
 
 /** A read an event of the board's stream runs. */
 type Read = () => Promise<unknown>
@@ -28,7 +28,7 @@ type Read = () => Promise<unknown>
  * holds as it holds `changed`, and what a hold's end reads beside the sessions
  * when any event it held arrived.
  */
-export type SurfaceStream = {
+type SurfaceStream = {
   readonly board: string
   readonly on: Partial<Record<Exclude<StreamEvent, 'changed'>, Read>>
   readonly held: ReadonlyArray<StreamEvent>

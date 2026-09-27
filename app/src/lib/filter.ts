@@ -56,7 +56,7 @@ const projectOrder = (left: WorktreeSummary, right: WorktreeSummary) =>
  * write on the board is itself activity, and would move every lane's
  * worktrees under the card just put down.
  */
-export type Union = {
+type Union = {
   /** The epic's own name, or the name the index heads the project's section with. */
   readonly name: string
   /** Every worktree in view, served or not: one the daemon does not serve says why instead of drawing lanes. */
