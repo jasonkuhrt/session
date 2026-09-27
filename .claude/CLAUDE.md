@@ -156,11 +156,12 @@ rewrite folds into one segment; its params decode through Effect Schemas, and
 params a schema rejects are no route, so the address draws the not-found page;
 moving between pages loads a document. Every read is a TanStack Query query,
 read when its page mounts and, where its answer can change, again on the event
-that names it, one read per event since the stream carries no payload; the
-daemon's capabilities and a board's picker list are read once. On the board and
-the index a drag or a write holds the events it names until it ends, and the
-item page's writes hold nothing; a write's answer lands only over reads that
-predate it.
+that names it, one read per event since the stream carries no payload; a board's
+picker list is read once, and what the daemon says about itself when a page
+mounts and when a stream comes back, a changed `sourceStamp` reloading the page,
+drag and all. On the board and the index a drag or a write holds the events it
+names until it ends, and the item page's writes hold nothing; a write's answer
+lands only over reads that predate it.
 
 The board's own settings are an Effect Schema kept in the browser's
 localStorage through `KeyValueStore`: how the board draws, never the work, and
