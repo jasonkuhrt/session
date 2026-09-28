@@ -210,8 +210,9 @@ function Detail({ item, place, pending, onMove, sectionsAt }: {
             {item.body}
           </Markdown>
         ) : (
-          // A body with no sections is one node, the body itself.
-          <Node path={[...itemPath, idOf({ kind: 'section', at: bodyAt })]} className="-mx-2.5 px-2.5 py-1">
+          // A body with no sections is one node, the body itself, which a click
+          // only focuses, since a click in the prose is meant for the prose.
+          <Node path={[...itemPath, idOf({ kind: 'section', at: bodyAt })]} holds className="-mx-2.5 px-2.5 py-1">
             <Markdown page noneLines={none}>{item.body || '_No detail has been written yet._'}</Markdown>
           </Node>
         )}

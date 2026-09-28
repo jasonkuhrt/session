@@ -12,8 +12,12 @@ import type { Path, Seam } from './seam'
  * to go.
  */
 
-/** A node the view draws, as the moves read it: its level, and its element; its key says where it is. */
-export type Drawn = { readonly scope: string; readonly element: Element }
+/**
+ * A node the view draws, as the moves and a click read it: its level, its
+ * element, and whether other nodes are drawn inside it; its key says where it
+ * is.
+ */
+export type Drawn = { readonly scope: string; readonly element: Element; readonly holds: boolean }
 
 /** The nearest peer of the focus's level that way, across containers. */
 export const peerOf = ({ drawn, focusKey, direction }: {
@@ -48,7 +52,7 @@ export const into = ({ seam, memory, focus }: { readonly seam: Seam; readonly me
   return child === null ? seam.noInside(focus) : [...at, child]
 }
 
-/** `n`: the parent, landing on the node the focus came from; the root's children have nowhere further out. */
+/** `o`: the parent, landing on the node the focus came from; the root's children have nowhere further out. */
 export const outOf = ({ seam, focus }: { readonly seam: Seam; readonly focus: Path }): Path | string =>
   focus.length <= 2 ? seam.noOut(focus) : focus.slice(0, -1)
 

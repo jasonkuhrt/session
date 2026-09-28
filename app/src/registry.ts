@@ -22,7 +22,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Open the project’s board',
     scope: 'project',
     keys: ['Enter'],
-    clicks: [{ on: 'the focused project' }],
+    clicks: [{ on: 'a project' }],
     summary: 'Every worktree of the project on one board, a row each; a project of one worktree opens that worktree’s board.',
   }),
   command({
@@ -54,7 +54,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Open the epic’s board',
     scope: 'epic',
     keys: ['Enter'],
-    clicks: [{ on: 'the focused epic' }],
+    clicks: [{ on: 'an epic' }],
     summary: 'Every worktree of the epic on one board, a row each.',
   }),
   command({
@@ -79,7 +79,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Open the board',
     scope: 'worktree',
     keys: ['Enter'],
-    clicks: [{ on: 'the focused worktree' }],
+    clicks: [{ on: 'a worktree' }],
     summary: 'The worktree’s own board; i goes in to the same place.',
   }),
   command({
@@ -213,7 +213,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Open',
     scope: 'item',
     keys: ['Enter'],
-    clicks: [{ on: 'the focused card' }],
+    clicks: [{ on: 'a card' }],
     summary: 'The item’s page; i goes in to the same place.',
   }),
   command({
@@ -279,7 +279,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Fold, unfold or open',
     scope: 'section',
     keys: ['Enter'],
-    clicks: [{ on: 'the focused section or entry' }],
+    clicks: [{ on: 'a section’s heading or an entry' }],
     summary: 'A section or a ledger entry folds to its heading or opens again; a directory of context/ opens or closes; a file or a record opens.',
   }),
   command({

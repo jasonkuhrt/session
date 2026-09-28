@@ -4,32 +4,94 @@ import type { Drawn } from './motion'
 import { leafOf, pathOfKey } from './path'
 import type { Path, Seam, SurfaceApi } from './seam'
 
-/** What a click on a view leaves to the element it landed in: a link, a button, a field. */
-const ownClick = 'a[href], button, input, summary'
+/**
+ * What a click on a view leaves to the element it landed in: a link, a button,
+ * a field. A node drawn as a link is not one of them, since its click is the
+ * node's, and neither is a word with its tip behind it, which Tips draws as a
+ * button and which is still a word, as it is to a drag.
+ */
+const ownClick = 'a[href]:not([data-node]), button:not([data-explained]), input, summary'
+
+/**
+ * Whether a click is the browser's rather than the view's: one with ⌘, Ctrl,
+ * Alt or Shift held, or with any button but the first, which on a link opens
+ * its address in a tab or a window of its own, as TanStack Router's `Link`
+ * leaves it.
+ */
+export const browserClick = (event: MouseEvent | React.MouseEvent) =>
+  event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey
+
+/**
+ * The gesture a drag ends in, which is the drag's: its release, made while a
+ * drag holds the view, is marked before the drag library takes it, and the
+ * next press lets the mark go, for a browser that makes no click of it.
+ */
+function useDragEnd(held: boolean) {
+  const holding = React.useRef(held)
+  const ended = React.useRef(false)
+  React.useEffect(() => {
+    holding.current = held
+  })
+  React.useEffect(() => {
+    const onRelease = () => {
+      ended.current = holding.current
+    }
+    const onGesture = () => {
+      ended.current = false
+    }
+    window.addEventListener('pointerup', onRelease, true)
+    window.addEventListener('pointerdown', onGesture, true)
+    return () => {
+      window.removeEventListener('pointerup', onRelease, true)
+      window.removeEventListener('pointerdown', onGesture, true)
+    }
+  }, [])
+  return ended
+}
 
 /**
  * The view's clicks, heard once, on the view, and handed to the node they
- * landed in; a click on a link or a button inside a node is its own. A press
- * on a node leaves the browser's focus where it is, so the keys that follow
- * still reach the registry rather than the node.
+ * landed in, with what the node is; a click on a link or a button inside a
+ * node is its own, and a click the browser answers is left to it. A node
+ * drawn as a link leaves its address to the browser that way and nothing
+ * else: a plain click on it is the view's, so the link does not follow
+ * itself. A press on a node leaves the browser's focus where it is, so the
+ * keys that follow still reach the registry rather than the node. A click a
+ * browser makes of the release that ends a drag runs nothing, and follows no
+ * link.
  */
-export function useViewClicks({ view, drawn, clicked }: {
+export function useViewClicks({ view, drawn, held, clicked }: {
   readonly view: React.RefObject<HTMLElement | null>
   readonly drawn: React.RefObject<ReadonlyMap<string, Drawn>>
-  readonly clicked: (path: Path) => void
+  /** Whether a drag holds the view. */
+  readonly held: boolean
+  readonly clicked: (path: Path, node: Drawn) => void
 }) {
   const latest = React.useRef(clicked)
   React.useEffect(() => {
     latest.current = clicked
   })
+  const dragEnded = useDragEnd(held)
   React.useEffect(() => {
     const element = view.current
     if (element === null) return () => null
     const nodeOfEvent = (event: MouseEvent) =>
-      event.target instanceof HTMLElement && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
+      event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
     const onClick = (event: MouseEvent) => {
-      const key = nodeOfEvent(event)?.dataset['node']
-      if (key !== undefined && drawn.current.has(key)) latest.current(pathOfKey(key))
+      // Nothing follows it, a link it lands on included.
+      if (dragEnded.current) {
+        dragEnded.current = false
+        event.preventDefault()
+        return
+      }
+      if (browserClick(event)) return
+      const landed = nodeOfEvent(event)
+      const key = landed?.dataset['node']
+      const node = key === undefined ? undefined : drawn.current.get(key)
+      if (landed === null || key === undefined || node === undefined) return
+      // A node drawn as a link would follow itself; its click is the view's.
+      if (landed instanceof HTMLAnchorElement) event.preventDefault()
+      latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {
       if (nodeOfEvent(event) !== null) event.preventDefault()
@@ -40,7 +102,7 @@ export function useViewClicks({ view, drawn, clicked }: {
       element.removeEventListener('click', onClick)
       element.removeEventListener('mousedown', onPress)
     }
-  }, [view, drawn])
+  }, [view, drawn, dragEnded])
 }
 
 /**
@@ -79,17 +141,19 @@ const addressMilliseconds = 150
  * The focus as drawn, and how a move reaches the address. A move within a
  * view is drawn at once and written once the moves stop; it stands only while
  * it names another leaf than the address does, so a move back to where the
- * address is, or a carry that keeps the focus on its card, is the address's
- * focus at once, found where the node is now, and the address changing, as
- * the move's own write or Back does, is the focus from then on. A move to
- * another view is a history entry of its own, and a move still waiting for
- * the address is written into the entry it leaves first, so Back returns to
- * where the focus was; the history merges writes made in one tick, so the
- * new entry waits for that one.
+ * address is, or a carry that keeps the focus on what it carries, is the
+ * address's focus at once, found where the node is now, and the address
+ * changing, as the move's own write or Back does, is the focus from then on.
+ * A move to another view is a history entry of its own, and a move still
+ * waiting for the address is written into the entry it leaves first, so Back
+ * returns to where the focus was; the history merges writes made in one tick,
+ * so the new entry waits for that one.
  */
 export function useAddressedFocus(seam: Seam) {
   const [pending, setPending] = React.useState<Path | null>(null)
   const timer = React.useRef(0)
+  /** The move the timer is to write into the address, until it does. */
+  const waitingFor = React.useRef<Path | null>(null)
   React.useEffect(() => () => window.clearTimeout(timer.current), [])
   const addressLeaf = leafOf(seam.focus)
   const [addressSeen, setAddressSeen] = React.useState(addressLeaf)
@@ -99,26 +163,35 @@ export function useAddressedFocus(seam: Seam) {
   }
   const focus = pending !== null && leafOf(pending) !== addressLeaf ? pending : seam.focus
 
-  /** Writes a move, settling once the address holds it when it changes the view; `replace` puts another view in place of this entry. */
+  /**
+   * Writes a move, settling once the address holds it when it changes the
+   * view; `replace` puts another view in place of this entry. The move still
+   * waiting is read from where it waits rather than from what was drawn, so a
+   * move and another view in one tick, as a click that focuses a node and
+   * opens its page, leaves the node in the entry it leaves.
+   */
   const write = (target: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
-    const waited = timer.current !== 0
+    const waited = waitingFor.current
     window.clearTimeout(timer.current)
     timer.current = 0
+    waitingFor.current = null
     if (seam.viewOf(target) !== seam.viewOf(focus)) {
       if (replace) return seam.go(target, { replace: true })
-      const before = waited && leafOf(focus) !== addressLeaf ? seam.go(focus, { replace: true }) : Promise.resolve()
+      const before = waited !== null && leafOf(waited) !== addressLeaf ? seam.go(waited, { replace: true }) : Promise.resolve()
       return before.then(() => seam.go(target, { replace: false }))
     }
     setPending(target)
+    waitingFor.current = target
     timer.current = window.setTimeout(() => {
       timer.current = 0
+      waitingFor.current = null
       void seam.go(target, { replace: true })
     }, addressMilliseconds)
     return Promise.resolve()
   }
 
   /** Whether a move is still waiting for the address. */
-  const waiting = () => timer.current !== 0
+  const waiting = () => waitingFor.current !== null
 
   return { focus, write, waiting }
 }

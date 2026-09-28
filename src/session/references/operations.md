@@ -1082,7 +1082,7 @@ tables and HTML are not paragraphs, and neither a footnote nor the word `None`
 where it says a required section is intentionally empty is where a body starts,
 so a body that opens with an example gives the paragraph after it, and a body
 with no paragraph gives none. Enter or `i` on a card opens the item's page at
-`/w/<key>/item/<ID>`, and `n` there comes back to the card. The page reads the
+`/w/<key>/item/<ID>`, and `o` there comes back to the card. The page reads the
 item's Markdown at a reading width, and resolves Markdown links inside the body
 against the session directory. Its path line names the item's worktree, its
 stage and its group when it has one, whose tip says what a group is in that
@@ -1273,7 +1273,7 @@ The worktree's Ledger, Context and Archive commands open a page apiece, and its
 Rules command, while the session has `RULES.md`, opens that on a fourth page,
 the file page, which renders one file. Each is a view of the worktree: its path
 line runs All, the project, the epic when there is one, the worktree and the
-page; `n` from an entry comes to the page itself, and `n` from the page to the
+page; `o` from an entry comes to the page itself, and `o` from the page to the
 worktree on the index; and each reads at the item page's width and follows the
 files as the board does. The focus
 lands on the page's first entry, and `j` and `k` step through the entries. The
@@ -1329,10 +1329,13 @@ a lane is a node of the worktree's scope, so every command of a worktree, its
 terminal, Zed, agents, pull request, ledger and the rest, runs from anywhere in
 its row, and its detail line carries the worktree's facts, as on its own board,
 save the Linear issues, which only a worktree's own board asks linear for. A
-lane's detail line counts every worktree's items. The rows stand in one order
-that no activity moves, since every write on the board is activity: a project's
-main worktree first, as it heads the project on the index, an epic's worktrees
-placed by hand first, in their ranks' order, and the rest by name.
+click on the part itself, around its cards, only puts the focus on it, since the
+part holds them: the name at the row's left edge links to where Enter on the
+part goes, the worktree's board at the stage last focused there. A lane's detail
+line counts every worktree's items. The rows stand in one order that no activity
+moves, since every write on the board is activity: a project's main worktree
+first, as it heads the project on the index, an epic's worktrees placed by hand
+first, in their ranks' order, and the rest by name.
 
 A card moves only among its own worktree's lanes, which are the only ones whose
 session a move could be written to. Held over another worktree's lanes, it goes
@@ -1370,7 +1373,7 @@ and a file a ledger leaves out is named above the entries with its worktree's
 name. A worktree whose items cannot be read still has its entries merged, as its
 own ledger page lists them, with the reason above the entries; only a worktree
 whose key reaches another's board is left out, and says so there. Its path line
-runs All, the project or the epic, and Ledger, and `n` comes back to the epic
+runs All, the project or the epic, and Ledger, and `o` comes back to the epic
 or the project on the index.
 
 A page of an epic or a project follows one stream, the root's, however many
@@ -1408,32 +1411,32 @@ pages their entries.
 
 Two lines are on every view and stand still around it. The path line along the
 top is the only header there is: the focus's path from All, each step a click
-away, the focused one bright. A step carries its node's marks when the view does
-not draw the node, so a worktree's board shows the worktree's agents and pull
-request in its step, and a marked node's step carries the mark. The detail line
-along the bottom holds the focused node's facts, and only that node's, one line
-cut short rather than wrapped, which never moves what is above it; with Tips on,
-each fact says what it means as its tip. For a moment after a command it says
-what happened instead, or why nothing did, and at its end it names the mode
-while one is open, `-- 2 marked --`, `-- palette --`, `-- keys --`, and nothing
-in the normal one. Until the first key, it says where the keys are: "Press ? for
-every key, ; for the palette."
+away and a link to where it goes, the focused one bright. A step carries its
+node's marks when the view does not draw the node, so a worktree's board shows
+the worktree's agents and pull request in its step, and a marked node's step
+carries the mark. The detail line along the bottom holds the focused node's
+facts, and only that node's, one line cut short rather than wrapped, which never
+moves what is above it; with Tips on, each fact says what it means as its tip.
+For a moment after a command it says what happened instead, or why nothing did,
+and at its end it names the mode while one is open, `-- 2 marked --`,
+`-- palette --`, `-- keys --`, and nothing in the normal one. Until the first
+key, it says where the keys are: "Press ? for every key, ; for the palette."
 
 `h`, `j`, `k` and `l`, and the arrows, move the focus to the nearest peer at
 its level in the drawn geometry, left, down, up and right, across containers: a
 card's peers are every card on the board, in every lane and group, and a lane's
 peers the other lanes. On the index `j` and `k` move among rows of one level, a
 worktree to the next worktree, whatever epic or project it is in, and a heading
-is one `n` away. `i` goes in, to the child last focused there, else the first,
-and `n` comes out, to the parent, which the view that draws it takes, landing on
+is one `o` away. `i` goes in, to the child last focused there, else the first,
+and `o` comes out, to the parent, which the view that draws it takes, landing on
 the node you came from; out and in again comes back to the same place. `i` on a
 worktree opens its board, since the stages are its children, and `i` on a card
-opens the item's page, which Enter opens too; `n` from a stage returns to the
-index with the worktree focused, and `n` from a section to the card on its
+opens the item's page, which Enter opens too; `o` from a stage returns to the
+index with the worktree focused, and `o` from a section to the card on its
 board. A node can stand for another it heads: a project headed by its main
 worktree stands for that worktree, so the worktree's commands act on the
 project's row, and `i` and Enter on a project that holds nothing but its head
-open the main worktree's board, from which `n` comes back to the project. A
+open the main worktree's board, from which `o` comes back to the project. A
 move that has nowhere to go stays where it is and says so. A step brings the
 focused node into view, and a read that moves things around never scrolls the
 page.
@@ -1489,7 +1492,7 @@ dim. `?` or Escape closes it.
 | All | Key map | `?` |
 | All | Leave | Escape |
 | All | Left, Down, Up, Right | `h` `j` `k` `l`, the arrows |
-| All | In, Out | `i`, `n` |
+| All | In, Out | `i`, `o` |
 | All | Mark | `Space` |
 | All | Go to…, Settings | |
 | Project | Open the project's board | Enter |
@@ -1515,26 +1518,50 @@ dim. `?` or Escape closes it.
 | Record | Copy path | |
 
 A click is the mouse's form of a command, and each command's clicks are in the
-key map: a click on a node focuses it, a click on the focused node is its
-Enter, a click on a step of the path line focuses that step, and a drag is the
-carry, join, leave or group its drop makes. Every key is a TanStack Hotkeys
-registration made from the registry, in `app/src/substrate/bind.ts` and nowhere
-else, which the lint rule `session/hotkeys-in-binder` holds, and the registry
-is decoded when the app loads, which the build's prerender does, so a key bound
-twice in one scope, a repeated id or a root key bound anywhere else fails
-`bun run check`.
+key map. A click on a node puts the focus on it and runs the Enter the node
+binds itself, or what it stands for, at once, so one click opens a card, the
+row of a worktree, an epic or a project, a record of the archive or a Markdown
+file of `context/`, and folds a section, a ledger's entry or a directory of
+`context/`. Coming back out of a card or a row, by `o` or by Back, lands on the
+card or the row clicked; from a record or a file Back does, while `o` comes to
+the file page's heading and then out to the worktree, since the file page is
+not under the listing. A node whose own scope binds no Enter, a lane's, a
+group's or a page's heading, only takes the focus, since the Enter of a scope
+above it is the keyboard's, reached from the focus, and so does a node drawn
+around what a click inside it is meant for: a worktree's part of a lane on an
+epic's or a project's board, around its cards, and the body of an item with no
+sections, around its prose. A click on a step of the path line moves the focus
+there. A node a click opens another page from is drawn as a link to that page's
+address, through TanStack Router's `Link`, and so is every step of the path
+line, to where a click on it moves the focus: a click with ⌘, Ctrl, Alt or
+Shift held, or with any button but the first, is the browser's, so ⌘-click and
+a middle click open the address in a new tab and leave the page and its focus
+as they were, the context menu offers the link, and the status bar shows where
+it goes. A word with its tip behind it, while Tips is on, is part of the link it
+is in, and never a button there. A drag is the carry, join, leave or group its
+drop makes; it starts anywhere on a card or a row, its title included, and a
+click a browser makes of the release that drops it runs nothing.
+
+Every key is a TanStack Hotkeys registration made from the registry, in
+`app/src/substrate/bind.ts` and nowhere else, which the lint rule
+`session/hotkeys-in-binder` holds, and the registry is decoded when the app
+loads, which the build's prerender does, so a key bound twice in one scope, a
+repeated id or a root key bound anywhere else fails `bun run check`.
 
 A key is the page's own in a field: a letter, a space and the keys that edit
 type there, and outside the palette and a dialog every key does. Enter or
-`Space` on a link or a button that has the browser's focus is that control's.
-Nothing acts while a card or a row is dragged. A movement key repeats while it
-is held; every other key acts on the first keydown of a press, and the repeats
-a held key sends do nothing, so a held `Shift+l` carries a card one stage. A key
-that neither runs nor refuses keeps what the browser does with it.
+`Space` on a link or a button that has the browser's focus is that control's; a
+press on a node, a step of the path line or a worktree's name on an epic's or a
+project's board leaves the browser's focus with the page, so the key after a
+click reaches the registry. Nothing acts while a card or a row is dragged. A
+movement key repeats while it is held; every other key acts on the first keydown
+of a press, and the repeats a held key sends do nothing, so a held `Shift+l`
+carries a card one stage. A key that neither runs nor refuses keeps what the
+browser does with it.
 
 The focus is in the address, as `?focus=` and the focused node's id, with
 `via=` on an item's page opened from an epic's or a project's board to say
-which board `n` returns to. A move within a view replaces the address once the
+which board `o` returns to. A move within a view replaces the address once the
 focus has rested for 150 ms, so a reload lands where it was and a held key
 writes history once; a move to another view pushes a history entry, so the
 browser's Back and Forward are the jumplist, returning to each view with its

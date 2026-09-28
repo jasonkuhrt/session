@@ -91,7 +91,7 @@ function MemberRow({ path, row, epic, context }: { path: Path; row: WorktreeSumm
   const ref = useBothRefs(holdRef, dropRef)
   const side = markedSide({ marker: context.marker, list: epicList(epic), id: row.path })
   return (
-    <Node path={path} nodeRef={ref} className={cn(rowGrid, 'cursor-default', isDragSource && 'opacity-40')}>
+    <Node path={path} nodeRef={ref} className={cn(rowGrid, isDragSource && 'opacity-40')}>
       {side === null ? null : <LandingLine side={side} gap="row" />}
       <WorktreeLine row={row} context={context} indent="pl-8" />
     </Node>

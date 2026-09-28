@@ -4,7 +4,7 @@ import type { CommandSchema } from './registry'
  * The substrate's own commands, which every app's registry starts with: the
  * palette, the key map and leaving, the moves among peers and through depth,
  * marking, the go-to, and the keys of the two modes. The moves are commands
- * of the root scope, so no level binds `h` `j` `k` `l`, `i`, `n` or the
+ * of the root scope, so no level binds `h` `j` `k` `l`, `i`, `o` or the
  * arrows to anything else.
  */
 
@@ -108,7 +108,7 @@ const written: readonly Written[] = [
     id: substrateIds.out,
     name: 'Out',
     scope: rootScope,
-    keys: ['n'],
+    keys: ['o'],
     summary: 'Come out to the parent, landing on the node you came from.',
   }),
   command({
@@ -124,7 +124,8 @@ const written: readonly Written[] = [
     scope: rootScope,
     keys: [],
     clicks: [{ on: 'a node' }, { on: 'a step of the path line' }],
-    summary: 'Put the focus on what was clicked. A click on the focused node is its Enter.',
+    summary:
+      'Put the focus on what was clicked and run its own Enter; a node that binds none, or holds others, only takes the focus. With ⌘, Ctrl, Alt or Shift, or another button than the first, a click is the browser’s.',
   }),
   command({
     id: substrateIds.goTo,

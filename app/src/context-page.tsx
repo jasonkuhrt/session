@@ -99,17 +99,17 @@ export function ContextPage() {
       pending={false}
       rules={null}
       page={{
+        // A Markdown file opens on the file page, beside context/ under its worktree.
+        opens: (at, path) => {
+          const found = visible.find(({ node }) => node.entry.path === at)?.node
+          return found?.entry.kind === 'file' && isMarkdownPath(at) ? [...path.slice(0, -2), idOf({ kind: 'record', page: 'file', path: at })] : null
+        },
         enter: (at, surface) => {
           const found = visible.find(({ node }) => node.entry.path === at)?.node
           if (found === undefined) return
           if (found.entry.kind === 'directory') {
             if (found.children.length === 0) surface.flash(`${at}/ is empty`)
             else folds.toggle(`${foldKey}/${at}`)
-            return
-          }
-          if (isMarkdownPath(at)) {
-            const record = surface.focus.slice(0, -2)
-            surface.setFocus([...record, idOf({ kind: 'record', page: 'file', path: at })])
             return
           }
           const href = absoluteHref(rawFileHref({ board, path: at }))

@@ -248,7 +248,7 @@ export function SettingsMode({ onClose, children }: { readonly onClose: () => vo
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Settings, in this browser</DialogTitle>
-          <DialogDescription>How the board draws, never the work. Each says what it does.</DialogDescription>
+          <DialogDescription>How the app draws, never the work. Each says what it does.</DialogDescription>
         </DialogHeader>
         {children}
       </DialogContent>

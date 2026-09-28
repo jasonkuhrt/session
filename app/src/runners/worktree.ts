@@ -7,7 +7,7 @@ import type { Runner, Target } from '../substrate/seam'
 import { agentsRunner } from './agents'
 import { memberRunners } from './members'
 import type { RunnerContext } from './shared'
-import { copy, onBoardOf, openBoard, reasonOf, rowOfTarget, unserved } from './shared'
+import { boardFocus, copy, onBoardOf, opening, reasonOf, rowOfTarget, unserved } from './shared'
 
 /** What a worktree's commands do, wherever the worktree is on the focus path: its board, its tools, its links and its pages. */
 
@@ -51,18 +51,19 @@ const opener = ({ tree }: RunnerContext, tool: {
   },
 })
 
-const openWorktree = ({ tree }: RunnerContext): Runner => ({
-  when: (target, focus) => {
-    const row = rowOfTarget({ tree, target })
-    const refused = unserved(row)
-    if (refused !== null) return refused
-    return row !== null && onBoardOf({ tree, focus, id: idOf({ kind: 'worktree', path: row.path }) }) ? `This is the board of ${row.name}` : true
-  },
-  run: (target, surface) => {
-    const row = rowOfTarget({ tree, target })
-    if (row !== null) openBoard({ board: tree.worktreePath(row), surface })
-  },
-})
+const openWorktree = ({ tree }: RunnerContext): Runner =>
+  opening({
+    when: (target, focus) => {
+      const row = rowOfTarget({ tree, target })
+      const refused = unserved(row)
+      if (refused !== null) return refused
+      return row !== null && onBoardOf({ tree, focus, id: idOf({ kind: 'worktree', path: row.path }) }) ? `This is the board of ${row.name}` : true
+    },
+    to: (target, recall) => {
+      const row = rowOfTarget({ tree, target })
+      return row === null ? null : boardFocus({ board: tree.worktreePath(row), recall })
+    },
+  })
 
 const pullRequest = ({ tree, input }: RunnerContext): Runner => ({
   when: (target) => {

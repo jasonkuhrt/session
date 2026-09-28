@@ -52,7 +52,8 @@ export function ArchivePage() {
       pending={false}
       rules={null}
       page={{
-        enter: (at, surface) => surface.setFocus([...surface.focus.slice(0, -2), idOf({ kind: 'record', page: 'file', path: at })]),
+        // A record opens on the file page, beside the archive under its worktree.
+        opens: (at, path) => [...path.slice(0, -2), idOf({ kind: 'record', page: 'file', path: at })],
         pathOf: (at) => (directory === null ? null : `${directory}/${at}`),
         path: directory === null ? null : `${directory}/archive`,
       }}

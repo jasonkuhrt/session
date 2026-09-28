@@ -25,8 +25,9 @@ export type CardActions = {
 /**
  * A card: the item's title and its id, dim, and nothing else; what else is
  * known about it is in the detail line while it has the focus, and its page
- * is one Enter away. It is dragged by its whole self, for the mouse; every
- * drop has a key of its own.
+ * is one Enter or one click away, the card being a link there. It is dragged
+ * by its whole self, its title included, for the mouse; every drop has a key
+ * of its own.
  */
 export function WorkflowCard({ path, board, item, index, stage, lands, words, pending, accepts }: CardActions & {
   /** Where the card is in the tree. */

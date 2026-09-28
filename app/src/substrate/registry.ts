@@ -54,7 +54,7 @@ export const KeyFromTextSchema = Schema.String.pipe(
   ),
 )
 
-/** A click that runs a command, named by what it lands on, such as the focused row or a step of the path line. */
+/** A click that runs a command, named by what it lands on, such as a row or a step of the path line. */
 export const ClickSchema = Schema.Struct({ on: Schema.NonEmptyString })
 
 /**

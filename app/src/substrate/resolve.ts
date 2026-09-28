@@ -3,7 +3,7 @@ import type { Mode } from './modes'
 import { leafOf } from './path'
 import type { Key } from './registry'
 import { keyText } from './registry'
-import type { Path, Seam, Target } from './seam'
+import type { Address, Path, Recall, Seam, Target } from './seam'
 
 /**
  * How a key finds its command: the nodes on the focus path, nearest first,
@@ -76,6 +76,28 @@ const modeKeys: Record<Mode['kind'], { readonly scope: string | null; readonly a
   settings: { scope: null, allows: new Set([substrateIds.leave]) },
 }
 
+/** The command the first of some targets to bind a key runs there, and why it cannot when it cannot; null when none binds it. */
+const boundAt = ({ seam, key, targets, focus, own, admits }: {
+  readonly seam: Seam
+  readonly key: Key
+  readonly targets: readonly Target[]
+  readonly focus: Path
+  readonly own: OwnWhen
+  /** Whether a command a target's scope binds the key to may answer it. */
+  readonly admits: (target: Target, id: string) => boolean
+}) => {
+  const text = keyText(key)
+  for (const target of targets) {
+    const command = seam.registry.find((candidate) =>
+      candidate.scope === target.scope && candidate.keys.some((bound) => keyText(bound) === text) && admits(target, candidate.id)
+    )
+    if (command === undefined) continue
+    const answer = canRun({ seam, id: command.id, target, focus, own })
+    return { command, target, refused: answer === true ? null : answer }
+  }
+  return null
+}
+
 /** The command a key runs at the focus, on the node it acts on, and why it cannot when it cannot; null when no scope binds the key. */
 export const resolveKey = ({ seam, key, focus, mode, own }: {
   readonly seam: Seam
@@ -84,7 +106,6 @@ export const resolveKey = ({ seam, key, focus, mode, own }: {
   readonly mode: Mode | null
   readonly own: OwnWhen
 }) => {
-  const text = keyText(key)
   const rules = mode === null ? null : modeKeys[mode.kind]
   const root = seam.scopes[0] ?? ''
   const targets: Target[] = rules === null
@@ -93,16 +114,46 @@ export const resolveKey = ({ seam, key, focus, mode, own }: {
       ...(rules.scope === null ? [] : [{ scope: rules.scope, id: rules.scope, path: focus }]),
       { scope: root, id: seam.root, path: [seam.root] },
     ]
-  for (const target of targets) {
-    const command = seam.registry.find((candidate) =>
-      candidate.scope === target.scope && candidate.keys.some((bound) => keyText(bound) === text) &&
-      (rules === null || target.scope !== root || rules.allows.has(candidate.id))
-    )
-    if (command === undefined) continue
-    const answer = canRun({ seam, id: command.id, target, focus, own })
-    return { command, target, refused: answer === true ? null : answer }
-  }
-  return null
+  return boundAt({ seam, key, targets, focus, own, admits: (target, id) => rules === null || target.scope !== root || rules.allows.has(id) })
+}
+
+/** Enter, the key a click on a node stands for. */
+const enter: Key = { key: 'Enter', shift: false, ctrl: false }
+
+/**
+ * What a click on a node runs once it has the focus: the Enter the node binds
+ * itself, or what it stands for, on it, and why it cannot when it cannot. It
+ * is null for a node whose own scope binds no Enter, so the click only takes
+ * the focus: the Enter of a scope above it is the keyboard's, reached from
+ * the focus.
+ */
+export const resolveClick = ({ seam, path, own }: { readonly seam: Seam; readonly path: Path; readonly own: OwnWhen }) =>
+  boundAt({
+    seam,
+    key: enter,
+    // The node, then what it stands for, which `targetsOf` lists right after it.
+    targets: targetsOf({ seam, path }).slice(0, 1 + seam.standsFor(path).length),
+    focus: path,
+    own,
+    admits: () => true,
+  })
+
+/**
+ * Where a node's link goes: the page its own Enter opens, where the command
+ * says where that is; null for a node whose Enter stays on the page or cannot
+ * run there. It is read while the surface draws, so it asks no substrate
+ * command, whose answer reads the drawn geometry, and none binds Enter at a
+ * node; and it hands the command the focus memory alone, since the rest of
+ * the surface is as the last render left it.
+ */
+export const linkAt = ({ seam, path, recall }: { readonly seam: Seam; readonly path: Path; readonly recall: Recall }): Address | null => {
+  const hit = resolveClick({ seam, path, own: () => true })
+  if (hit === null || hit.refused !== null) return null
+  const to = seam.runners[hit.command.id]?.to?.(hit.target, recall) ?? null
+  if (to === null) return null
+  const target = seam.normalize(to)
+  // Another view, which a click opens as a move of its own.
+  return seam.viewOf(target) === seam.viewOf(path) ? null : seam.link(target, { replace: false })
 }
 
 /** Keys a field types with, which stay the field's while a mode's input has the focus. */
