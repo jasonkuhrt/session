@@ -228,7 +228,9 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
 /**
  * A worktree's name at its row's left edge on an epic's or a project's board,
  * with its marks: a link to that worktree's own board, which Enter on any of
- * its parts opens too.
+ * its parts opens too. A press on it leaves the browser's focus with the
+ * page, as a press on a node does, so a key after a click with a modifier,
+ * which opens the board in a new tab, still reaches the registry.
  */
 function WorktreeName({ part }: { part: BoardPart }) {
   const tip = useTip()
@@ -237,6 +239,7 @@ function WorktreeName({ part }: { part: BoardPart }) {
       to="/w/$key/"
       params={{ key: part.name }}
       tabIndex={-1}
+      onMouseDown={(event) => event.preventDefault()}
       className="sticky left-0 z-10 flex min-w-0 items-start gap-2 border-t bg-background py-2 pr-2 text-left text-sm text-muted-foreground hover:text-foreground"
       title={tip(`Open ${part.name}’s own board.`)}
     >
