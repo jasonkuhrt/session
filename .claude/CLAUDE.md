@@ -215,10 +215,18 @@ fails the build. TanStack Hotkeys binds the registry's keys in
 substrate under `app/src/substrate/` holds no session noun and asks the app
 through one seam. A key runs the nearest scope's command on the focus path. When
 that command cannot run, the detail line says why, and the key never falls
-through. The palette on `;` and the key map on `?` read the registry. A key
-never acts in a field outside a mode or during a drag, takes the browser's
-default only when it runs or refuses, and acts once when held, unless it is a
-move.
+through. The palette on `;` and the key map on `?` read the registry. A click on
+a node puts the focus on it and runs the Enter the node binds itself, at once;
+an opener names its destination once, in its runner's `to`, which its run and
+the node's link both read, so a node whose Enter opens another of the board's
+pages, and each step of the path line, is drawn as the app's link to that
+address, which the app registers with the substrate through its `Register`
+interface and draws with TanStack Router's `Link`, the substrate importing no
+router; a click with a modifier or the middle button is then the browser's, and
+a node that binds no Enter of its own, or holds other nodes, only takes the
+focus. A key never acts in a field outside a mode or during a drag, takes the
+browser's default only when it runs or refuses, and acts once when held, unless
+it is a move.
 
 The board's own settings are an Effect Schema kept in the browser's localStorage
 through `KeyValueStore`: how the board draws, never the work, and nothing in
