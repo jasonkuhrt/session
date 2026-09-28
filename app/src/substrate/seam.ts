@@ -136,7 +136,7 @@ export type Seam = {
   readonly markable: (path: Path) => true | string
   /** What the detail line says when `i` finds nothing inside. */
   readonly noInside: (path: Path) => string
-  /** What it says when `n` is pressed at the root. */
+  /** What it says when `o` is pressed at the root. */
   readonly noOut: (path: Path) => string
   /** The settings the app draws, when the settings command opens them. */
   readonly settings: React.ReactNode

@@ -1082,7 +1082,7 @@ tables and HTML are not paragraphs, and neither a footnote nor the word `None`
 where it says a required section is intentionally empty is where a body starts,
 so a body that opens with an example gives the paragraph after it, and a body
 with no paragraph gives none. Enter or `i` on a card opens the item's page at
-`/w/<key>/item/<ID>`, and `n` there comes back to the card. The page reads the
+`/w/<key>/item/<ID>`, and `o` there comes back to the card. The page reads the
 item's Markdown at a reading width, and resolves Markdown links inside the body
 against the session directory. Its path line names the item's worktree, its
 stage and its group when it has one, whose tip says what a group is in that
@@ -1273,7 +1273,7 @@ The worktree's Ledger, Context and Archive commands open a page apiece, and its
 Rules command, while the session has `RULES.md`, opens that on a fourth page,
 the file page, which renders one file. Each is a view of the worktree: its path
 line runs All, the project, the epic when there is one, the worktree and the
-page; `n` from an entry comes to the page itself, and `n` from the page to the
+page; `o` from an entry comes to the page itself, and `o` from the page to the
 worktree on the index; and each reads at the item page's width and follows the
 files as the board does. The focus
 lands on the page's first entry, and `j` and `k` step through the entries. The
@@ -1373,7 +1373,7 @@ and a file a ledger leaves out is named above the entries with its worktree's
 name. A worktree whose items cannot be read still has its entries merged, as its
 own ledger page lists them, with the reason above the entries; only a worktree
 whose key reaches another's board is left out, and says so there. Its path line
-runs All, the project or the epic, and Ledger, and `n` comes back to the epic
+runs All, the project or the epic, and Ledger, and `o` comes back to the epic
 or the project on the index.
 
 A page of an epic or a project follows one stream, the root's, however many
@@ -1427,16 +1427,16 @@ its level in the drawn geometry, left, down, up and right, across containers: a
 card's peers are every card on the board, in every lane and group, and a lane's
 peers the other lanes. On the index `j` and `k` move among rows of one level, a
 worktree to the next worktree, whatever epic or project it is in, and a heading
-is one `n` away. `i` goes in, to the child last focused there, else the first,
-and `n` comes out, to the parent, which the view that draws it takes, landing on
+is one `o` away. `i` goes in, to the child last focused there, else the first,
+and `o` comes out, to the parent, which the view that draws it takes, landing on
 the node you came from; out and in again comes back to the same place. `i` on a
 worktree opens its board, since the stages are its children, and `i` on a card
-opens the item's page, which Enter opens too; `n` from a stage returns to the
-index with the worktree focused, and `n` from a section to the card on its
+opens the item's page, which Enter opens too; `o` from a stage returns to the
+index with the worktree focused, and `o` from a section to the card on its
 board. A node can stand for another it heads: a project headed by its main
 worktree stands for that worktree, so the worktree's commands act on the
 project's row, and `i` and Enter on a project that holds nothing but its head
-open the main worktree's board, from which `n` comes back to the project. A
+open the main worktree's board, from which `o` comes back to the project. A
 move that has nowhere to go stays where it is and says so. A step brings the
 focused node into view, and a read that moves things around never scrolls the
 page.
@@ -1492,7 +1492,7 @@ dim. `?` or Escape closes it.
 | All | Key map | `?` |
 | All | Leave | Escape |
 | All | Left, Down, Up, Right | `h` `j` `k` `l`, the arrows |
-| All | In, Out | `i`, `n` |
+| All | In, Out | `i`, `o` |
 | All | Mark | `Space` |
 | All | Go to…, Settings | |
 | Project | Open the project's board | Enter |
@@ -1522,7 +1522,7 @@ key map. A click on a node puts the focus on it and runs the Enter the node
 binds itself, or what it stands for, at once, so one click opens a card, the
 row of a worktree, an epic or a project, a record of the archive or a Markdown
 file of `context/`, and folds a section, a ledger's entry or a directory of
-`context/`; coming back out, by `n` or by Back, lands on the node clicked. A
+`context/`; coming back out, by `o` or by Back, lands on the node clicked. A
 node whose own scope binds no Enter, a lane's, a group's or a page's heading,
 only takes the focus, since the Enter of a scope above it is the keyboard's,
 reached from the focus, and so does a worktree's part of a lane on an epic's or
@@ -1554,7 +1554,7 @@ that neither runs nor refuses keeps what the browser does with it.
 
 The focus is in the address, as `?focus=` and the focused node's id, with
 `via=` on an item's page opened from an epic's or a project's board to say
-which board `n` returns to. A move within a view replaces the address once the
+which board `o` returns to. A move within a view replaces the address once the
 focus has rested for 150 ms, so a reload lands where it was and a held key
 writes history once; a move to another view pushes a history entry, so the
 browser's Back and Forward are the jumplist, returning to each view with its

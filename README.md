@@ -112,7 +112,7 @@ revision, so a stale tab cannot overwrite a later edit on disk.
 Every view is keyboard first, and draws only the path and the work. One focus
 is always on a node, a project, an epic, a worktree, a stage, a group, a card
 or a section, and `h` `j` `k` `l` or the arrows move it among its peers, `i`
-goes in and `n` comes out. The path line along the top, the only header, names
+goes in and `o` comes out. The path line along the top, the only header, names
 the focus's path from All, each step a click away, and the detail line along
 the bottom holds the focused node's facts. Every action is a command: `;` opens
 the palette, the commands that can run here, nearest first, then every project,
