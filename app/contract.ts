@@ -789,6 +789,18 @@ export const UngroupItemsSchema = Schema.Struct({
 });
 export type UngroupItems = typeof UngroupItemsSchema.Type;
 
+/**
+ * What `POST /api/rename-group` takes: a group of a stage, by its name, and
+ * the name it takes where it stands, keeping its number and its place.
+ */
+export const RenameGroupSchema = Schema.Struct({
+  stage: StageSchema,
+  from: Schema.String,
+  to: Schema.String,
+  revision: Schema.String,
+});
+export type RenameGroup = typeof RenameGroupSchema.Type;
+
 /** What `POST /api/batch` takes: Batch items, queued as the batch of that name. */
 export const QueueBatchSchema = Schema.Struct({
   ids: Schema.Array(Schema.String),
@@ -819,6 +831,7 @@ export const sessionWrites = {
   '/api/move': MoveItemSchema,
   '/api/group': GroupItemsSchema,
   '/api/ungroup': UngroupItemsSchema,
+  '/api/rename-group': RenameGroupSchema,
   '/api/batch': QueueBatchSchema,
   '/api/start': StartBatchSchema,
   '/api/complete': CompleteItemSchema,
@@ -837,6 +850,17 @@ export const FocusSessionSchema = Schema.Struct({
 export const WorktreePathSchema = Schema.Struct({
   path: Schema.String,
 });
+
+/**
+ * What `POST /api/zed` takes: the worktree by its path, as the terminal takes
+ * it, and, to open one of its session's files at its first line in the
+ * worktree's own window, that file's path under the session.
+ */
+export const ZedOpenSchema = Schema.Struct({
+  path: Schema.String,
+  file: Schema.String.pipe(Schema.optionalKey),
+});
+export type ZedOpen = typeof ZedOpenSchema.Type;
 
 /** The result of asking the daemon to focus a session's terminal. */
 export const FocusResultSchema = Schema.Union([

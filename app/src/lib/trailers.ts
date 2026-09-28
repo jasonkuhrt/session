@@ -46,14 +46,7 @@ export const problemSentence = (problem: TrailerProblem): string => {
   return idSentences[problem.kind](problem)
 }
 
-/** One problem among a worktree's: a commit's line, or a commit's id, for each way a trailer can go wrong. */
-export const problemKey = (problem: TrailerProblem): string =>
-  `${problem.commit}:${problem.kind}:${problem.kind === 'unknown' || problem.kind === 'empty' ? problem.line : problem.id}`
-
 /** What these trailers are, for whichever surface names them. */
 export const trailerMeaning =
   `A commit whose message ends with “${doneTrailer}: <ID>” files that item as done when the commit is made. Only this branch’s unpushed commits are read, so a problem shows while the commit can still be amended, and goes once it is fixed or pushed.`
 
-/** The count, as the index names it. */
-export const problemCount = (count: number) =>
-  count === 1 ? '1 commit trailer not applied' : `${count} commit trailers not applied`

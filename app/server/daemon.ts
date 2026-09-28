@@ -1,5 +1,5 @@
 import { closeSync, openSync } from 'node:fs';
-import { basename, delimiter, dirname, join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve, sep } from 'node:path';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
@@ -37,6 +37,7 @@ import type {
   EpicWrite,
   IssuesReport,
   Links,
+  OpenResult,
   OrderWrite,
   PullRequestReports,
   Stage,
@@ -68,6 +69,7 @@ import {
   namedChannels,
   noBoardResponse,
   openResponse,
+  zedResponse,
   orderResponse,
   refuse,
   renameResponse,
@@ -633,6 +635,20 @@ type DaemonServices = Layer.Success<typeof daemonServices>;
 const nodeRuntime = ManagedRuntime.make(daemonServices);
 
 const runNode = <A, E>(effect: Effect.Effect<A, E, DaemonServices>) => nodeRuntime.runPromise(effect);
+
+/**
+ * A file of a worktree's session, by its path under the session, as Zed is
+ * handed it: absolute and real, or null for a path that leads outside the
+ * session, through a link or otherwise, or to anything but a regular file.
+ */
+const sessionFile = ({ worktree, file }: { readonly worktree: string; readonly file: string }) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const root = yield* fs.realPath(join(worktree, '.session'));
+    const real = yield* fs.realPath(join(root, file));
+    if (!real.startsWith(`${root}${sep}`)) return null;
+    return (yield* fs.stat(real)).type === 'File' ? real : null;
+  }).pipe(Effect.orElseSucceed(() => null));
 
 /** A long-lived fiber on the daemon's services: a watcher, which ends only when interrupted. */
 const forkNode = (effect: Effect.Effect<void, never, DaemonServices>) => nodeRuntime.runFork(effect);
@@ -1689,10 +1705,20 @@ export const runDaemon = async () => {
       : await runNode(openTerminal({ path: entry.path, worktrees: [...tracked.keys()] }));
   };
 
-  /** Zed on a tracked worktree; undefined for a path the daemon does not track or that is gone. */
-  const zedAt = async (path: string) => {
+  /**
+   * Zed on a tracked worktree, and in its window one file of its session at
+   * its first line when one is named, by its path under the session;
+   * undefined for a path the daemon does not track or that is gone, and a
+   * refusal for a file that is not one the session holds.
+   */
+  const zedAt = async ({ path, file }: { readonly path: string; readonly file?: string }): Promise<OpenResult | undefined> => {
     const entry = await liveWorktree(path);
-    return entry === null ? undefined : await runNode(openInZed(entry.path));
+    if (entry === null) return undefined;
+    if (file === undefined) return await runNode(openInZed({ path: entry.path, file: null }));
+    const real = await runNode(sessionFile({ worktree: entry.path, file }));
+    return real === null
+      ? { ok: false, line: `${file} is no file of this worktree’s session.` }
+      : await runNode(openInZed({ path: entry.path, file: real }));
   };
 
   /**
@@ -1793,7 +1819,7 @@ export const runDaemon = async () => {
   const rootWrites: ReadonlyMap<string, (request: Request) => Promise<Response>> = new Map([
     ['/api/agents/focus', (request) => focusResponse({ request, focus: (pid) => runNode(focus(pid)) })],
     ['/api/terminal', (request) => openResponse({ request, open: terminalAt })],
-    ['/api/zed', (request) => openResponse({ request, open: zedAt })],
+    ['/api/zed', (request) => zedResponse({ request, open: zedAt })],
     ['/api/worktrees/epic', (request) => epicResponse({ request, write: setEpicAt })],
     ['/api/worktrees/rename', (request) => renameResponse({ request, write: renameAt })],
     ['/api/worktrees/order', (request) => orderResponse({ request, write: setRankAt })],

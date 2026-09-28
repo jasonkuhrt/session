@@ -1,26 +1,18 @@
 import type { WorktreeSummary } from '../../contract'
-import { toBoard, toEpic, toProject } from './base'
 import type { ProjectSection } from './dashboard'
 import { dashboardOf, sectionKeyOf } from './dashboard'
 import { rankedFirst } from './order'
 
 /**
- * What a board shows: the worktrees a filter names, read from the facts the
- * daemon serves on every row of the index, `epic`, `main` and `repository`,
- * and nothing stored of its own. A worktree's filter names that worktree, by
- * its name, as `/w/<key>/` carries it; an epic's names the linked worktrees
- * whose sessions name it; a project's names its repository's worktrees, by
- * the path the index heads its section with, or the one folder outside Git
- * that is a project of its own. An epic's board and a project's are a union:
- * the lanes of every worktree in view, each under its worktree's name.
+ * What an epic's board and a project's show: the worktrees the filter names,
+ * read from the facts the daemon serves on every row of the index, `epic`,
+ * `main` and `repository`, and nothing stored of its own. An epic's names the
+ * linked worktrees whose sessions name it; a project's names its
+ * repository's worktrees, by the path the index heads its section with, or
+ * the one folder outside Git that is a project of its own. Either board is a
+ * union: the lanes of every worktree in view, each under its worktree's name.
  */
-export type Filter =
-  | { readonly kind: 'worktree'; readonly name: string }
-  | { readonly kind: 'epic'; readonly name: string }
-  | { readonly kind: 'project'; readonly path: string }
-
-/** A filter whose board is a union of worktrees' lanes: an epic's, or a project's. */
-export type UnionFilter = Exclude<Filter, { readonly kind: 'worktree' }>
+export type UnionFilter = { readonly kind: 'epic'; readonly name: string } | { readonly kind: 'project'; readonly path: string }
 
 /** The board a row's worktree is served under: its key under `/w/`, which every write to its session goes to. */
 export const boardOf = (row: Pick<WorktreeSummary, 'key'>) => `/w/${row.key}`
@@ -35,12 +27,6 @@ export const boardOf = (row: Pick<WorktreeSummary, 'key'>) => `/w/${row.key}`
  */
 export const keyTaken = ({ row, rows }: { readonly row: WorktreeSummary; readonly rows: readonly WorktreeSummary[] }) =>
   row.conflict !== null && rows.some((other) => other.path !== row.path && other.key === row.key)
-
-/** A filter's board, as a link or a key goes to it. */
-export const toFilter = (filter: Filter) => {
-  if (filter.kind === 'worktree') return toBoard(filter.name)
-  return filter.kind === 'epic' ? toEpic(filter.name) : toProject(filter.path)
-}
 
 /**
  * Whether a row is in the union a filter names: a linked worktree whose
@@ -100,43 +86,4 @@ export function unionOf({ filter, rows, now }: {
   return filter.kind === 'epic'
     ? { name: filter.name, rows: members.toSorted(epicOrder) }
     : { name: projectName({ rows, path: filter.path, now }), rows: members.toSorted(projectOrder) }
-}
-
-/**
- * Every filter a board can switch to, as the picker lists them: each worktree
- * the daemon serves, since a row it refuses to serve is not somewhere to go;
- * each epic some tracked worktree names; and each project the index heads a
- * section for. An epic or a project is listed with how many worktrees are in
- * it, served or not, as its board draws them.
- */
-export type FilterOption =
-  | ({ readonly kind: 'worktree' } & Pick<WorktreeSummary, 'name' | 'path' | 'branch' | 'detached'>)
-  | { readonly kind: 'epic'; readonly name: NonNullable<WorktreeSummary['epic']>; readonly count: number }
-  | { readonly kind: 'project'; readonly name: ProjectSection['name']; readonly path: ProjectSection['key']; readonly count: number }
-
-/** The filter an option switches to. */
-export const filterOf = (option: FilterOption): Filter =>
-  option.kind === 'project' ? { kind: 'project', path: option.path } : { kind: option.kind, name: option.name }
-
-/** What tells one filter from every other: its kind and the name or path it goes by. */
-export const filterId = (filter: Filter) => `${filter.kind}:${filter.kind === 'project' ? filter.path : filter.name}`
-
-/** Options of one kind by name, as the list gives them. */
-const byOptionName = <A extends { readonly name: string }>(options: readonly A[]) =>
-  options.toSorted((left, right) => left.name.localeCompare(right.name))
-
-/** The options for these rows, each kind by name. */
-export function filterOptions({ rows, now }: { readonly rows: readonly WorktreeSummary[]; readonly now: number }) {
-  const count = (filter: UnionFilter) => rows.filter((row) => inUnion(filter, row)).length
-  const worktrees = rows
-    .filter((row) => row.conflict === null)
-    .map((row) => ({ kind: 'worktree', name: row.name, path: row.path, branch: row.branch, detached: row.detached }) as const)
-  const epics = [...new Set(rows.flatMap((row) => (row.resolved && !row.main && row.epic !== null ? [row.epic] : [])))]
-    .map((name) => ({ kind: 'epic', name, count: count({ kind: 'epic', name }) }) as const)
-  const projects = dashboardOf({ rows, now }).sections.flatMap((section) =>
-    section.kind === 'project'
-      ? [{ kind: 'project', name: section.name, path: section.key, count: count({ kind: 'project', path: section.key }) } as const]
-      : []
-  )
-  return { worktrees: byOptionName(worktrees), epics: byOptionName(epics), projects: byOptionName(projects) }
 }

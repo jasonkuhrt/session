@@ -71,7 +71,7 @@ type Located = {
   readonly position: number
 }
 
-function locate(lanes: readonly Lane[], id: string): Located | null {
+export function locate({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }): Located | null {
   for (const lane of lanes) {
     for (const [entry, candidate] of lane.entries.entries()) {
       if (candidate.kind === 'item') {
@@ -92,7 +92,7 @@ function locate(lanes: readonly Lane[], id: string): Located | null {
  * card itself is passed over, and so is a group that holds nothing else,
  * because the move will empty it.
  */
-function neighbourFrom(entries: readonly LaneEntry[], from: number, heldId: string): Neighbour {
+export function neighbourFrom({ entries, from, heldId }: { readonly entries: readonly LaneEntry[]; readonly from: number; readonly heldId: string }): Neighbour {
   for (const entry of entries.slice(from + 1)) {
     if (entry.kind === 'item') {
       if (entry.item.id !== heldId) return { beforeId: entry.item.id, beforeGroup: null }
@@ -106,14 +106,14 @@ function neighbourFrom(entries: readonly LaneEntry[], from: number, heldId: stri
 /** What a card goes in front of when it is placed right after `located`, leaving out the held card. */
 function neighbourAfter(located: Located, heldId: string): Neighbour {
   const entry = located.lane.entries[located.entry]
-  if (located.group === null || entry?.kind !== 'group') return neighbourFrom(located.lane.entries, located.entry, heldId)
+  if (located.group === null || entry?.kind !== 'group') return neighbourFrom({ entries: located.lane.entries, from: located.entry, heldId })
   const next = entry.items.slice(located.position + 1).find((item) => item.id !== heldId)
   return { beforeId: next?.id ?? null, beforeGroup: null }
 }
 
 /** Where a card is now, as the placement that would leave it there. */
 export function placementOf({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }): Placement | null {
-  const located = locate(lanes, id)
+  const located = locate({ lanes, id })
   return located === null ? null : { to: located.lane.stage, group: located.group, ...neighbourAfter(located, id) }
 }
 
@@ -134,8 +134,6 @@ export type Dragging = {
   readonly onto: string | null
   /** What the drop would do, in the few words the held card carries; null when the lanes show all of it. */
   readonly words: string | null
-  /** Whether keys carry it, which step from place to place and so reach no group's heading and no card's middle. */
-  readonly keyboard: boolean
 }
 
 /**
@@ -154,7 +152,7 @@ export const landingIn = ({ dragging, board }: { readonly dragging: Dragging | n
 
 /** Where a card is drawn: its lane, and its group or none; null for a card the lanes do not draw. */
 export function placeOfCard({ lanes, id }: { readonly lanes: readonly Lane[]; readonly id: string }) {
-  const located = locate(lanes, id)
+  const located = locate({ lanes, id })
   return located === null ? null : { stage: located.lane.stage, group: located.group }
 }
 
@@ -191,7 +189,7 @@ export function isDrawnAhead({ lanes, id, stage, group }: {
   readonly stage: Stage
   readonly group: string
 }) {
-  const located = locate(lanes, id)
+  const located = locate({ lanes, id })
   if (located === null || located.lane.stage !== stage) return false
   const at = located.lane.entries.findIndex((entry) => entry.kind === 'group' && entry.name === group)
   return at !== -1 && located.entry < at
@@ -204,7 +202,7 @@ export function isInList({ lanes, id, stage, group }: {
   readonly stage: Stage
   readonly group: string | null
 }) {
-  const located = locate(lanes, id)
+  const located = locate({ lanes, id })
   return located !== null && located.lane.stage === stage && located.group === group
 }
 
@@ -224,8 +222,8 @@ export function placementOver({ lanes, heldId, overId, below }: {
   /** Whether the held card's centre is below the centre of the card it is over. */
   readonly below: boolean
 }): Placement | null {
-  const over = locate(lanes, overId)
-  if (over === null || locate(lanes, heldId) === null) return null
+  const over = locate({ lanes, id: overId })
+  if (over === null || locate({ lanes, id: heldId }) === null) return null
   const at = { to: over.lane.stage, group: over.group }
   return below ? { ...at, ...neighbourAfter(over, heldId) } : { ...at, beforeId: overId, beforeGroup: null }
 }
@@ -246,7 +244,7 @@ export function placementInto({ lanes, heldId, stage, group, atStart }: {
 }): Placement {
   const lane = lanes.find((candidate) => candidate.stage === stage)
   if (lane === undefined || !atStart) return { to: stage, group, ...atTheEnd }
-  if (group === null) return { to: stage, group, ...neighbourFrom(lane.entries, -1, heldId) }
+  if (group === null) return { to: stage, group, ...neighbourFrom({ entries: lane.entries, from: -1, heldId }) }
   const entry = lane.entries.find((candidate) => candidate.kind === 'group' && candidate.name === group)
   const first = entry?.kind === 'group' ? entry.items.find((item) => item.id !== heldId)?.id ?? null : null
   return { to: stage, group, beforeId: first, beforeGroup: null }
@@ -287,7 +285,7 @@ export function moved({ lanes, id, placement }: {
   readonly id: string
   readonly placement: Placement
 }): Lane[] {
-  const located = locate(lanes, id)
+  const located = locate({ lanes, id })
   if (located === null) return [...lanes]
   const card: Item = { ...located.item, group: placement.group }
   return lanes.map((lane) => {
@@ -295,3 +293,4 @@ export function moved({ lanes, id, placement }: {
     return { stage: lane.stage, entries: lane.stage === placement.to ? withCard(entries, card, placement) : entries }
   })
 }
+

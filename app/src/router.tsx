@@ -11,7 +11,9 @@ import { routeTree } from './routeTree.gen'
  * router, which is safe because the board is one script, so no page's code is
  * fetched after the document loaded. A page leaving unmounts, which closes its
  * streams and its dialogs and drops its reads; the page arriving mounts, reads
- * and opens its own.
+ * and opens its own. Where a page is scrolled follows its focus, which the
+ * address carries, so Back comes back to the focus it left, brought into
+ * view, rather than to a scroll offset kept aside.
  */
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -49,10 +51,6 @@ export function getRouter() {
     // project, item or file of the same page mounts it afresh, with its own
     // state, reads and stream, as a document load did.
     defaultRemountDeps: ({ params }) => params,
-    // Back and Forward come back where the page was scrolled, as they did when
-    // every move loaded a document; a page whose content arrives after it
-    // mounts scrolls there once its content is drawn (`ScrollRestored`).
-    scrollRestoration: true,
     // A worktree's key and a project's may hold a slash, and a route's parameter is one segment.
     rewrite: {
       input: ({ url }) => {

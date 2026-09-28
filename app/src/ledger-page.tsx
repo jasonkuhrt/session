@@ -1,24 +1,29 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { useSearch } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { LedgerEntry, WorktreeSummary } from '../contract'
-import { BoardPageFrame, ListingEmpty, ListingNotices, PageLoading } from './components/board-page'
+import { encodeWorktreeKey } from '../contract'
 import { Markdown } from './components/markdown'
 import { NoPage } from './components/no-page'
+import { ListingEmpty, ListingNotices, PageLoading, PageSurface, useFocusUpTo } from './components/page'
 import { useTip } from './components/tip'
-import { Card, CardContent } from './components/ui/card'
-import { WorktreeMark } from './components/worktree-marks'
-import { problemOf, worktreeOf } from './lib/api'
-import { BoardScope, toBoard, useBoardName, useBoardPath } from './lib/base'
+import { problemOf } from './lib/api'
+import { BoardScope, useBoardName, useBoardPath } from './lib/base'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
-import { boardOf, keyTaken, toFilter, unionOf } from './lib/filter'
+import { boardOf, keyTaken, unionOf } from './lib/filter'
+import { useFolds } from './lib/folds'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
-import { listingMeta, unionLedgerMeaning } from './lib/listings'
+import { listingMeta } from './lib/listings'
 import { reads, reread, sinceMount } from './lib/reads'
 import { useStream } from './lib/stream'
+import { idOf } from './levels'
+import type { PageActions } from './session-seam'
+import { Node } from './substrate/node'
+import type { Fact } from './substrate/seam'
+import type { Entry } from './tree-types'
 
 /** What each key of an entry says, beside its value. */
 const keyMeaning = {
@@ -28,89 +33,145 @@ const keyMeaning = {
   batch: 'The batch Execute was running when the entry was written.',
 } as const
 
-/**
- * An entry's keys beyond its date and title, as the entry has them: `by`
- * always, and each of the others only when the entry names one.
- */
-const keysOf = (entry: LedgerEntry) =>
-  (['by', 'branch', 'commit', 'batch'] as const).flatMap((key) => {
+/** An entry's keys beyond its date and title, as facts: `by` always, and each of the others only when the entry names one. */
+const factsOf = (entry: LedgerEntry, now: number): Fact[] => [
+  { key: 'age', text: relativeTime(entry.date, now), meaning: `Written at ${absoluteTime(entry.date)}.` },
+  ...(['by', 'branch', 'commit', 'batch'] as const).flatMap((key) => {
     const value = entry[key]
-    return value === null ? [] : [{ key, value, meaning: keyMeaning[key] }]
-  })
+    return value === null ? [] : [{ key, text: `${key}: ${value}`, meaning: keyMeaning[key] }]
+  }),
+]
+
+/** One entry of a ledger drawn, with the worktree whose ledger it is in on a merged one. */
+type Drawn = { readonly at: string; readonly entry: LedgerEntry; readonly row: WorktreeSummary | null; readonly board: string }
 
 /**
- * The session's ledger, newest first. Every entry is a card, read where it
- * stands: nothing here is unread, and nothing asks to be dismissed. A file in
- * `ledger/` that breaks the ledger's rules is not an entry, and the line above
- * the cards names it.
+ * A ledger's entries as the page draws them: newest first, each a node the
+ * focus can be on, its title and age its heading, whose Enter folds its body
+ * to its heading. Nothing here is unread, and nothing asks to be dismissed.
+ */
+function Entries({ drawn, foldKey, now }: { drawn: readonly Drawn[]; foldKey: string; now: number }) {
+  const record = useFocusUpTo('record')
+  const folds = useFolds()
+  const tip = useTip()
+  return (
+    <>
+      {record === null ? <h1 className="mb-6 text-2xl font-medium">{listingMeta.ledger.label}</h1> : (
+        <Node path={record} as="h2" className="-mx-2.5 mb-6 px-2.5 py-1 text-2xl font-medium">
+          <span title={tip(listingMeta.ledger.meaning)}>{listingMeta.ledger.label}</span>
+        </Node>
+      )}
+      {drawn.length === 0 ? <ListingEmpty>No entries.</ListingEmpty> : (
+        <ol className="space-y-6">
+          {drawn.map(({ at, entry, row, board }) => {
+            const folded = folds.folded(`${foldKey}/${at}`, false)
+            const heading = (
+              <div className="flex items-baseline justify-between gap-4">
+                <h3 className="text-pretty text-lg leading-snug font-medium">{entry.title}</h3>
+                <span className="shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(entry.date)}.`)}>
+                  {row === null ? null : <span className="mr-3" title={tip(`Written in ${row.name}.`)}>{row.name}</span>}
+                  {relativeTime(entry.date, now)}
+                </span>
+              </div>
+            )
+            return (
+              <li key={at}>
+                <BoardScope value={board}>
+                  {record === null ? heading : (
+                    <Node path={[...record, idOf({ kind: 'section', at })]} className="-mx-2.5 px-2.5 py-1">{heading}</Node>
+                  )}
+                  {folded || entry.body === '' ? null : <div className="mt-2"><Markdown>{entry.body}</Markdown></div>}
+                </BoardScope>
+              </li>
+            )
+          })}
+        </ol>
+      )}
+    </>
+  )
+}
+
+/** What Enter and a copy do on a ledger's entries: fold one, and copy its file. */
+const ledgerActions = ({ drawn, foldKey, toggle, directoryOf, directory }: {
+  drawn: readonly Drawn[]
+  foldKey: string
+  toggle: (key: string) => void
+  directoryOf: (entry: Drawn) => string | null
+  directory: string | null
+}): PageActions => ({
+  enter: (at) => toggle(`${foldKey}/${at}`),
+  pathOf: (at) => {
+    const found = drawn.find((entry) => entry.at === at)
+    const root = found === undefined ? null : directoryOf(found)
+    return found === undefined || root === null ? null : `${root}/${found.entry.path}`
+  },
+  path: directory === null ? null : `${directory}/ledger`,
+})
+
+/**
+ * The session's ledger, newest first. A file in `ledger/` that breaks the
+ * ledger's rules is not an entry, and the line above the entries names it.
  */
 export function LedgerPage() {
+  const { focus: leaf } = useSearch({ strict: false })
   const now = useNow()
   const board = useBoardPath()
   const name = useBoardName()
-  // Where the page stands and the ledger's entries are read together, so the two never disagree.
+  const key = encodeWorktreeKey(name)
+  const folds = useFolds()
   const { value, error } = useFollowed({ board, read: reads.ledger(board) })
   const [place, ledger] = value ?? [null, null]
+  const directory = place?.kind === 'read' ? place.directory : null
+  const drawn: Drawn[] = (ledger?.entries ?? []).map((entry) => ({ at: entry.path, entry, row: null, board }))
+  const foldKey = `ledger:${key}`
+  const recordId = idOf({ kind: 'record', page: 'ledger', path: '' })
+  const entries: Entry[] = drawn.map(({ at, entry }) => ({ at, heading: entry.title, facts: factsOf(entry, now) }))
   return (
-    <BoardPageFrame
+    <PageSurface
+      place={{ kind: 'listing', key, page: 'ledger' }}
+      leaf={leaf}
       title={listingMeta.ledger.label}
-      boardName={worktreeOf(place)}
-      boardLink={toBoard(name)}
-      boardMeaning="The board of the session this ledger belongs to."
-      crumbs={[{ label: listingMeta.ledger.label, meaning: listingMeta.ledger.meaning }]}
-      problem={error ?? problemOf(place)}
+      sessions={new Map()}
+      archived={null}
+      entries={new Map([[recordId, entries]])}
+      write={null}
+      pending={false}
+      rules={null}
+      page={ledgerActions({ drawn, foldKey, toggle: folds.toggle, directoryOf: () => directory, directory })}
       ready={value !== null || error !== null}
+      problem={error ?? problemOf(place)}
     >
       {ledger === null ? (error === null ? <PageLoading /> : null) : (
         <>
           <ListingNotices notices={ledger.notices} />
-          {ledger.entries.length === 0
-            ? <ListingEmpty>No entries.</ListingEmpty>
-            : (
-              <ol className="space-y-4">
-                {ledger.entries.map((entry) => (
-                  <li key={entry.path}>
-                    <EntryCard entry={entry} now={now} />
-                  </li>
-                ))}
-              </ol>
-            )}
+          <Entries drawn={drawn} foldKey={foldKey} now={now} />
         </>
       )}
-    </BoardPageFrame>
+    </PageSurface>
   )
 }
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
-/** One entry of a merged ledger, with the worktree whose ledger it is in. */
-type Merged = { readonly row: WorktreeSummary; readonly entry: LedgerEntry }
-
-/**
- * Newest first by date, then by name, as each ledger is ordered, and entries
- * that share both stand in the order the worktrees do.
- */
-const newestFirst = (left: Merged, right: Merged) => {
+/** Newest first by date, then by name, as each ledger is ordered. */
+const newestFirst = (left: Drawn, right: Drawn) => {
   if (left.entry.date !== right.entry.date) return left.entry.date < right.entry.date ? 1 : -1
   if (left.entry.name === right.entry.name) return 0
   return left.entry.name < right.entry.name ? -1 : 1
 }
 
 /**
- * The ledger of an epic's board or a project's: the entries of every
- * worktree in view, merged newest first, each dated and named for the
- * worktree it was written in, whose board its name opens, and each read as
- * that worktree's own ledger page reads it, its Markdown links resolved in its
- * own session. A file one of them left out is named above the cards with its
- * worktree's name. It follows the root's one stream, as the board does:
- * `changed` there is every tracked session's, on which it reads every ledger
- * in view again, and `worktrees` says who is in view. It draws only what it
- * has read since it mounted, as the board does. An address no tracked
- * worktree is in draws the not-found page once the rows have said so.
+ * The ledger of an epic's board or a project's: the entries of every worktree
+ * in view, merged newest first, each named for the worktree it was written
+ * in, and read as that worktree's own ledger reads it, its Markdown links
+ * resolved in its own session. It follows the root's one stream: `changed`
+ * there is every tracked session's, and `worktrees` says who is in view.
  */
 export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
+  const { focus: leaf } = useSearch({ strict: false })
   const now = useNow()
   const client = useQueryClient()
+  const folds = useFolds()
   const rowsRead = useQuery(reads.worktrees())
   const rows = sinceMount(rowsRead)
   const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
@@ -129,10 +190,12 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   if (union === null) return <NoPage />
 
   const listed = served.flatMap((row, index) => {
-    const listing = sinceMount(ledgers[index])?.[1]
-    return listing === undefined ? [] : [{ row, listing }]
+    const read = sinceMount(ledgers[index])
+    return read === undefined ? [] : [{ row, place: read[0], listing: read[1] }]
   })
-  const entries = listed.flatMap(({ row, listing }) => listing.entries.map((entry): Merged => ({ row, entry }))).toSorted(newestFirst)
+  const drawn: Drawn[] = listed
+    .flatMap(({ row, listing }) => listing.entries.map((entry) => ({ at: `${row.key}/${entry.path}`, entry, row, board: boardOf(row) })))
+    .toSorted(newestFirst)
   const notices = listed.flatMap(({ row, listing }) => listing.notices.map((notice) => `${row.name}: ${notice}`))
   const problems = [
     ...(rowsRead.error === null ? [] : [messageOf(rowsRead.error, 'Could not load the worktrees')]),
@@ -140,87 +203,39 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
     ...served.flatMap((row, index) => {
       const read = ledgers[index]
       const error = read?.error ?? null
-      // A worktree whose items cannot be read still has its ledger listed, as its own ledger page lists it, with the daemon's reason above the cards.
       const problem = error === null ? problemOf(sinceMount(read)?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
       return problem === null ? [] : [`${row.name}: ${problem}`]
     }),
   ]
-  // As the board does: loading until a first ledger lands, and a worktree that joins the view later appears once its own does.
   const loading = !rowsRead.isFetchedAfterMount || (ledgers.length > 0 && ledgers.every((read) => !read.isFetchedAfterMount))
+  const foldKey = `ledger:${filter.kind}:${filter.kind === 'epic' ? filter.name : filter.path}`
+  const recordId = idOf({ kind: 'record', page: 'ledger', path: '' })
+  const directories = new Map(listed.map(({ row, place }) => [row.key, place.kind === 'read' ? place.directory : null]))
   return (
-    <BoardPageFrame
-      title={listingMeta.ledger.label}
-      boardName={union?.name ?? null}
-      boardLink={toFilter(filter)}
-      boardMeaning="The board of the worktrees whose ledgers these are."
-      crumbs={[{ label: listingMeta.ledger.label, meaning: unionLedgerMeaning }]}
-      problem={problems.length === 0 ? null : problems.join(' ')}
+    <PageSurface
+      place={{ kind: 'union-ledger', filter }}
+      leaf={leaf}
+      title={`${listingMeta.ledger.label} · ${union?.name ?? ''}`}
+      sessions={new Map()}
+      archived={null}
+      entries={new Map([[recordId, drawn.map(({ at, entry, row }) => ({
+        at,
+        heading: entry.title,
+        facts: [...(row === null ? [] : [{ key: 'worktree', text: row.name, meaning: 'The worktree the entry was written in.' }]), ...factsOf(entry, now)],
+      }))]])}
+      write={null}
+      pending={false}
+      rules={null}
+      page={ledgerActions({ drawn, foldKey, toggle: folds.toggle, directoryOf: (entry) => (entry.row === null ? null : directories.get(entry.row.key) ?? null), directory: null })}
       ready={!loading}
+      problem={problems.length === 0 ? null : problems.join(' ')}
     >
       {loading ? <PageLoading /> : (
         <>
           <ListingNotices notices={notices} />
-          {entries.length === 0
-            ? <ListingEmpty>No entries.</ListingEmpty>
-            : (
-              <ol className="space-y-4">
-                {entries.map(({ row, entry }) => (
-                  <li key={`${row.key}:${entry.path}`}>
-                    <BoardScope value={boardOf(row)}>
-                      <EntryCard entry={entry} now={now} worktree={row} />
-                    </BoardScope>
-                  </li>
-                ))}
-              </ol>
-            )}
+          <Entries drawn={drawn} foldKey={foldKey} now={now} />
         </>
       )}
-    </BoardPageFrame>
-  )
-}
-
-/**
- * One entry: what it says, when it was written, its body, and the rest of what
- * it records. In a merged ledger it also names the worktree it was written in,
- * beside its age.
- */
-function EntryCard({ entry, now, worktree }: { entry: LedgerEntry; now: number; worktree?: WorktreeSummary | undefined }) {
-  const tip = useTip()
-  const age = (
-    <span className="shrink-0 text-xs text-muted-foreground" title={tip(`Written at ${absoluteTime(entry.date)}.`)}>
-      {relativeTime(entry.date, now)}
-    </span>
-  )
-  return (
-    <Card>
-      <CardContent className="space-y-4">
-        <div className="flex items-baseline justify-between gap-4">
-          <h2 className="text-pretty text-lg leading-snug font-medium">{entry.title}</h2>
-          {worktree === undefined ? age : (
-            <span className="flex shrink-0 items-center gap-3">
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <WorktreeMark />
-                <Link
-                  {...toBoard(worktree.name)}
-                  className="rounded-sm font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                  title={tip(`Written in ${worktree.name}: open its board.`)}
-                >
-                  {worktree.name}
-                </Link>
-              </span>
-              {age}
-            </span>
-          )}
-        </div>
-        {entry.body === '' ? null : <Markdown>{entry.body}</Markdown>}
-        <p className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
-          {keysOf(entry).map(({ key, value, meaning }) => (
-            <span key={key} className="wrap-anywhere" title={tip(meaning)}>
-              {key}: {value}
-            </span>
-          ))}
-        </p>
-      </CardContent>
-    </Card>
+    </PageSurface>
   )
 }

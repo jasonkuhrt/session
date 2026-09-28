@@ -18,6 +18,7 @@ import type {
   TrailerProblem,
   WorktreeEpic,
   WorktreeRank,
+  ZedOpen,
 } from '../contract.ts';
 import {
   AddressPathSchema,
@@ -38,6 +39,7 @@ import {
   OrderWriteSchema,
   QueueBatchSchema,
   RefusalSchema,
+  RenameGroupSchema,
   SessionSchema,
   StartBatchSchema,
   StreamEventNamesSchema,
@@ -48,6 +50,7 @@ import {
   WorktreeEpicSchema,
   WorktreePathSchema,
   WorktreeRankSchema,
+  ZedOpenSchema,
 } from '../contract.ts';
 import type { SessionEvents } from './events.ts';
 import { SessionError } from './model.ts';
@@ -265,6 +268,28 @@ export const openResponse = ({ request, open }: {
     schema: WorktreePathSchema,
     respond: async (input) => {
       const result = await open(input.path);
+      return result === undefined
+        ? refuse({ error: 'The daemon tracks no worktree at that path.', status: 404 })
+        : answerOpen(result);
+    },
+  });
+
+/**
+ * A worktree opened in Zed, at the root, and in its window one file of its
+ * session at its first line when the request names one by its path under the
+ * session. It is asked for by path, and a path the daemon does not track is
+ * not somewhere it opens anything.
+ */
+export const zedResponse = ({ request, open }: {
+  readonly request: Request;
+  /** Zed's answer for a tracked worktree's path; undefined for any other path. */
+  readonly open: (input: ZedOpen) => Promise<OpenResult | undefined>;
+}) =>
+  sharedWrite({
+    request,
+    schema: ZedOpenSchema,
+    respond: async (input) => {
+      const result = await open(input);
       return result === undefined
         ? refuse({ error: 'The daemon tracks no worktree at that path.', status: 404 })
         : answerOpen(result);
@@ -528,6 +553,10 @@ export const makeRequestHandler = (options: {
         if (request.method === 'POST' && url.pathname === '/api/ungroup') {
           const input = await run(decodeBody(request, UngroupItemsSchema));
           return answerSession(await attachWorktree(await run(repository.ungroupItems(input))));
+        }
+        if (request.method === 'POST' && url.pathname === '/api/rename-group') {
+          const input = await run(decodeBody(request, RenameGroupSchema));
+          return answerSession(await attachWorktree(await run(repository.renameGroup(input))));
         }
         if (request.method === 'POST' && url.pathname === '/api/batch') {
           const input = await run(decodeBody(request, QueueBatchSchema));

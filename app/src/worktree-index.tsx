@@ -1,56 +1,32 @@
 import { DragDropProvider } from '@dnd-kit/react'
+import { getRouteApi } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { EpicWrite, PullRequestReports, WorktreeSummary } from '../contract'
-import { KeyPage, SelectionKeys, type StepKeys } from './components/keys'
-import { ScrollRestored } from './components/scroll-restored'
-import type { EpicNameRequest } from './components/session-dialogs'
-import { NameDialog } from './components/session-dialogs'
-import { SettingsMenu } from './components/settings-menu'
-import { Alert, AlertDescription } from './components/ui/alert'
+import { IndexOutline } from './components/index-outline'
+import type { OutlineContext } from './components/index-outline-parts'
+import type { Signals } from './components/marks'
 import { Skeleton } from './components/ui/skeleton'
 import { TooltipProvider } from './components/ui/tooltip'
-import { useCapabilities } from './components/worktree-actions'
-import type { DragContext } from './components/worktree-cards'
-import { WorktreeStack } from './components/worktree-stack'
+import { useCapabilities } from './lib/capabilities'
 import { IndexApi } from './lib/api'
 import { useNow } from './lib/clock'
+import type { Dashboard } from './lib/dashboard'
 import { dashboardOf, stageRangeOf } from './lib/dashboard'
 import { dragSensors, holdingOf, pointerOf, sameHolding } from './lib/drag'
 import type { DropOutcome, EpicWriting, Holding } from './lib/epics'
 import { dropOutcome, withEpics } from './lib/epics'
-import { unresolvedNotice } from './lib/index-meanings'
 import type { Placement } from './lib/order'
 import { withPlacement } from './lib/order'
-import { indexColumns, useSelection } from './lib/selection'
 import { useTrackedWorktrees } from './lib/tracked-worktrees'
-
-const skeletonCards = [1, 2, 3, 4, 5, 6]
-
-/**
- * The steps of the selection on the index, said by order: a section's cards
- * stand in columns, so the next worktree in one can be beside or above the
- * last, and its sections are stepped through with `h` and `l` alone.
- */
-const indexSteps: StepKeys = {
-  next: { name: 'next', sentence: 'Select the next worktree in this section.' },
-  previous: { name: 'previous', sentence: 'Select the previous worktree in this section.' },
-  left: { name: 'previousSection', sentence: 'Select a worktree in the previous section.' },
-  right: { name: 'nextSection', sentence: 'Select a worktree in the next section.' },
-}
-
-/** One line for the whole page: a source that failed, failed for every row. */
-const agentNotices = (rows: readonly WorktreeSummary[] | null) =>
-  [...new Set(rows?.flatMap((row) => row.agents.notices) ?? [])]
-
-/** Every row Git could not answer for, which stands in no section, named with Git's line. */
-const unresolvedNotices = (rows: readonly WorktreeSummary[] | null) =>
-  (rows ?? []).filter((row) => !row.resolved).map((row) => unresolvedNotice(row))
+import { useSessionSeam } from './session-seam'
+import { Surface } from './substrate/surface'
+import { useSurface } from './substrate/surface-context'
 
 /**
- * What the page draws while a card is held: the rows, the pull requests and the
+ * What the page draws while a row is held: the rows, the pull requests and the
  * clock as they were when it was picked up. A read already under way can land
- * while it is held, and nothing it brings is drawn until the card is let go.
+ * while it is held, and nothing it brings is drawn until the row is let go.
  */
 type Snapshot = {
   readonly at: number
@@ -58,10 +34,9 @@ type Snapshot = {
   readonly pullRequests: PullRequestReports
 }
 
-const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The daemon did not answer.')
+const route = getRouteApi('/')
 
-/** A refused write as the list of sentences a write answers with. */
-const refused = (error: unknown) => [reasonOf(error)]
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'The daemon did not answer.')
 
 /** The worktrees a drop names, as the rows it read them from. */
 const rowsAt = (rows: readonly WorktreeSummary[], paths: readonly string[]) =>
@@ -73,29 +48,27 @@ const changesOf = (outcome: Extract<DropOutcome, { kind: 'join' | 'leave' }>, ro
     ? rowsAt(rows, outcome.paths).map((row) => ({ path: row.path, epic: outcome.epic, from: row.epic }))
     : rowsAt(rows, [outcome.path]).map((row) => ({ path: row.path, epic: null, from: row.epic }))
 
-/**
- * The dialog a new epic opens, for one worktree dropped on the `+` or two, one
- * on the other: the worktrees with the epics drawn for them at the drop, which
- * the write is made against; null when a row it names is no longer drawn.
- */
-const newEpicRequest = (
-  outcome: Extract<DropOutcome, { kind: 'make' }>,
-  rows: readonly WorktreeSummary[],
-): EpicNameRequest | null => {
-  const named = rowsAt(rows, outcome.paths)
-  return named.length === outcome.paths.length
-    ? { kind: 'epic', ids: outcome.paths, names: named.map((row) => row.name), from: named.map((row) => row.epic) }
-    : null
-}
+/** A worktree's signals on the index: its row's agents and trailers, and gh's last answer for its branch. */
+const signalsFrom = (pullRequests: PullRequestReports, failures: readonly string[]) => (row: WorktreeSummary): Signals => ({
+  agents: row.agents,
+  pullRequest: pullRequests[row.path] ?? null,
+  issues: null,
+  trailers: row.trailerProblems,
+  failures,
+  row,
+})
 
+/**
+ * The index at `/`: every tracked worktree as an outline of projects, epics
+ * and worktrees, under the path line and over the detail line. Its reads and
+ * its stream are the index's, and a drag or a write holds its events until it
+ * ends, as they always have.
+ */
 export function WorktreeIndex() {
+  const { focus: leaf } = route.useSearch()
   const [writing, setWriting] = React.useState(false)
-  /** The epic each worktree being written is to be in, drawn until the daemon's answer replaces it. */
   const [writes, setWrites] = React.useState<ReadonlyMap<string, EpicWriting>>(new Map())
-  /** The place a worktree being placed is to take, drawn until the daemon's answer replaces it. */
   const [placing, setPlacing] = React.useState<Placement | null>(null)
-  // What is held and where, drawn as it changes: a move that changes neither
-  // what it is over nor which half draws nothing new.
   const [holding, setHolding] = React.useState<Holding | null>(null)
   const latestHolding = React.useRef<Holding | null>(null)
   const hold = (next: Holding | null) => {
@@ -103,11 +76,6 @@ export function WorktreeIndex() {
     latestHolding.current = next
     setHolding(next)
   }
-  const [failure, setFailure] = React.useState<string | null>(null)
-  const [naming, setNaming] = React.useState<EpicNameRequest | null>(null)
-  // What was drawn when a card was picked up, drawn for as long as it is held,
-  // so no card moves under the pointer: a pushed read waits for the drop, and
-  // one already under way at pickup lands unseen until then.
   const [snapshot, setSnapshot] = React.useState<Snapshot | null>(null)
   const busy = snapshot !== null || writing
   const { rows: listed, notice, pullRequests: readPullRequests, pullRequestsNotice, reload } = useTrackedWorktrees({ held: busy })
@@ -119,164 +87,160 @@ export function WorktreeIndex() {
   const rows = drawn === null ? null : withPlacement({ rows: withEpics({ rows: drawn, epics: writes }), placement: placing })
   const drawnRows = rows ?? []
   const dashboard = rows === null ? null : dashboardOf({ rows, now })
-  // The worktrees as the sections draw them, which the keys step through, by
-  // path; a selected worktree the page no longer draws is no longer selected.
-  const columns = indexColumns(dashboard)
-  const { selected, select } = useSelection(columns)
-  const sourceNotices = [
-    ...unresolvedNotices(rows),
-    ...agentNotices(rows),
-    ...(pullRequestsNotice === null ? [] : [pullRequestsNotice]),
-  ]
+  const failures = pullRequestsNotice === null ? [] : [pullRequestsNotice]
+  const signalsOf = signalsFrom(pullRequests, failures)
 
   /**
-   * Make a write and draw what it is to do until the rows read afterwards,
-   * which are what the page shows from then on, whatever landed; that read is
-   * made whether or not reads are held, and it lands, since nothing is held
-   * then. What the daemon refused shows above the cards in its own words.
+   * Make a drop's write and draw what it is to do until the rows read
+   * afterwards, which are what the page shows from then on, whatever landed;
+   * what the daemon refused is said in the detail line, in its own words.
    */
   const commit = async (
     draw: { readonly epics: ReadonlyMap<string, EpicWriting>; readonly placing: Placement | null },
     request: () => Promise<readonly string[]>,
-  ) => {
+  ): Promise<string | null> => {
     setWriting(true)
-    setFailure(null)
     setWrites(draw.epics)
     setPlacing(draw.placing)
     const refusals = await request()
     await reload()
     setWrites(new Map())
     setPlacing(null)
-    setFailure(refusals.length === 0 ? null : [...new Set(refusals)].join(' '))
     setWriting(false)
+    return refusals.length === 0 ? null : [...new Set(refusals)].join(' ')
   }
-  /**
-   * Put worktrees in epics, one request per worktree, since each worktree's
-   * file is its own, each carrying the epic the page had read for it when the
-   * change was asked for, so a file changed since is refused rather than
-   * overwritten. A worktree that is not a main one loses its rank with it.
-   */
-  const write = (changes: readonly EpicWrite[]) =>
-    changes.length === 0 ? Promise.resolve() : commit(
-      { epics: new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: false }])), placing: null },
-      async () => {
-        const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
-        return results.flatMap((result) => (result.status === 'rejected' ? refused(result.reason) : []))
-      },
-    )
 
-  /** Place a worktree among its siblings, one request, since the engine ranks and renumbers whatever the place needs. */
-  const place = (placement: Placement) =>
-    commit({ epics: new Map(), placing: placement }, () => IndexApi.setOrder(placement).then(() => [], refused))
-
-  /**
-   * Rename an epic, one request: the daemon moves whoever is in it and tells
-   * from the worktrees it tracks whether the name was another epic's, which
-   * the page does not guess at, so nothing moves until the rows read after it
-   * land.
-   */
-  const rename = (from: string, to: string) =>
-    commit({ epics: new Map(), placing: null }, () => IndexApi.renameEpic({ from, to }).then(() => [], refused))
-
-  const context: DragContext = {
-    pullRequests,
-    now,
+  const { seam } = useSessionSeam({
+    place: { kind: 'index' },
+    leaf,
+    data: { rows: drawnRows, now, sessions: new Map(), archived: null, entries: new Map(), signalsOf },
+    ready: dashboard !== null,
+    held: snapshot !== null,
     capabilities,
-    stageRange: stageRangeOf(drawnRows),
+    write: null,
+    pending: writing,
+    readRows: reload,
+    focusAgent: IndexApi.focus,
+    page: null,
+    rules: null,
+  })
+
+  const context: OutlineContext = {
     rows: drawnRows,
+    signalsOf,
+    now,
+    stageRange: stageRangeOf(drawnRows),
     writing,
-    selected,
     landingOn: null,
     marker: null,
-    onRename: (card) => setNaming({ kind: 'rename', ids: card.rows.map((row) => row.path), epic: card.name }),
   }
 
   return (
     <TooltipProvider>
-      <KeyPage scope="index" held={snapshot !== null} className="flex min-h-dvh flex-col bg-background text-foreground">
+      <Surface seam={seam}>
         <title>Worktrees</title>
-        <SelectionKeys columns={columns} selected={selected} onSelect={select} steps={indexSteps} />
-        <ScrollRestored ready={dashboard !== null} />
-        {/* No heading: every card says what it is and how it moves from where
-            it is, and the tab carries the page's name. */}
-        <header className="flex items-center gap-8 border-b px-6 py-5">
-          <SettingsMenu className="ml-auto" />
-        </header>
-        {notice ? (
-          <Alert variant="destructive" className="mx-6 mt-4 w-auto">
-            <AlertDescription>{notice}</AlertDescription>
-          </Alert>
-        ) : null}
-        {failure ? (
-          <Alert variant="destructive" className="mx-6 mt-4 w-auto">
-            <AlertDescription>{failure}</AlertDescription>
-          </Alert>
-        ) : null}
-        {sourceNotices.length === 0
-          ? null
-          : <p className="mx-6 mt-4 text-sm text-muted-foreground">{sourceNotices.join(' · ')}</p>}
-        <main className="flex flex-1 flex-col gap-4 p-6">
-          {dashboard === null || rows === null ? <LoadingCards /> : rows.length === 0 ? <EmptyState /> : (
-            <DragDropProvider
-              sensors={dragSensors}
-              onDragStart={(event) => {
-                setSnapshot({ at: clock, rows: listed, pullRequests: readPullRequests })
-                hold(holdingOf({ operation: event.operation }))
-              }}
-              onDragOver={(event) => hold(holdingOf({ operation: event.operation }))}
-              onDragMove={(event) => hold(holdingOf({ operation: event.operation, pointer: pointerOf(event) }))}
-              onDragEnd={(event) => {
-                // The drop is read from what was drawn, which is what it was
-                // made on, and the epics and ranks drawn then are what it
-                // writes against.
-                setSnapshot(null)
-                hold(null)
-                const held = event.canceled ? null : holdingOf({ operation: event.operation })
-                const outcome = held === null ? null : dropOutcome({ rows, dashboard, holding: held })
-                if (outcome === null) return
-                if (outcome.kind === 'make') setNaming(newEpicRequest(outcome, rows))
-                else if (outcome.kind === 'order') void place({ path: outcome.path, before: outcome.before, after: outcome.after })
-                else void write(changesOf(outcome, rows))
-              }}
+        {notice === null ? null : <p className="mb-4 text-sm text-destructive">{notice}</p>}
+        <div className="mx-auto w-full max-w-3xl">
+          {dashboard === null || rows === null ? <LoadingRows /> : rows.length === 0 ? <EmptyState /> : (
+            <IndexDrag
+              rows={rows}
+              dashboard={dashboard}
+              listed={listed}
+              readPullRequests={readPullRequests}
+              clock={clock}
+              onSnapshot={setSnapshot}
+              hold={hold}
+              commit={commit}
             >
-              <WorktreeStack dashboard={dashboard} context={context} holding={holding} />
-            </DragDropProvider>
+              <IndexOutline dashboard={dashboard} context={context} holding={holding} />
+            </IndexDrag>
           )}
-        </main>
-        <NameDialog
-          request={naming}
-          pending={writing}
-          onClose={() => setNaming(null)}
-          onName={(name) => {
-            const request = naming
-            setNaming(null)
-            if (request === null || rows === null) return
-            // A new epic's worktrees, one dropped on the `+` or two, one
-            // dropped on the other, are written against the epics drawn at
-            // the drop, so a join that lands while the dialog is open is
-            // refused rather than overwritten.
-            if (request.kind === 'epic') {
-              void write(request.ids.map((path, index) => ({ path, epic: name, from: request.from[index] ?? null })))
-              return
-            }
-            // A rename moves whoever is in the epic when the daemon writes it,
-            // since the files may have changed while the dialog was open.
-            if (name !== request.epic) void rename(request.epic, name)
-          }}
-        />
-      </KeyPage>
+        </div>
+      </Surface>
     </TooltipProvider>
   )
 }
 
-/** The shape a repository's section will take, its head over its cards, so the first paint is not a single slab. */
-function LoadingCards() {
+/**
+ * The index's drag, inside the surface, so a new epic's name is asked for in
+ * the surface's name dialog and a refusal said in its detail line, as the
+ * commands the drops stand for ask and say them.
+ */
+function IndexDrag({ rows, dashboard, listed, readPullRequests, clock, onSnapshot, hold, commit, children }: {
+  rows: readonly WorktreeSummary[]
+  dashboard: Dashboard
+  listed: readonly WorktreeSummary[] | null
+  readPullRequests: PullRequestReports
+  clock: number
+  onSnapshot: (snapshot: Snapshot | null) => void
+  hold: (holding: Holding | null) => void
+  commit: (
+    draw: { readonly epics: ReadonlyMap<string, EpicWriting>; readonly placing: Placement | null },
+    request: () => Promise<readonly string[]>,
+  ) => Promise<string | null>
+  children: React.ReactNode
+}) {
+  const surface = useSurface()
+  const said = (refused: string | null) => {
+    if (refused !== null) surface.flash(refused)
+  }
+  const write = (changes: readonly EpicWrite[]) =>
+    changes.length === 0 ? Promise.resolve(null) : commit(
+      { epics: new Map(changes.map((change) => [change.path, { epic: change.epic, keepsRank: false }])), placing: null },
+      async () => {
+        const results = await Promise.allSettled(changes.map((change) => IndexApi.setEpic(change)))
+        return results.flatMap((result) => (result.status === 'rejected' ? [reasonOf(result.reason)] : []))
+      },
+    )
+  const place = (placement: Placement) =>
+    commit({ epics: new Map(), placing: placement }, () => IndexApi.setOrder(placement).then(() => [], (error: unknown) => [reasonOf(error)]))
   return (
-    <div className="flex flex-col gap-3">
-      <Skeleton className="h-11 rounded-md" />
-      <div className="worktree-cards">
-        {skeletonCards.map((card) => <Skeleton key={card} className="h-24 rounded-xl" />)}
-      </div>
+    <DragDropProvider
+      sensors={dragSensors}
+      onDragStart={(event) => {
+        onSnapshot({ at: clock, rows: listed, pullRequests: readPullRequests })
+        hold(holdingOf({ operation: event.operation }))
+      }}
+      onDragOver={(event) => hold(holdingOf({ operation: event.operation }))}
+      onDragMove={(event) => hold(holdingOf({ operation: event.operation, pointer: pointerOf(event) }))}
+      onDragEnd={(event) => {
+        // The drop is read from what was drawn, which is what it was made on.
+        onSnapshot(null)
+        hold(null)
+        const held = event.canceled ? null : holdingOf({ operation: event.operation })
+        const outcome = held === null ? null : dropOutcome({ rows, dashboard, holding: held })
+        if (outcome === null) return
+        if (outcome.kind === 'order') {
+          void place({ path: outcome.path, before: outcome.before, after: outcome.after }).then(said)
+          return
+        }
+        if (outcome.kind !== 'make') {
+          void write(changesOf(outcome, rows)).then(said)
+          return
+        }
+        // A new epic's worktrees, one dropped on the `+` or two, one on the
+        // other, are written against the epics drawn at the drop.
+        const named = rowsAt(rows, outcome.paths)
+        if (named.length !== outcome.paths.length) return
+        surface.askName({
+          title: named.length === 1 ? `Make an epic of ${named[0]?.name ?? 'the worktree'}` : `Make an epic of ${named.map((row) => row.name).join(' and ')}`,
+          meaning: 'They will be in one epic under this name. A name another epic already has puts them in that one.',
+          value: '',
+          placeholder: 'What do these worktrees serve together?',
+          confirm: (name) => write(named.map((row) => ({ path: row.path, epic: name, from: row.epic }))),
+        })
+      }}
+    >
+      {children}
+    </DragDropProvider>
+  )
+}
+
+/** The shape the outline will take, so the first paint is not a single slab. */
+function LoadingRows() {
+  return (
+    <div className="flex flex-col gap-2">
+      {[1, 2, 3, 4, 5, 6].map((row) => <Skeleton key={row} className="h-7 rounded-md" />)}
     </div>
   )
 }

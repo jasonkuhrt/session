@@ -5,10 +5,14 @@ import remarkGfm from 'remark-gfm'
 import type { PluggableList } from 'unified'
 import { absoluteHref, isMarkdownPath, useBoardPath } from '../lib/base'
 import { openOnceOnClick } from '../lib/open-once'
-import { remarkEvidence } from '../lib/evidence'
+import { useFolds } from '../lib/folds'
+import { remarkSections } from '../lib/sections'
 import { type Glossary, glossaryOf, remarkTerms } from '../lib/terms'
 import { cn } from '../lib/utils'
 import { noneMeaning } from '../lib/workflow'
+import { idOf } from '../levels'
+import { Node } from '../substrate/node'
+import type { Path } from '../substrate/seam'
 import { copyLabel, useCopy } from './copyable'
 import { Explained, useTip } from './tip'
 import { Button } from './ui/button'
@@ -23,6 +27,19 @@ const noNoneLines: ReadonlySet<number> = new Set()
  */
 const NoneLines = React.createContext(noNoneLines)
 
+/**
+ * A page whose Markdown is drawn in sections, each heading a node the focus
+ * can be on: where the page is in the tree, the key its folds go by, and
+ * which of its sections start folded.
+ */
+export type Sections = {
+  readonly base: Path
+  readonly foldKey: string
+  readonly startsFolded: (at: string) => boolean
+}
+
+const SectionsContext = React.createContext<Sections | null>(null)
+
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
@@ -31,11 +48,14 @@ const markdownComponents = {
   p: ({ node, ...props }) => <Paragraph line={node?.position?.start.line} {...props} />,
   // Markdown draws no span of its own: each is a reference the terms plugin marked with the term it names.
   span: ({ children, node }) => <TermReference term={node?.properties['dataTerm']}>{children}</TermReference>,
+  // Markdown draws no section of its own: each is one the sections plugin gathered under a heading.
+  section: ({ children, node }) => <SectionBlock at={node?.properties['dataSectionAt']}>{children}</SectionBlock>,
 } satisfies Components
 
-export function Markdown({ children, collapseEvidence = false, page = false, noneLines = noNoneLines }: {
+export function Markdown({ children, sections = null, page = false, noneLines = noNoneLines }: {
   children: string
-  collapseEvidence?: boolean
+  /** Where the page's sections are, when the Markdown is drawn in sections; null when it is not. */
+  sections?: Sections | null
   /**
    * Whether the Markdown is the page itself, read down the middle of the
    * window, as an item or a file is: its code then runs the window's width.
@@ -51,7 +71,9 @@ export function Markdown({ children, collapseEvidence = false, page = false, non
   const reader = (
     <div className={cn('markdown-reader', page && 'markdown-page')}>
       <NoneLines value={noneLines}>
-        <Reading glossary={glossary} collapseEvidence={collapseEvidence}>{children}</Reading>
+        <SectionsContext value={sections}>
+          <Reading glossary={glossary} inSections={sections !== null}>{children}</Reading>
+        </SectionsContext>
       </NoneLines>
     </div>
   )
@@ -60,17 +82,18 @@ export function Markdown({ children, collapseEvidence = false, page = false, non
 
 /**
  * Markdown read as GitHub reads it, as one tree: the document's terms drawn
- * when it defines any, and its Evidence collapsed when the page asks. A
- * document without terms is read without the terms plugin.
+ * when it defines any, and its sections gathered under their headings when
+ * the page draws it in sections. A document without terms is read without
+ * the terms plugin.
  */
-function Reading({ glossary, collapseEvidence, children }: {
+function Reading({ glossary, inSections, children }: {
   glossary: Glossary
-  collapseEvidence: boolean
+  inSections: boolean
   children: string
 }) {
   const plugins: PluggableList = [remarkGfm]
   if (glossary.reference !== null) plugins.push([remarkTerms, { glossary }])
-  if (collapseEvidence) plugins.push(remarkEvidence)
+  if (inSections) plugins.push(remarkSections)
   return (
     <ReactMarkdown remarkPlugins={plugins} components={markdownComponents}>
       {children}
@@ -129,7 +152,7 @@ function TermCard({ glossary, term }: { glossary: Glossary; term: string | undef
       {definition === undefined ? null : (
         <CardContext value={null}>
           <div className="markdown-reader markdown-meaning">
-            <Reading glossary={glossary} collapseEvidence={false}>{definition.meaning}</Reading>
+            <Reading glossary={glossary} inSections={false}>{definition.meaning}</Reading>
           </div>
           <a
             className="mt-2 inline-block text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
@@ -141,6 +164,29 @@ function TermCard({ glossary, term }: { glossary: Glossary; term: string | undef
         </CardContext>
       )}
     </HoverCardContent>
+  )
+}
+
+/**
+ * A section of a page drawn in sections: its heading as a node the focus can
+ * be on, then its body, left out while it is folded, when the heading says
+ * so. Outside such a page, and in a term's card, it is only a section.
+ */
+function SectionBlock({ at, children }: { at: unknown; children: React.ReactNode }) {
+  const sections = React.use(SectionsContext)
+  const folds = useFolds()
+  const tip = useTip()
+  const [heading, ...body] = React.Children.toArray(children).filter((child) => typeof child !== 'string' || child.trim() !== '')
+  if (sections === null || typeof at !== 'string') return <section>{children}</section>
+  const folded = folds.folded(`${sections.foldKey}/${at}`, sections.startsFolded(at))
+  return (
+    <section>
+      <Node path={[...sections.base, idOf({ kind: 'section', at })]} className="-mx-2.5 flow-root px-2.5 py-1">
+        {heading}
+        {folded ? <p className="text-xs text-muted-foreground" title={tip('Folded to its heading; Enter opens it again.')}>folded</p> : null}
+      </Node>
+      {folded ? null : body}
+    </section>
   )
 }
 

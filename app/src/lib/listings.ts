@@ -1,4 +1,5 @@
-import type { Listing } from './base'
+/** The three listings a board serves beside its lanes, by the name of their page. */
+type Listing = 'ledger' | 'context' | 'archive'
 
 /**
  * What each of a board's listings is called and what it holds. The sentence

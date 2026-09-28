@@ -46,8 +46,6 @@ export type Held = {
   readonly origin: Placement
   readonly placement: Placement
   readonly over: Over | null
-  /** Whether keys carry the card rather than the pointer. */
-  readonly keyboard: boolean
 }
 
 /** What the held card is aimed at now: something it is over, a place it would go, or neither, which leaves it where it is drawn. */
@@ -90,8 +88,7 @@ const ontoShare = 1 / 3
  * group of the lane the held card is filed in, where the lane lets an item
  * be in no group, with the held card's centre over its middle third. There a
  * drop makes a group of the two, the way a card dropped on another on the
- * index makes an epic of them. Keys step a card from place to place,
- * landing on the middle of each card, so a card they carry is never onto one.
+ * index makes an epic of them.
  */
 export function isOnto({ current, lanes, overId, centreY, top, height }: {
   readonly current: Held
@@ -102,7 +99,7 @@ export function isOnto({ current, lanes, overId, centreY, top, height }: {
   readonly height: number
 }) {
   const lane = laneOfLooseCard({ lanes, id: overId })
-  if (current.keyboard || lane === null || lane !== current.origin.to || isBatchedStage(lane)) return false
+  if (lane === null || lane !== current.origin.to || isBatchedStage(lane)) return false
   const edge = (height * (1 - ontoShare)) / 2
   return centreY > top + edge && centreY < top + height - edge
 }
@@ -152,9 +149,8 @@ export function aimOf({ current, operation, pointer, lanes, cardOf }: {
   // The held card keeps its offset from the pointer, so its centre moves as the pointer does.
   const centreY = centre.y + (pointer ?? now).y - now.y
   // Whether drawing the card in this group would lift the group, heading and
-  // all, while the pointer is not even inside what it is over. Keys land
-  // inside each place they step to.
-  const outside = !current.keyboard && !shape.containsPoint(pointer ?? now)
+  // all, while the pointer is not even inside what it is over.
+  const outside = !shape.containsPoint(pointer ?? now)
   const lifts = (stage: Stage, group: string | null) =>
     outside && group !== null && isDrawnAhead({ lanes, id: current.id, stage, group })
   const aiming: Aiming = { current, lanes, shape, centreY, lifts }
@@ -211,7 +207,7 @@ function aimOverList({ current, lanes, shape, centreY, lifts, group: isGroup, da
     // A card drawn ahead of the group in its lane would lift the group,
     // heading and all, if it were drawn in it; over the group's top it
     // stays drawn where it is, with the drop putting it last.
-    const ahead = !current.keyboard && isDrawnAhead({ lanes, id: current.id, stage, group: into })
+    const ahead = isDrawnAhead({ lanes, id: current.id, stage, group: into })
     const heldAbove = { kind: 'over', over: { kind: 'heading', placement: last } } as const
     if (at === 'end') {
       // Over its heading, a card joins the group last, wherever the drag

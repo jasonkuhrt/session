@@ -62,6 +62,7 @@ const commands = {
   mv: { operands: '<ID> <STAGE>', least: 2, most: 2, options: { '--before': '[--before ID|GROUP]' } },
   group: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
   ungroup: { operands: '<ID...>', least: 1, most: Number.POSITIVE_INFINITY, options: {} },
+  'rename-group': { operands: '<STAGE> "<name>" "<new>"', least: 3, most: 3, options: {} },
   batch: { operands: '"<name>" <ID...>', least: 2, most: Number.POSITIVE_INFINITY, options: {} },
   start: { operands: '', least: 0, most: 0, options: {} },
   done: { operands: '<ID>', least: 1, most: 1, options: {} },
@@ -99,6 +100,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
   mv <ID> <STAGE> [--before ID|GROUP]   move an item, or reorder it where it is
   group "<name>" <ID...>                gather items of one stage into a named group
   ungroup <ID...>                       take items out of their groups
+  rename-group <STAGE> "<name>" "<new>" rename a group or a queued batch where it stands
   batch "<name>" <ID...>                queue Batch items as a named batch
   start                                 move the first queued batch into Execute
   done <ID>                             complete an Execute item
@@ -487,6 +489,18 @@ const ungroup = (options: Options, repository: SessionRepository) =>
     yield* Console.log(`Ungrouped ${counted(options.operands.length, 'item')}`);
   });
 
+/** It says where the group stands now: the directory it keeps, under its new name. */
+const renameGroup = (options: Options, repository: SessionRepository) =>
+  Effect.gen(function*() {
+    const stage = yield* cliTry(() => asStage(options.operands[0]!));
+    const from = options.operands[1]!;
+    const to = options.operands[2]!;
+    const session = yield* repository.load;
+    const renamed = yield* repository.renameGroup({ stage, from, to, revision: session.revision });
+    const item = stageIn(renamed, stage).items.find((entry) => entry.group === to.trim());
+    yield* Console.log(item === undefined ? `Renamed ${quote(from)}` : `Renamed ${quote(from)} to ${item.path.slice(0, item.path.lastIndexOf('/'))}`);
+  });
+
 const queue = (options: Options, repository: SessionRepository) =>
   Effect.gen(function*() {
     const name = options.operands[0]!;
@@ -771,6 +785,7 @@ const runCommand = (options: Options) =>
       case 'mv': { yield* move(options, repository); break; }
       case 'group': { yield* group(options, repository); break; }
       case 'ungroup': { yield* ungroup(options, repository); break; }
+      case 'rename-group': { yield* renameGroup(options, repository); break; }
       case 'batch': { yield* queue(options, repository); break; }
       case 'start': { yield* start(repository); break; }
       case 'done': { yield* complete(options, repository); break; }

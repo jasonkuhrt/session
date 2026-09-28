@@ -42,44 +42,42 @@ worktree; `-C` goes before the command to point at another one. The
 [operations reference](src/session/references/operations.md) has every command.
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
-worktree to it, and opens its board. The index at the root has no heading, only
-its tab's name, Worktrees, and every head and card says what it is in its own
-tips. It shows every worktree the daemon knows as a stack of sections, one per
-project, each a head that is never dragged over the project's cards: a card per
-epic with its worktrees inside and a card of its own for each worktree in none.
-A repository is headed by its main worktree, marked with a house and under its
-own name; when that has no session, by its name and branch as Git lists them,
-marked Not tracked, so its worktrees still have a home; and when Git lists the
-repository by its Git directory, by that directory's name, marked Git directory:
-always for a bare repository, and for a submodule or a separate Git directory
-only while the daemon does not track its main worktree. A folder outside Git is
-a project of its own, headed by its name, marked Outside Git. An epic whose
-worktrees belong to more than one project is drawn once, in a section of its
-own, Across projects. A project whose main worktree the daemon tracks is dragged
-by its head to place it in the stack, and a worktree within its epic's card to
-place it there; the ones placed stand first, in the order they were placed in,
-and keep their places when they go quiet. The rest, sections and the cards in
-each alike, stand in one order: the ones with a live agent first, then by their
-latest activity, and one with nothing live and nothing in five days dim and
-last, a project counting every worktree of it wherever it is drawn. A worktree
-is two lines, marked as the board's picker marks them: a folder and its name
-with the agents live in it, over a branch and its branch, or a commit for a
-detached HEAD, and the pull request gh reports for it. At its top left a glyph
-shows how many items each stage holds, every glyph measured against the fewest
-and the most any stage on the page holds, so a height means the same on every
-card. Drag a worktree onto an epic to join it, onto a worktree in no epic to
-make an epic of the two, from any project, onto the `+` that appears after its
-project's cards while it is held to make an epic of it alone, or out of its epic
-onto empty space to leave it and go back to its project; `session join "<epic>"`
-and `session leave` do the same from a terminal, and `session order` places a
-project or a worktree as a drag does. Each board sits under `/w/<worktree
-name>/`. Activity is when the worktree last did anything: a Claude Code
-session's status change, a Codex thread's update, or an item file written. The
-index has no refresh button and needs none: any command that scaffolds a session
-registers it with a running daemon, a change to a session's items or epic
-reaches it as it is written, and a worktree whose `.session` goes away drops off
-the index by itself. The daemon also finds the other worktrees of the same
-repository that already have a `.session`.
+worktree to it, and opens its board. The index at the root is an outline of
+every worktree the daemon knows, one column of rows: each project's row, then
+its epics, each with its worktrees under it, then its worktrees in no epic. A
+row is a name, a glyph of how many items each stage holds, every glyph measured
+against the fewest and the most any stage on the page holds so a height means
+the same on every row, and the marks of what can need you now: a dot per live
+agent, a `!` for a source that could not answer or a file that breaks a rule,
+and the pull request's number, coloured by its state and red while a check
+fails. Everything else about the focused row is in the detail line along the
+bottom. A repository is headed by its main worktree, under its own name; when
+that has no session, by its name, marked Not tracked, so its worktrees still
+have a home; and when Git lists the repository by its Git directory, by that
+directory's name, marked Git directory: always for a bare repository, and for a
+submodule or a separate Git directory only while the daemon does not track its
+main worktree. A folder outside Git is a project of its own. An epic whose
+worktrees belong to more than one project is drawn once, under Across projects.
+A project whose main worktree the daemon tracks is carried among the projects
+with `Shift+j` and `Shift+k`, or dragged by its row, and a worktree within its
+epic the same way; the ones placed stand first, in the order they were placed
+in, and keep their places when they go quiet. The rest, projects and the rows
+in each alike, stand in one order: the ones with a live agent first, then by
+their latest activity, and one with nothing live and nothing in five days dim
+and last, a project counting every worktree of it wherever it is drawn. Join an
+epic… puts the marked worktrees, or the focused one, in an epic, new or
+existing, and Leave the epic takes them out; a drag onto an epic, onto a
+worktree in no epic, onto the `+` that appears after its project's rows while
+one is held, or out of its epic onto empty space does the same with the mouse.
+`session join "<epic>"` and `session leave` do the same from a terminal, and
+`session order` places a project or a worktree as a carry does. Each board sits
+under `/w/<worktree name>/`. Activity is when the worktree last did anything: a
+Claude Code session's status change, a Codex thread's update, or an item file
+written. The index has no refresh button and needs none: any command that
+scaffolds a session registers it with a running daemon, a change to a session's
+items or epic reaches it as it is written, and a worktree whose `.session` goes
+away drops off the index by itself. The daemon also finds the other worktrees of
+the same repository that already have a `.session`.
 
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
@@ -99,27 +97,35 @@ mistaken for one that is working. The port stays reachable either way.
 A worktree's board, at `/w/<worktree name>/`, reads that worktree's five stage
 directories and shows a Kanban board; an epic's, at `/e/<name>/`, and a
 project's, at `/p/<path>/`, draw every worktree in view in the same lanes, each
-worktree in a row under its name, which opens its own board. It reads that
-worktree's five stage directories and shows a Kanban board. Each card is a link
-to its item's own page at `/w/<worktree name>/item/<ID>`, which reads the
-Markdown at a reading width, with code blocks running the window's full width,
-and carries the same workflow actions, so a long item is a page you can link
-someone to rather than a panel. The page stays with its item when it is finished
-or set aside, and shows it as archived. The board is a viewer with workflow
-actions: move an item, compose a batch, start the queued batch, complete an
-item. It follows the files as they change, over a stream the daemon pushes, and
-pauses while a card is being dragged. Every mutation checks the revision, so a
-stale tab cannot overwrite a later edit on disk.
+worktree in a row under its name, which opens its own board. A card is its
+item's title and its id, dim, and Enter opens the item's own page at
+`/w/<worktree name>/item/<ID>`, which reads the Markdown at a reading width,
+with code blocks running the window's full width, each section folding to its
+heading, and carries the same workflow actions, so a long item is a page you can
+link someone to rather than a panel. The page stays with its item when it is
+finished or set aside, and shows it as archived. The board is a viewer with
+workflow actions: move an item, compose a batch, start the queued batch,
+complete an item. It follows the files as they change, over a stream the daemon
+pushes, and pauses while a card is being dragged. Every mutation checks the
+revision, so a stale tab cannot overwrite a later edit on disk.
 
-The board's header starts with "All projects" and the picker, which names the
-worktree over the branch checked out in it, or an epic or a project over how
-many worktrees are in it, each line marked with an icon for what it is, and
-switches to any worktree's, epic's or project's board, which shows the
-worktree's name over the branch checked out in it, each line marked with an icon
-for what it is, and switches to any other worktree's board. The gear at the top
-right of every page holds the board's own settings, kept in this browser. Tips,
+Every view is keyboard first, and draws only the path and the work. One focus
+is always on a node, a project, an epic, a worktree, a stage, a group, a card
+or a section, and `h` `j` `k` `l` or the arrows move it among its peers, `i`
+goes in and `n` comes out. The path line along the top, the only header, names
+the focus's path from All, each step a click away, and the detail line along
+the bottom holds the focused node's facts. Every action is a command: `;` opens
+the palette, the commands that can run here, nearest first, then every project,
+epic, worktree and item to go to by name or id; `?` opens the key map, every
+command by scope with its keys. A key runs the nearest scope's command on the
+focus path, so a worktree's `t` for its terminal and `e` for Zed work from any
+card of it, and a command that cannot run says why in the detail line. `Space`
+marks nodes for a command that takes several, and Shift with a movement key
+carries the focused node. The focus is in the address, so a reload keeps it,
+and a move to another view is a history entry, so Back returns to it. The
+Settings command holds the board's own settings, kept in this browser. Tips,
 off by default, makes every word and control say what it means when it is
-hovered or focused. `?` on the index or a board lists the keys it answers to.
+hovered or focused.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules
@@ -137,32 +143,33 @@ A commit can close items itself: end its message with a `Session-Done: <ID>`
 trailer and the daemon files that item as done the moment the commit is made,
 from whichever stage it is in, and writes the commit into the archived record.
 Only commits no remote has yet are read, so a trailer that names a missing item,
-or sits where Git does not read it as a trailer, is reported on that worktree's
-board and index row while it can still be amended, and goes once it is fixed or
-pushed.
+or sits where Git does not read it as a trailer, is a red `!` on that worktree
+wherever it is drawn, its sentence in the detail line, while it can still be
+amended, and goes once it is fixed or pushed.
 
 ## Agents on the board
 
-Each board also shows the coding agents at work in that worktree, as a read-only
-overlay: the Claude Code sessions that Claude Code's own listing reports,
-grouped by their working directory, and the newest three interactive Codex
-threads for that path, from the Desktop, an editor, or the CLI.
+The board and the index also know the coding agents at work in each worktree, as
+a read-only overlay: the Claude Code sessions that Claude Code's own listing
+reports, grouped by their working directory, and the newest three interactive
+Codex threads for that path, from the Desktop, an editor, or the CLI.
 
 The concept that orders all of it is live against resumable. A live thing has a
 process behind it: a Claude Code session with a pid, or a Codex thread an app
 holds open, and only a live thing can need you now. A resumable thing is a
 handle and the state something last knew it in; the only thing to do with one is
-pick it back up. The board's strip lists both, live rows first and resumable
-rows below them. Each row starts with the session's name, very dim when Claude
-Code made it from the folder, then its harness, one word for how it is doing
-with how long it has held it, `busy for 16 min`, how many tokens are in its
-context when its transcript says, and last the ways to reach it as icon buttons:
-focus its cmux tab, open the thread in Codex, or copy its resume command or its
-id. The index names only what is live, a pill per session that opens that same
-list as a menu; a worktree whose agents are all resumable shows none, and its
-board is where they are. The listing is recomputed when the index renders and
-when the Claude session registry or the Codex writer locks change, and every
-open board is pushed the change.
+pick it back up. Each live one is a dot on its worktree wherever the worktree is
+drawn, in the accent while it waits on a person, and the worktree's detail line
+names each, very dim when Claude Code made the name from the folder, with one
+word for how it is doing and how long it has held it, `busy for 16 min`. `a`,
+Agents…, lists them all, live first and resumable after, each with its harness,
+its word and its time, and how many tokens are in its context when its
+transcript says; choosing one lists the ways to reach it: focus its cmux tab,
+open the thread in Codex, or copy its resume command or its id. A worktree whose
+agents are all resumable shows no dot, and Agents… is where they are. The
+listing is recomputed when the index renders and when the Claude session
+registry or the Codex writer locks change, and every open board is pushed the
+change.
 
 Everything shown is read when the agents are listed, from the listings and the
 files beside them: each live session's registry file, for when its status last
@@ -175,7 +182,7 @@ cloud sessions never register. A source that cannot be reached names itself
 instead of showing an empty list. The files stay the work; this is only a way to
 reach the agents working on them. The
 [operations reference](src/session/references/operations.md#agents-on-the-board)
-has what each chip shows and what each action does.
+has what each agent shows and what each action does.
 
 ## Editors
 
@@ -211,7 +218,9 @@ board never writes an item's content. The board's own settings are the one thing
 kept outside the files: they live in the browser's localStorage, say only how
 the board draws, and never reach the daemon. Moves preserve stable IDs and
 record content. A revision check guards every mutation, and a mutation writes
-its files before it deletes the ones it replaced.
+its files before it deletes the ones it replaced, and refuses outright to delete
+a path it writes as the disk compares paths, ignoring case and Unicode
+normalization.
 
 The index's unit above the worktree is the epic, and its model is fixed. An epic
 is a name and the linked worktrees whose sessions name it in `meta/epic`, and
@@ -220,17 +229,19 @@ accrues or asks for action, and it exists exactly while some worktree names it.
 A worktree is in at most one epic, since one file holds one name, and a main
 worktree is never in one: its Git directory is the repository's own, which the
 linked worktrees share, Git lists it first, by that directory when it is kept
-apart from it, and will not move, lock or remove it, and the index draws it at
-the head of its repository's section. Above the epic the index draws the
-repository, which is Git's rather than the tool's: the worktrees that share one
-Git directory, named by what Git lists first for it, read from `git worktree
-list` whenever the index reads its rows, and stored nowhere; when Git cannot
-list it, its name falls back to what Git listed first when the worktree was
-taken on, which the daemon holds only while it tracks the worktree. A folder
-outside Git is a project of its own. An epic whose worktrees all belong to one
-project is drawn in that project's section, and one whose worktrees belong to
-more than one is drawn once, in a section of its own ordered with the others.
-Membership changes by a drag or a rename on the index, or by `session join` and
+apart from it, and will not move, lock or remove it, and the index draws it as
+its repository's row. Above the epic the index draws the repository, which is
+Git's rather than the tool's: the worktrees that share one Git directory, named
+by what Git lists first for it, read from `git worktree list` whenever the index
+reads its rows, and stored nowhere; when Git cannot list it, its name falls back
+to what Git listed first when the worktree was taken on, which the daemon holds
+only while it tracks the worktree. A folder outside Git is a project of its own.
+An epic whose worktrees all belong to one project is drawn under that project,
+and one whose worktrees belong to more than one is drawn once, under Across
+projects, ordered with the projects. Membership changes by Join an epic… and
+Leave the epic, which run wherever a worktree is drawn, the index, its own
+board, or its row on an epic's or a project's board; by a drag on the index; by
+Rename the epic…, on the index or the epic's own board; or by `session join` and
 `session leave`; deleting a worktree takes its membership with it, nothing is
 pruned, no path is stored, and nothing stores a fold. The one order stored is a
 worktree's rank among its siblings, a number in its `meta/rank`: a main
@@ -238,9 +249,9 @@ worktree's orders its project among the projects, any other worktree's orders it
 among the worktrees of its epic, and a change of epic removes it, but for a
 rename on the index to a name no other epic has, which is the same epic under
 another name and keeps every rank. Ranked siblings stand first, by rank, and the
-rest after them by what is happening in them. A placement, by a drag on the
-index or by `session order`, ranks the worktree placed, and on the index the
-unranked siblings drawn above where it was dropped, so it lands there, and
+rest after them by what is happening in them. A placement, by a carry or a drag
+on the index or by `session order`, ranks the worktree placed, and on the index
+the unranked siblings drawn above where it was dropped, so it lands there, and
 renumbers the others only where there is no room between two; only that write
 gives a rank, and every epic write but a rename to a new name takes a linked
 worktree's away. Everything else about a worktree is read where it is kept: its
@@ -255,28 +266,33 @@ the branch and the pull request name, and are not modeled.
 The app is desktop-only and uses stock shadcn components with Base UI and the
 Nova neutral preset. It is a TanStack Start app in SPA mode. Every page is a
 file route at the address the daemon serves, and moving between pages stays in
-the document: a link or a key that opens a page goes through the router, the
-page that leaves closes its stream and its dialogs, and Back returns to where
-the page was scrolled. Every read is a TanStack Query query, read when its page
-mounts and, where its answer can change, again on the event that names it; a
-worktree board's picker list is read once, and an epic's or a project's board
-reads its rows again on `worktrees`, since they are its membership, and what the
-daemon says about itself when a page mounts and when a stream comes back, a
-changed `sourceStamp` reloading the page, drag and all. A board's page reads
-that description before it mounts instead, since it names the boards the daemon
-serves, and an address whose key it does not name draws the not-found page and
-reads nothing else. An epic's or a project's page reads the index's rows the
-same way, and a name or path no tracked worktree is in draws the not-found page.
-On the board and the index a drag or a write holds the events it names until it
-ends; the item page's writes hold nothing. `bun run build` prerenders one shell
-and writes it, with the one script and the one stylesheet it names, into
-`app/dist/client`, which the daemon serves; no Start server code runs in the
-daemon. It renders in its dark theme, which is Tokyo Night's night variant,
-defined in `app/src/styles.css`. Keep that theme and the stock component
-appearance. Card placement uses the native behavior of the established sortable
-library. Keep custom code limited to the board, Markdown workflow, and file
-boundary. Do not add separate mobile behavior, accessibility work, or
-concurrent-edit coordination unless Jason changes this contract.
+the document: a link or a command that opens a page goes through the router, the
+page that leaves closes its stream and its dialogs, a move to another view is a
+history entry and a move within one replaces the focus the address holds, so
+Back returns to a view with its focus and a reload keeps it. The keys, the
+palette, the key map, the path line and the detail line are a substrate under
+`app/src/substrate/` that holds no session noun and asks the app everything
+through one seam; every command is an Effect Schema value in one registry,
+decoded when the app loads so a clash fails the build, and every key is bound
+from it. Every read is a TanStack Query query, read when its page mounts and,
+where its answer can change, again on the event that names it; an epic's or a
+project's board reads its rows again on `worktrees`, since they are its
+membership, and what the daemon says about itself when a page mounts and when a
+stream comes back, a changed `sourceStamp` reloading the page, drag and all. A
+board's page reads that description before it mounts instead, since it names the
+boards the daemon serves, and an address whose key it does not name draws the
+not-found page and reads nothing else. An epic's or a project's page reads the
+index's rows the same way, and a name or path no tracked worktree is in draws
+the not-found page. On the board and the index a drag or a write holds the
+events it names until it ends; the item page's writes hold nothing. `bun run
+build` prerenders one shell and writes it, with the one script and the one
+stylesheet it names, into `app/dist/client`, which the daemon serves; no Start
+server code runs in the daemon. It renders in its dark theme, which is Tokyo
+Night's night variant, defined in `app/src/styles.css`. Keep that theme and the
+stock component appearance. Card placement uses the native behavior of the
+established sortable library. Keep custom code limited to the board, Markdown
+workflow, and file boundary. Do not add separate mobile behavior, accessibility
+work, or concurrent-edit coordination unless Jason changes this contract.
 
 Where data crosses a boundary, its shape is an Effect Schema, and the code's
 type for it is that schema's `Type`, never written by hand. This is an axiom,

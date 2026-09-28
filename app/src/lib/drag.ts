@@ -2,7 +2,7 @@ import type { Draggable } from '@dnd-kit/dom'
 import { PointerActivationConstraints } from '@dnd-kit/dom'
 import { getInteractiveElement, isElement } from '@dnd-kit/dom/utilities'
 import type { DragMoveEvent } from '@dnd-kit/react'
-import { KeyboardSensor, PointerSensor } from '@dnd-kit/react'
+import { PointerSensor } from '@dnd-kit/react'
 
 import type { Holding } from './epics'
 import { draggedId, draggedOf, targetId, targetOf } from './epics'
@@ -17,8 +17,8 @@ import { draggedId, draggedOf, targetId, targetOf } from './epics'
  * handle the pointer sensor's own default is a 200ms press, which reads as the
  * card refusing to move; a short distance instead means the gesture is decided
  * by whether you moved, so a plain click on a link, a checkbox or a button is
- * still a click. The keyboard sensor is the stock one, kept so a board's
- * cards, which take the focus, still move from the keyboard.
+ * still a click. There is no keyboard sensor: drag is the mouse's, and every
+ * drop has a command of its own, carried by the keys the registry binds.
  */
 const dragThresholdPixels = 5
 
@@ -44,7 +44,6 @@ export const dragSensors = [
     activationConstraints: [new PointerActivationConstraints.Distance({ value: dragThresholdPixels })],
     preventActivation: pressBelongsToControl,
   }),
-  KeyboardSensor,
 ]
 
 /** The outline of the place a held card would be dropped into. */

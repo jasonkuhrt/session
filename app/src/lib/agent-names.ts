@@ -2,10 +2,10 @@ import type { ClaudeSession } from '../../contract'
 import { registryFile } from './agents'
 
 /**
- * What a session is called, and where the name came from, as both agent
- * surfaces say it. The listing gives the name; the session's registry file
- * says whether Claude Code made it up or someone gave it, and that word is all
- * the board goes by.
+ * What a session is called, and where the name came from, wherever the board
+ * names it. The listing gives the name; the session's registry file says
+ * whether Claude Code made it up or someone gave it, and that word is all the
+ * board goes by.
  */
 
 /** What to call a session: its name, else whatever handle identifies it. */
@@ -19,9 +19,9 @@ const derivedName = 'derived'
 const givenName = 'user'
 
 /**
- * Whether a session goes by the name Claude Code made for it, which both
- * surfaces draw very dim. The registry's word is the whole test: a name that
- * only looks made up is not second-guessed.
+ * Whether a session goes by the name Claude Code made for it, which the board
+ * draws very dim. The registry's word is the whole test: a name that only
+ * looks made up is not second-guessed.
  */
 export const isDerivedName = (session: ClaudeSession) => session.name !== null && session.nameSource === derivedName
 
@@ -39,7 +39,3 @@ export const nameMeaning = (session: ClaudeSession): string => {
   if (session.nameSource === null) return `Nothing read from ${file} says where this name came from.`
   return `${file} records this name's source as ${session.nameSource}.`
 }
-
-/** What a Codex thread's name is, since the listing may name it by its preview. */
-export const threadNameMeaning =
-  "The thread's name in Codex; one without a name goes by the first line of its preview, and one with neither by its id."

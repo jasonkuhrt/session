@@ -26,15 +26,6 @@ const blockedState = 'blocked'
 /** A session with a process behind it. Without one it is a handle, not a session at work. */
 export const isLive = (session: ClaudeSession) => session.pid !== null
 
-/**
- * A thread nothing holds: the locks were read, and this one was not among
- * them. It is the only Codex answer that is a handle rather than a thing at
- * work, and the only one that carries a command to pick it back up. A thread
- * whose locks could not be read is not this, and is never demoted as if it
- * were.
- */
-export const isParkedThread = (thread: CodexThread) => thread.loaded === false
-
 /** A live session's registry file, as its tips name it: `sessions/<pid>.json` in Claude Code's directory. */
 export const registryFile = (pid: number) => `sessions/${pid}.json`
 
@@ -42,7 +33,7 @@ export const registryFile = (pid: number) => `sessions/${pid}.json`
  * The one word for a session. A live session says what it is doing now; a
  * resumable one can only say the state Claude Code last knew it in.
  */
-export const wordOf = (session: ClaudeSession) =>
+const wordOf = (session: ClaudeSession) =>
   (isLive(session) ? session.status : session.state) ?? missingStatus
 
 /**
@@ -146,7 +137,7 @@ export const wordOfThread = (thread: CodexThread) =>
  * this build does not know sits with `idle`: it is live, so it outranks a
  * resumable session, and it is not a request, so it does not outrank work.
  */
-export const rank = (session: ClaudeSession): number => {
+const rank = (session: ClaudeSession): number => {
   if (!isLive(session)) return 3
   if (needsYou(session)) return 0
   const word = wordOf(session)
@@ -154,7 +145,7 @@ export const rank = (session: ClaudeSession): number => {
 }
 
 /** Codex says nothing about turns, so its order is only whether a thread is held. */
-export const rankCodex = (thread: CodexThread): number =>
+const rankCodex = (thread: CodexThread): number =>
   thread.loaded === true ? 0 : thread.loaded === null ? 1 : 2
 
 /** A moment as a number, where a stamp no date can hold sorts last. */
@@ -261,11 +252,3 @@ export const actionsForThread = (thread: CodexThread): Action[] => {
   return actions
 }
 
-/** One key per action within a session; a session never repeats a label. */
-export const actionKey = (action: Action) => `${action.kind}:${action.label}`
-
-/** What the two tiers mean, wherever they are named. */
-export const tierMeaning = {
-  live: 'A session whose process is running, or a thread an app holds open.',
-  resumable: 'Nothing holds it now; the command in its row picks it back up.',
-}
