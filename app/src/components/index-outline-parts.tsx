@@ -13,6 +13,7 @@ import { cn } from '../lib/utils'
 import { idOf, rootId } from '../levels'
 import { Node } from '../substrate/node'
 import { HeldWords } from './held-words'
+import { Card, CardContent } from './ui/card'
 import type { StageRange } from '../lib/dashboard'
 import type { Marker } from '../lib/order'
 import type { Signals } from './marks'
@@ -64,7 +65,7 @@ export function RefusedRow({ row }: { row: WorktreeSummary }) {
   )
 }
 
-/** What the pointer carries: a plain copy of the row held, with the words of what dropping it there would do. */
+/** What the pointer carries: a card holding the name of what is held, with the words of what dropping it there would do. */
 export function HeldCopy({ dragged, dashboard, context, words }: {
   dragged: Dragged | null
   dashboard: Dashboard
@@ -77,9 +78,11 @@ export function HeldCopy({ dragged, dashboard, context, words }: {
     : context.rows.find((row) => row.path === dragged.path)?.name
   if (name === undefined) return null
   return (
-    <div className="relative max-w-md rounded-md border bg-card px-2 py-1.5 text-sm shadow-lg">
+    <div className="relative max-w-md">
       <HeldWords words={words} />
-      {name}
+      <Card size="sm" className="shadow-lg">
+        <CardContent className="truncate">{name}</CardContent>
+      </Card>
     </div>
   )
 }

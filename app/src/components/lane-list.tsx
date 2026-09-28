@@ -40,7 +40,7 @@ export function LaneList({ part, stage, dragging, endRef, paths, className, endC
   const landsIn = landingIn({ dragging, board })
   const heldHere = landsIn !== null && landsIn.to === stage ? landsIn : null
   return (
-    <div className={cn(className, 'flex flex-col gap-0.5 rounded-md', heldHere?.group === null && landing)}>
+    <div className={cn(className, 'flex flex-col gap-2 rounded-md', heldHere?.group === null && landing)}>
       {lane.entries.map((entry) => (entry.kind === 'item'
         ? (
           <WorkflowCard
@@ -118,11 +118,11 @@ function GroupBlock({ path, paths, board, groupKey, stage, name, items, dragging
     disabled: actions.pending,
   })
   return (
-    <div ref={ref} className={cn('my-1 flex flex-col gap-0.5 rounded-md', lands && landing)}>
+    <div ref={ref} className={cn('flex flex-col gap-2 rounded-md', lands && landing)}>
       <Node path={path} nodeRef={headingRef} className="px-2.5 py-1 text-xs font-medium tracking-wide text-muted-foreground">
         <span title={tip(groupMeaning[stage])}>{name}</span>
       </Node>
-      <div className="flex flex-col gap-0.5 pl-3">
+      <div className="flex flex-col gap-2 pl-3">
         {items.map((item, index) => (
           <WorkflowCard
             key={item.id}

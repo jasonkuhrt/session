@@ -4,8 +4,8 @@ import { cn } from '../lib/utils'
 /**
  * The line where a held project or worktree would take its place, across the
  * top or the bottom of what it would go before or after, laid over the gap
- * so nothing moves under the pointer. `gap` is how far out the gap's middle
- * is, as a Tailwind inset.
+ * so nothing moves under the pointer: its middle on the gap's. `gap` is which
+ * gap: none between rows, and the index's between two projects' cards.
  */
 export function LandingLine({ side, gap }: { side: 'before' | 'after'; gap: 'row' | 'section' }) {
   return (
@@ -13,7 +13,7 @@ export function LandingLine({ side, gap }: { side: 'before' | 'after'; gap: 'row
       aria-hidden
       className={cn(
         'pointer-events-none absolute inset-x-2 z-10 border-t-2 border-dashed border-primary',
-        gap === 'row' ? (side === 'before' ? '-top-px' : '-bottom-px') : (side === 'before' ? '-top-5' : '-bottom-5'),
+        gap === 'row' ? (side === 'before' ? '-top-px' : '-bottom-px') : (side === 'before' ? '-top-[9px]' : '-bottom-[9px]'),
       )}
     />
   )

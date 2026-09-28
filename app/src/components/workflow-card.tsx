@@ -8,6 +8,7 @@ import { Node } from '../substrate/node'
 import type { Path } from '../substrate/seam'
 import { HeldWords } from './held-words'
 import { useTip } from './tip'
+import { Card, CardContent } from './ui/card'
 
 /**
  * Where a drop would put a card, as the board checks it against the rules for
@@ -23,11 +24,12 @@ export type CardActions = {
 }
 
 /**
- * A card: the item's title and its id, dim, and nothing else; what else is
- * known about it is in the detail line while it has the focus, and its page
- * is one Enter or one click away, the card being a link there. It is dragged
- * by its whole self, its title included, for the mouse; every drop has a key
- * of its own.
+ * A card: the stock card, holding the item's title and its id, dim, and
+ * nothing else; what else is known about it is in the detail line while it
+ * has the focus, which rings the card's whole surface, and its page is one
+ * Enter or one click away, the card being a link there. It is dragged by its
+ * whole self, its title included, for the mouse; every drop has a key of its
+ * own.
  */
 export function WorkflowCard({ path, board, item, index, stage, lands, words, pending, accepts }: CardActions & {
   /** Where the card is in the tree. */
@@ -55,15 +57,21 @@ export function WorkflowCard({ path, board, item, index, stage, lands, words, pe
   })
   const tip = useTip()
   return (
+    // The node is the card's own size and shape, so its focus rings the card.
     <Node
       path={path}
       nodeRef={ref}
-      className={cn('px-2.5 py-1.5 pr-6 leading-snug', !frozen && 'cursor-grab', isDragSource && 'opacity-50', lands && landing)}
+      className={cn('rounded-xl', !frozen && 'cursor-grab', isDragSource && 'opacity-50', lands && landing)}
     >
       {/* The held card is this element itself, carried by the pointer, so the words ride on it. */}
       <HeldWords words={isDragSource ? words : null} />
-      <span className="text-sm text-foreground" title={tip(item.summary === '' ? item.title : item.summary)}>{item.title}</span>
-      <span className="ml-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground/60" title={tip(`The item’s id, the same in every stage.`)}>{item.id}</span>
+      <Card size="sm">
+        {/* Room at its right for the mark's dot, so a title never runs under it. */}
+        <CardContent className="pr-6 leading-snug">
+          <span className="text-foreground" title={tip(item.summary === '' ? item.title : item.summary)}>{item.title}</span>
+          <span className="ml-1.5 font-mono text-xs whitespace-nowrap text-muted-foreground/60" title={tip(`The item’s id, the same in every stage.`)}>{item.id}</span>
+        </CardContent>
+      </Card>
     </Node>
   )
 }

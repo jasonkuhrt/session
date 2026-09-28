@@ -8,13 +8,14 @@ import { InsideLinkContext, useSurfaceContext } from './surface-context'
 /**
  * A node the view draws: something the focus can be on. It says where it is,
  * so the moves read it at its level in the drawn geometry, and it draws the
- * focus as a soft fill with a rule at its left edge, and a mark as a dot. The
- * surface hears its clicks. A node a click opens another page from is drawn
- * as the app's link to that page's address, so the browser treats it as one:
- * a click with a modifier or the middle button opens a new tab, the context
- * menu offers it, and the status bar shows where it goes. When it becomes the
- * focus it brings itself into view, so a move scrolls to what it reached and
- * a read that moves nodes around never scrolls the page.
+ * focus as a ring around its whole surface, which a card or a row the view
+ * draws inside it fills, and a mark as a dot. The surface hears its clicks. A
+ * node a click opens another page from is drawn as the app's link to that
+ * page's address, so the browser treats it as one: a click with a modifier or
+ * the middle button opens a new tab, the context menu offers it, and the
+ * status bar shows where it goes. When it becomes the focus it brings itself
+ * into view, so a move scrolls to what it reached and a read that moves nodes
+ * around never scrolls the page.
  */
 export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef, children, ...rest }: {
   readonly path: Path
@@ -61,7 +62,7 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     'data-focused': focused ? '' : undefined,
     'data-marked': marked ? '' : undefined,
     className: cn(
-      'relative scroll-my-12 rounded-md data-focused:bg-primary/10 data-focused:shadow-[inset_2px_0_0_var(--color-primary)]',
+      'relative scroll-my-12 rounded-md data-focused:ring-2 data-focused:ring-primary',
       // A link is inline by itself, and a node is a block unless it says otherwise.
       address !== null && 'block',
       className,

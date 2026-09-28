@@ -649,25 +649,28 @@ of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through; it takes the worktree by its path, `{path}`, as the terminal and Zed
 routes take it, and refuses any other body.
 
-The index at `/` draws the tracked worktrees as an outline, one column of rows:
-each project's row, then its epics, each with its worktrees under it, then its
-worktrees in no epic, one step further in at each level. Like every view it has
+The index at `/` draws the tracked worktrees as an outline, one column of
+projects, each a card holding its rows: the project's row, then its epics, each
+a heading within the card over its worktrees, then its worktrees in no epic, one
+step further in at each level; the epics across projects stand in a card of
+their own. Like every view it has
 the path line along its top and the detail line along its bottom, as
-[Keys](#keys) has them, and nothing else around the rows: no header and no
-heading, since the browser's tab names it Worktrees. A row is a name, the glyph
-of what the session holds, and the marks of what can need you now. Every other
-fact about a row is in the detail line while the row has the focus, and every
-action on it is a command, which the palette lists and the key map names. A
-project is a repository, or a folder outside Git, which is a project of its own.
-A repository is what Git names for every worktree of it: the worktrees that
-share one Git directory, named by what Git lists first for it: its main
-worktree, or the Git directory Git lists in the main worktree's place. Every row
-the daemon serves carries its repository, the name and path of what Git lists
-first and what the listing says is checked out there, from the same `git
-worktree list` as the row's own branch. Nothing about a repository is stored:
-when Git cannot list one, its rows are Not served, with the reason, and keep
-their project, named by what Git listed first when each was taken on, which the
-daemon holds for as long as it tracks the row. A path the daemon holds until
+[Keys](#keys) has them, and nothing else around the cards: no header and no
+heading, since the browser's tab names it Worktrees. A card is the stock one,
+bordered on the card colour. A row is a name, the glyph of what the session
+holds, and the marks of what can need you now, in the same three columns in
+every card. Every other fact about a row is in the detail line while the row has
+the focus, and every action on it is a command, which the palette lists and the
+key map names. A project is a repository, or a folder outside Git, which is a
+project of its own. A repository is what Git names for every worktree of it: the
+worktrees that share one Git directory, named by what Git lists first for it:
+its main worktree, or the Git directory Git lists in the main worktree's place.
+Every row the daemon serves carries its repository, the name and path of what
+Git lists first and what the listing says is checked out there, from the same
+`git worktree list` as the row's own branch. Nothing about a repository is
+stored: when Git cannot list one, its rows are Not served, with the reason, and
+keep their project, named by what Git listed first when each was taken on, which
+the daemon holds for as long as it tracks the row. A path the daemon holds until
 Git answers names no repository and is no folder outside Git, so it stands in no
 project: it is a dim row after the last project, whose detail line gives the
 path and Git's line; the Terminal and Copy path commands act on it, and every
@@ -729,7 +732,8 @@ session waits on a person; a red `!` while a file of its session or a commit
 breaks a rule, a `Session-Done` trailer it cannot act on or a `meta/epic` or
 `meta/rank` the rules reject; a dim `!` while a source could not answer for it,
 gh, linear or an agents' listing; and the number of its branch's pull request,
-green while open, dim as a draft, magenta once merged, red once closed, and red
+a badge coloured by its state, green while open, dim as a draft, magenta once
+merged, red once closed, and red
 whatever its state while any check fails. The detail line of a worktree says
 the rest, in this order: its name; what it has checked out, its branch,
 `Detached HEAD` for a commit, or `No branch` for a folder outside Git; why it is
@@ -869,9 +873,9 @@ and Enter on a project the project's; the palette's go-to reaches every one of
 them by name from any view.
 
 A board has no header. Its path line names where the focus is, from All down,
-and each of its steps is a click away: All is the index, a project's or an
-epic's step its place there, and a worktree's step, on a worktree's board, the
-worktree, which carries its marks there, since the board draws no row of its
+and each step before the focus is a click away: All is the index, a project's or
+an epic's step its place there, and a worktree's step, on a worktree's board,
+the worktree, which carries its marks there, since the board draws no row of its
 own for it. What the header held is a command now, and a fact of the detail line
 while the worktree has the focus, the focus on any of its cards included, since
 a worktree's commands run from anywhere inside it: its pull request and Linear
@@ -1072,8 +1076,10 @@ daemon's PATH, which `GET /api/daemon` reports as `zed`, and otherwise refuses,
 saying so.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
-order and reads the item files directly; it never writes an item's content, and
-there is no way to type a body or create an item in it. A card is the item's
+order, each a column under its stage's name, a muted label over a rule, and
+reads the item files directly; it never writes an item's content, and there is
+no way to type a body or create an item in it. A card is the stock card,
+bordered on the card colour, holding the item's
 title and its id, dim, and nothing else. The start of the item's first
 paragraph, up to 180 characters, as a reader of the Markdown sees it, without
 the marks around its words, is the title's tip and a fact of the card's detail
@@ -1396,8 +1402,9 @@ name and a folder's can carry one.
 
 Every action the board offers is a command, and every command is reachable from
 the keyboard; the mouse is optional and has no action the keys lack. There is
-one focus, always drawn, as a soft fill of the theme's primary colour with a
-rule of it along the node's left edge, on one node of a tree: All, the root; a project; an epic; a worktree; a stage, its lane; a group,
+one focus, always drawn, as a ring of the theme's primary colour around the
+node's whole surface, a card's, a row's or a heading's, on one node of a tree:
+All, the root; a project; an epic; a worktree; a stage, its lane; a group,
 or a batch in Queue and Execute; an item, a card on a board; a section of a
 page, which is also each entry of a ledger, of `context/` and of the archive;
 and a record, the page of a ledger, of `context/`, of the archive or of a file.
@@ -1410,8 +1417,9 @@ cards; an item's page its sections; and the ledger, context, archive and file
 pages their entries.
 
 Two lines are on every view and stand still around it. The path line along the
-top is the only header there is: the focus's path from All, each step a click
-away and a link to where it goes, the focused one bright. A step carries its
+top is the only header there is, a breadcrumb: the focus's path from All, each
+step before the focus a click away and a link to where it goes, and the focus
+the page it ends on, bright. A step carries its
 node's marks when the view does not draw the node, so a worktree's board shows
 the worktree's agents and pull request in its step, and a marked node's step
 carries the mark. The detail line along the bottom holds the focused node's
@@ -1420,7 +1428,8 @@ moves what is above it; with Tips on, each fact says what it means as its tip.
 For a moment after a command it says what happened instead, or why nothing did,
 and at its end it names the mode while one is open, `-- 2 marked --`,
 `-- palette --`, `-- keys --`, and nothing in the normal one. Until the first
-key, it says where the keys are: "Press ? for every key, ; for the palette."
+key, it says where the keys are, each drawn as a key cap: "Press ? for every
+key, ; for the palette."
 
 `h`, `j`, `k` and `l`, and the arrows, move the focus to the nearest peer at
 its level in the drawn geometry, left, down, up and right, across containers: a
@@ -1468,8 +1477,9 @@ or down its epic's order, and a project up or down the projects, with
 index sections above describe.
 
 `;` opens the command palette, the one mode that takes typing. It lists the
-commands that can run at the focus, nearest scope first, each beside the node
-it acts on and with its keys, then everything there is to go to: every project,
+commands that can run at the focus, nearest scope first, each its name, then the
+node it acts on, dim, and its keys as key caps at the right, then everything
+there is to go to, each with what it is dim at the right: every project,
 epic and worktree, and every item of the sessions read, by name or id. Typing
 narrows both, each word typed in a line's name, what it acts on, or its id;
 `Ctrl+j` and `Ctrl+k`, or the arrows, move the highlight, and Enter or a click
@@ -1482,8 +1492,10 @@ takes the name, Escape cancels, and a refusal stays under the name. Go to…
 opens the palette's second half alone.
 
 `?` opens the key map: every command there is, by scope, the current scope
-first and the rest nearest first, each with its name, its keys, its summary and
-the click that stands for it, and a command that cannot run at the focus drawn
+first and the rest nearest first, each scope headed by its name in small
+capitals and each command a line of its own under a rule, with its name, its
+summary and the click that stands for it, and its keys as key caps, and a
+command that cannot run at the focus drawn
 dim. `?` or Escape closes it.
 
 | Scope | Command | Keys |
@@ -1533,14 +1545,14 @@ epic's or a project's board, around its cards, and the body of an item with no
 sections, around its prose. A click on a step of the path line moves the focus
 there. A node a click opens another page from is drawn as a link to that page's
 address, through TanStack Router's `Link`, and so is every step of the path
-line, to where a click on it moves the focus: a click with ⌘, Ctrl, Alt or
-Shift held, or with any button but the first, is the browser's, so ⌘-click and
-a middle click open the address in a new tab and leave the page and its focus
-as they were, the context menu offers the link, and the status bar shows where
-it goes. A word with its tip behind it, while Tips is on, is part of the link it
-is in, and never a button there. A drag is the carry, join, leave or group its
-drop makes; it starts anywhere on a card or a row, its title included, and a
-click a browser makes of the release that drops it runs nothing.
+line before the focus, to where a click on it moves the focus: a click with ⌘,
+Ctrl, Alt or Shift held, or with any button but the first, is the browser's, so
+⌘-click and a middle click open the address in a new tab and leave the page and
+its focus as they were, the context menu offers the link, and the status bar
+shows where it goes. A word with its tip behind it, while Tips is on, is part of
+the link it is in, and never a button there. A drag is the carry, join, leave or
+group its drop makes; it starts anywhere on a card or a row, its title included,
+and a click a browser makes of the release that drops it runs nothing.
 
 Every key is a TanStack Hotkeys registration made from the registry, in
 `app/src/substrate/bind.ts` and nowhere else, which the lint rule

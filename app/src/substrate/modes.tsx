@@ -3,7 +3,6 @@ import * as React from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog'
 import { Input } from '../components/ui/input'
 import { Kbd, KbdGroup } from '../components/ui/kbd'
-import { cn } from '../lib/utils'
 import { substrateIds } from './commands'
 import type { Key } from './registry'
 import { keyLabel } from './key-labels'
@@ -105,22 +104,28 @@ export function entriesOf({ mode, seam }: {
   return [...commands, ...places]
 }
 
-/** The keys of a command as the palette and the key map draw them. */
+/**
+ * The keys of a command as the palette and the key map draw them, each a key
+ * cap. On the palette's highlighted line, whose fill is the cap's own, a cap
+ * takes the page's ground instead, as the stock cap changes its ground inside
+ * a tooltip, so it still reads as a key.
+ */
 export function Keys({ keys }: { readonly keys: readonly Key[] }) {
   if (keys.length === 0) return null
   return (
     <KbdGroup className="ml-auto shrink-0">
-      {keys.map((key) => <Kbd key={keyLabel(key)}>{keyLabel(key)}</Kbd>)}
+      {keys.map((key) => <Kbd key={keyLabel(key)} className="in-data-highlighted:bg-background">{keyLabel(key)}</Kbd>)}
     </KbdGroup>
   )
 }
 
 /**
  * The palette: an input, then the commands that can run at the focus,
- * nearest scope first, each beside the node it acts on, then everything there
- * is to go to; or, for a command that asks, its choices. It opens empty each
- * time, and its placeholder never says "pin" or "password", which a password
- * extension reads as a field to fill.
+ * nearest scope first, each its name with the node it acts on dim after it
+ * and its keys as key caps at the right, then everything there is to go to,
+ * each with what it is dim at the right; or, for a command that asks, its
+ * choices. It opens empty each time, and its placeholder never says "pin" or
+ * "password", which a password extension reads as a field to fill.
  */
 export function Palette({ mode, entries, onQuery, onTake, onHighlight, onClose }: {
   readonly mode: Extract<Mode, { kind: 'palette' | 'choose' }>
@@ -169,19 +174,15 @@ export function Palette({ mode, entries, onQuery, onTake, onHighlight, onClose }
                 type="button"
                 tabIndex={-1}
                 data-highlighted={index === highlight ? '' : undefined}
-                className={cn(
-                  'flex w-full min-w-0 cursor-pointer items-baseline gap-3 rounded-md px-2 py-1.5 text-left text-sm',
-                  index === highlight ? 'bg-primary/10 shadow-[inset_2px_0_0_var(--color-primary)]' : 'hover:bg-muted',
-                )}
+                className="flex w-full min-w-0 cursor-pointer items-baseline justify-between gap-6 rounded-md px-2 py-1.5 text-left text-sm data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                 onMouseMove={() => index !== highlight && onHighlight(index)}
                 onClick={() => onTake(entry)}
               >
-                <span className="shrink-0 text-foreground">{entry.name}</span>
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                  {entry.kind === 'go' && entry.id !== undefined ? <span className="font-mono">{entry.id} · </span> : null}
-                  {entry.on}
+                <span className="min-w-0 truncate">
+                  <span className="text-foreground">{entry.name}</span>
+                  <EntryAfter entry={entry} />
                 </span>
-                {entry.kind === 'command' ? <Keys keys={entry.keys} /> : null}
+                <EntryEnd entry={entry} />
               </button>
             </React.Fragment>
           ))}
@@ -194,8 +195,23 @@ export function Palette({ mode, entries, onQuery, onTake, onHighlight, onClose }
 /** Brings the highlighted entry into view, as the palette's list scrolls under it. */
 const revealEntry = (element: HTMLButtonElement | null) => element?.scrollIntoView({ block: 'nearest' })
 
+/**
+ * What an entry names dim after its own name: the node a command acts on, the
+ * id of an item to go to, or what a choice is.
+ */
+function EntryAfter({ entry }: { readonly entry: PaletteEntry }) {
+  if (entry.kind === 'go') return entry.id === undefined ? null : <span className="ml-2 font-mono text-xs text-muted-foreground">{entry.id}</span>
+  return entry.on === '' ? null : <span className="ml-2 text-muted-foreground">{entry.on}</span>
+}
+
+/** What an entry holds at its right: a command's keys as key caps, or what a place to go to is, dim. */
+function EntryEnd({ entry }: { readonly entry: PaletteEntry }) {
+  if (entry.kind === 'command') return <Keys keys={entry.keys} />
+  return entry.kind === 'go' ? <span className="shrink-0 text-xs text-muted-foreground">{entry.on}</span> : null
+}
+
 function Heading({ children }: { readonly children: React.ReactNode }) {
-  return <p className="px-2 pt-3 pb-1 text-xs tracking-wide text-muted-foreground uppercase">{children}</p>
+  return <p className="px-2 pt-3 pb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{children}</p>
 }
 
 /** The dialog a command asks for a name in: what it names, the name, and why the last one was refused. */
@@ -233,7 +249,7 @@ export function NameMode({ mode, onValue, onConfirm, onClose }: {
           />
         </form>
         <p className="text-xs text-muted-foreground">
-          {mode.busy ? 'Writing…' : 'Enter to confirm · Esc to cancel'}
+          {mode.busy ? 'Writing…' : <><Kbd>Enter</Kbd> to confirm · <Kbd>Esc</Kbd> to cancel</>}
           {mode.error === null ? null : <span className="block pt-1 text-destructive wrap-anywhere">{mode.error}</span>}
         </p>
       </DialogContent>

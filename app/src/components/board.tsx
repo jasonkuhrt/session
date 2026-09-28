@@ -10,6 +10,7 @@ import type { Aim, Drawn, Held } from '../lib/held'
 import { aimOf, itemIn, ownDrawn, sameOver, samePlacement } from '../lib/held'
 import type { Dragging, Lane as LaneLayout, Placement } from '../lib/lanes'
 import { cardId, lanesOf, moved, moveWords, newGroupWords, placementOf } from '../lib/lanes'
+import { cn } from '../lib/utils'
 import { moveAvailability } from '../lib/workflow'
 import { useLinkOf } from '../substrate/surface-context'
 import type { LanePart, PathsOf } from './lane'
@@ -199,17 +200,17 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
         void onMove(current.board, current.id, placement, own.revision).finally(letGo)
       }}
     >
-      {/* The lanes scroll sideways in their own box, never the page. */}
-      <div className="-mx-4 overflow-x-auto px-4 pb-2">
+      {/* The lanes scroll sideways in their own box, never the page, with room around them for the focus's ring. */}
+      <div className="-mx-4 overflow-x-auto px-4 pt-1 pb-2">
         {grouped ? (
           <div className="grid min-w-[72rem] grid-cols-[minmax(7rem,11rem)_repeat(5,minmax(12rem,1fr))] items-stretch gap-x-3">
             <div />
             {stageNames.map((stage) => <LaneHeading key={stage} path={paths.stage(stage)} stage={stage} />)}
-            {parts.map((part) => (
+            {parts.map((part, row) => (
               <React.Fragment key={part.board}>
-                <WorktreeName part={part} paths={paths} />
+                <WorktreeName part={part} paths={paths} ruled={row > 0} />
                 {stageNames.map((stage) => (
-                  <PartOfLane key={stage} {...actions} part={partOf(part, stage)} stage={stage} dragging={dragging} paths={paths} />
+                  <PartOfLane key={stage} {...actions} part={partOf(part, stage)} stage={stage} dragging={dragging} paths={paths} ruled={row > 0} />
                 ))}
               </React.Fragment>
             ))}
@@ -235,10 +236,14 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
  * click with a modifier, which opens the board in a new tab, still reaches
  * the registry.
  */
-function WorktreeName({ part, paths }: { part: BoardPart; paths: PathsOf }) {
+function WorktreeName({ part, paths, ruled }: { part: BoardPart; paths: PathsOf; ruled: boolean }) {
   const tip = useTip()
   const address = useLinkOf()(paths.part({ key: part.key, stage: 'Triage' }))
-  const className = 'sticky left-0 z-10 flex min-w-0 items-start gap-2 border-t bg-background py-2 pr-2 text-left text-sm text-muted-foreground'
+  const className = cn(
+    // Its words stand level with the title of the row's first card.
+    'sticky left-0 z-10 flex min-w-0 items-start gap-2 bg-background pt-5 pr-2 pb-2 text-left text-sm text-muted-foreground',
+    ruled && 'border-t',
+  )
   const name = <span className="min-w-0 truncate">{part.name}</span>
   // A worktree whose board cannot open from here is named, and links nowhere.
   if (address === null) {

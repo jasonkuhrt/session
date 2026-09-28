@@ -4,11 +4,13 @@ import { useDroppable } from '@dnd-kit/react'
 import type { Stage } from '../../contract'
 import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
 import { listId } from '../lib/lanes'
+import { cn } from '../lib/utils'
 import { stageHint } from '../lib/workflow'
 import { Node } from '../substrate/node'
 import type { Path } from '../substrate/seam'
 import { LaneList } from './lane-list'
 import { useTip } from './tip'
+import { Separator } from './ui/separator'
 import type { CardActions } from './workflow-card'
 
 /**
@@ -54,7 +56,10 @@ function useLaneDrop({ board, stage, at, accepts, pending }: Pick<CardActions, '
   })
 }
 
-/** One stage's lane of a worktree's board, whole: its heading, which takes a card to its start, then its entries. */
+/**
+ * One stage's lane of a worktree's board, whole: a column under its heading,
+ * which takes a card to its start, then its entries.
+ */
 export function Lane({ part, stage, dragging, paths, ...actions }: CardActions & {
   part: LanePart
   stage: Stage
@@ -65,7 +70,7 @@ export function Lane({ part, stage, dragging, paths, ...actions }: CardActions &
   const { ref: startRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'start' })
   const { ref: endRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'end' })
   return (
-    <section ref={wholeRef} aria-label={stage} className="flex min-w-0 flex-col gap-1">
+    <section ref={wholeRef} aria-label={stage} className="flex min-w-0 flex-col gap-2">
       <LaneHeading path={paths.stage(stage)} stage={stage} nodeRef={startRef} />
       <LaneList {...actions} part={part} stage={stage} dragging={dragging} paths={paths} endRef={endRef} className="min-h-24" endClassName="h-16" />
     </section>
@@ -78,29 +83,40 @@ export function Lane({ part, stage, dragging, paths, ...actions }: CardActions &
  * own, the worktree at that stage, whose entries are its own worktree's alone,
  * so a card is placed only among its own worktree's cards. It holds its
  * cards, so a click on its own space only takes the focus, and the name at
- * the row's left edge is the link to the worktree's board.
+ * the row's left edge is the link to the worktree's board. A rule stands
+ * between one worktree's row and the next; the first stands under the lanes'
+ * headings, which have one of their own.
  */
-export function PartOfLane({ part, stage, dragging, paths, ...actions }: CardActions & {
+export function PartOfLane({ part, stage, dragging, paths, ruled, ...actions }: CardActions & {
   part: LanePart
   stage: Stage
   dragging: Dragging | null
   paths: PathsOf
+  /** Whether a rule stands above the part, as it does above every worktree's row but the first. */
+  ruled: boolean
 }) {
   const { ref: wholeRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'half' })
   const { ref: endRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'end' })
   return (
-    <Node path={paths.part({ key: part.key, stage })} holds nodeRef={wholeRef} className="min-w-0 border-t py-1.5">
+    <Node path={paths.part({ key: part.key, stage })} holds nodeRef={wholeRef} className={cn('min-w-0 py-2', ruled && 'border-t')}>
       <LaneList {...actions} part={part} stage={stage} dragging={dragging} paths={paths} endRef={endRef} className="min-h-8" endClassName="h-4" />
     </Node>
   )
 }
 
-/** A lane's name, a node the focus can be on, with what the stage is for as its tip. */
+/**
+ * A lane's heading: the stage's name as a muted label, a node the focus can be
+ * on, with what the stage is for as its tip, over the rule the lane's column
+ * stands under.
+ */
 export function LaneHeading({ path, stage, nodeRef }: { path: Path; stage: Stage; nodeRef?: ((element: Element | null) => void) | undefined }) {
   const tip = useTip()
   return (
-    <Node path={path} nodeRef={nodeRef} className="px-2.5 py-1 text-sm font-medium">
-      <span title={tip(stageHint[stage])}>{stage}</span>
-    </Node>
+    <div className="flex min-w-0 flex-col gap-2">
+      <Node path={path} nodeRef={nodeRef} className="px-2.5 py-1 text-sm font-medium text-muted-foreground">
+        <span title={tip(stageHint[stage])}>{stage}</span>
+      </Node>
+      <Separator />
+    </div>
   )
 }
