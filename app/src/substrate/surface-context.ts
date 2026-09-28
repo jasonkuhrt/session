@@ -1,15 +1,18 @@
+import type { LinkOptions } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { Drawn } from './motion'
 import { pathOfKey } from './path'
 import type { Path, SurfaceApi } from './seam'
 
-/** What a node reads of the surface it is drawn in: the focus, the marks, its level's scope, and where it registers. */
+/** What a node reads of the surface it is drawn in: the focus, the marks, its level's scope, where it registers, and the link it is drawn as. */
 type SurfaceContextValue = {
   readonly focusKey: string
   readonly marks: ReadonlySet<string>
   readonly scopeOf: (id: string) => string
   readonly register: (key: string, drawn: Drawn | null) => void
+  /** The link a node is drawn as, to the page a click on it opens; null for a node a click keeps on the page. */
+  readonly linkOf: (path: Path) => LinkOptions | null
 }
 
 export const SurfaceContext = React.createContext<SurfaceContextValue | null>(null)

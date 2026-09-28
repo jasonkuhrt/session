@@ -1,21 +1,27 @@
+import type { LinkOptions } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import { cn } from '../lib/utils'
 import { leafOf } from './path'
 import type { Path, Seam } from './seam'
+import { browserClick } from './surface-hooks'
 
 /**
  * The path line: the one header there is, the focus path from the root, each
- * step a way back to where it names. A step whose node the view does not draw
- * carries that node's marks, what can need you now about it, so a board keeps
- * its worktree's agents and pull request in view; a step whose node is marked
- * with Space carries the mark too.
+ * step a way back to where it names and a link to that address, so a click
+ * with a modifier or the middle button opens it in a new tab. A step whose
+ * node the view does not draw carries that node's marks, what can need you
+ * now about it, so a board keeps its worktree's agents and pull request in
+ * view; a step whose node is marked with Space carries the mark too.
  */
-export function PathLine({ seam, focus, view, marks, onStep }: {
+export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
   readonly seam: Seam
   readonly focus: Path
   readonly view: string
   readonly marks: ReadonlySet<string>
+  /** The link a step is drawn as, to where a click on it goes. */
+  readonly linkOf: (index: number) => LinkOptions | null
   readonly onStep: (index: number) => void
 }) {
   return (
@@ -28,26 +34,37 @@ export function PathLine({ seam, focus, view, marks, onStep }: {
         const drawn = seam.viewOf(path) === view
         const crumb = seam.crumb(path, index, drawn)
         const here = index === focus.length - 1
+        const attributes = {
+          tabIndex: -1,
+          title: seam.tip(crumb.meaning),
+          // A press leaves the browser's focus with the page, so the keys that follow reach the registry.
+          onMouseDown: (event: React.MouseEvent) => event.preventDefault(),
+          // A plain click is the step's; any other the browser's, which opens the link.
+          onClick: (event: React.MouseEvent) => {
+            if (browserClick(event)) return
+            event.preventDefault()
+            onStep(index)
+          },
+          className: cn(
+            'inline-flex max-w-72 min-w-0 cursor-pointer items-baseline gap-2 rounded-sm px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground',
+            here && 'font-medium text-foreground',
+            crumb.literal === true && 'font-mono text-xs',
+          ),
+        }
+        const content = (
+          <>
+            <span className="truncate">{crumb.text}</span>
+            {drawn ? null : crumb.marks}
+            {!drawn && marks.has(leafOf(path)) && id !== ''
+              ? <span aria-label="marked" className="size-1.5 shrink-0 self-center rounded-full bg-primary" />
+              : null}
+          </>
+        )
+        const link = linkOf(index)
         return (
           <React.Fragment key={path.join('\u001F')}>
             {index === 0 ? null : <span aria-hidden className="px-1 text-muted-foreground/50 select-none">›</span>}
-            <button
-              type="button"
-              tabIndex={-1}
-              title={seam.tip(crumb.meaning)}
-              onClick={() => onStep(index)}
-              className={cn(
-                'inline-flex max-w-72 min-w-0 cursor-pointer items-baseline gap-2 rounded-sm px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground',
-                here && 'font-medium text-foreground',
-                crumb.literal === true && 'font-mono text-xs',
-              )}
-            >
-              <span className="truncate">{crumb.text}</span>
-              {drawn ? null : crumb.marks}
-              {!drawn && marks.has(leafOf(path)) && id !== ''
-                ? <span aria-label="marked" className="size-1.5 shrink-0 self-center rounded-full bg-primary" />
-                : null}
-            </button>
+            {link === null ? <button type="button" {...attributes}>{content}</button> : <Link {...link} {...attributes}>{content}</Link>}
           </React.Fragment>
         )
       })}

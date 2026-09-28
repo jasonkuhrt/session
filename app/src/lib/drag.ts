@@ -27,9 +27,10 @@ const dragThresholdPixels = 5
  * library knows, links, buttons and fields, and the ones drawn as something
  * else, such as a pill that opens a menu, which opens the moment it is pressed.
  * Anywhere inside a handle a drag starts, as the library has it, since a handle
- * is there to be pressed. A word with its tip behind it is not a control,
- * though Tips draws it as a button, so turning tips on never changes what can
- * be dragged.
+ * is there to be pressed, and so it does anywhere inside a card or a row drawn
+ * as a link, which is the element dragged rather than a control inside it. A
+ * word with its tip behind it is not a control, though Tips draws it as a
+ * button, so turning tips on never changes what can be dragged.
  */
 const pressBelongsToControl = (event: PointerEvent, source: Draggable) => {
   const { target } = event

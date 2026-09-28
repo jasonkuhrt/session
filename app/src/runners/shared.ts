@@ -6,7 +6,7 @@ import type { Node } from '../levels'
 import { idOf, nodeOf } from '../levels'
 import type { SeamInput } from '../session-seam'
 import { samePath } from '../substrate/path'
-import type { Path, SurfaceApi, Target } from '../substrate/seam'
+import type { Path, Runner, SurfaceApi, Target } from '../substrate/seam'
 import type { Tree } from '../tree'
 
 /**
@@ -52,9 +52,22 @@ export const focused = ({ target, focus }: { readonly target: Target; readonly f
 /** The stage ids, which a board's focus goes into at the one last focused. */
 const stageIds = stageNames.map((stage) => idOf({ kind: 'stage', stage }))
 
-/** Opens a board at the stage last focused there. */
-export const openBoard = ({ board, surface }: { readonly board: Path; readonly surface: SurfaceApi }) =>
-  surface.setFocus([...board, surface.recall(board, stageIds) ?? stageIds[0] ?? ''])
+/** A board's focus as it opens: the stage last focused there, else the first. */
+export const boardFocus = ({ board, surface }: { readonly board: Path; readonly surface: SurfaceApi }): Path =>
+  [...board, surface.recall(board, stageIds) ?? stageIds[0] ?? '']
+
+/**
+ * A command that opens another page: where it takes the focus, which running
+ * it goes to and a node whose Enter it is links to, and whether it can.
+ */
+export const opening = ({ when, to }: { readonly when: Runner['when']; readonly to: NonNullable<Runner['to']> }): Runner => ({
+  when,
+  to,
+  run: (target, surface) => {
+    const path = to(target, surface)
+    if (path !== null) surface.setFocus(path)
+  },
+})
 
 /** Whether the view is a board of this node already. */
 export const onBoardOf = ({ tree, focus, id }: { readonly tree: Tree; readonly focus: Path; readonly id: string }) =>

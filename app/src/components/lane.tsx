@@ -76,7 +76,9 @@ export function Lane({ part, stage, dragging, paths, ...actions }: CardActions &
  * One worktree's part of a lane on an epic's or a project's board, where each
  * worktree stands in a row across the lanes under its name: a node of its
  * own, the worktree at that stage, whose entries are its own worktree's alone,
- * so a card is placed only among its own worktree's cards.
+ * so a card is placed only among its own worktree's cards. It holds its
+ * cards, so a click on its own space only takes the focus, and the name at
+ * the row's left edge is the link to the worktree's board.
  */
 export function PartOfLane({ part, stage, dragging, paths, ...actions }: CardActions & {
   part: LanePart
@@ -87,7 +89,7 @@ export function PartOfLane({ part, stage, dragging, paths, ...actions }: CardAct
   const { ref: wholeRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'half' })
   const { ref: endRef } = useLaneDrop({ ...actions, board: part.board, stage, at: 'end' })
   return (
-    <Node path={paths.part({ key: part.key, stage })} nodeRef={wholeRef} className="min-w-0 border-t py-1.5">
+    <Node path={paths.part({ key: part.key, stage })} holds nodeRef={wholeRef} className="min-w-0 border-t py-1.5">
       <LaneList {...actions} part={part} stage={stage} dragging={dragging} paths={paths} endRef={endRef} className="min-h-8" endClassName="h-4" />
     </Node>
   )

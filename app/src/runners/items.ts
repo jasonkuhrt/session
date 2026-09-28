@@ -6,7 +6,7 @@ import { idOf, nodeOf } from '../levels'
 import type { Path, Runner, SurfaceApi, Target } from '../substrate/seam'
 import { itemToolRunners } from './item-tools'
 import type { RunnerContext } from './shared'
-import { nodeAt, writeTo } from './shared'
+import { nodeAt, opening, writeTo } from './shared'
 
 /** What an item's commands do: open its page, carry it to another stage, and complete it. */
 
@@ -90,17 +90,18 @@ const toStage = (context: RunnerContext): Runner => ({
   },
 })
 
-const open = ({ tree }: RunnerContext): Runner => ({
-  when: (target, focus) => {
-    const node = nodeAt({ target, kind: 'item' })
-    if (node === null || tree.itemOf(node.key, node.id) === null) return 'No such item'
-    return focus.length > target.path.length ? 'This is its page' : true
-  },
-  run: (target, surface) => {
-    const child = surface.recall(target.path, tree.kids(target.path))
-    if (child !== null) surface.setFocus([...target.path, child])
-  },
-})
+const open = ({ tree }: RunnerContext): Runner =>
+  opening({
+    when: (target, focus) => {
+      const node = nodeAt({ target, kind: 'item' })
+      if (node === null || tree.itemOf(node.key, node.id) === null) return 'No such item'
+      return focus.length > target.path.length ? 'This is its page' : true
+    },
+    to: (target, surface) => {
+      const child = surface.recall(target.path, tree.kids(target.path))
+      return child === null ? null : [...target.path, child]
+    },
+  })
 
 /** Completes an item after a one-line confirm, the focus moving to its neighbour on the board. */
 const complete = (context: RunnerContext): Runner => ({

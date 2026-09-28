@@ -1,3 +1,4 @@
+import type { LinkOptions } from '@tanstack/react-router'
 import type * as React from 'react'
 
 import type { Command } from './registry'
@@ -78,6 +79,13 @@ export type Runner = {
   /** Whether it can act on a target with the focus where it is: true, or why not. */
   readonly when?: ((target: Target, focus: Path) => true | string) | undefined
   readonly run: (target: Target, surface: SurfaceApi) => void | Promise<void>
+  /**
+   * Where running it takes the focus, for a command that opens another page:
+   * a node whose own Enter it is is drawn as a link to that page, so the
+   * browser can open it in a tab of its own. Null when, on this target, it
+   * stays on the page; absent for a command that never leaves it.
+   */
+  readonly to?: ((target: Target, surface: SurfaceApi) => Path | null) | undefined
 }
 
 /** The app, as the substrate reads it. */
@@ -111,6 +119,13 @@ export type Seam = {
    * the next waits for this.
    */
   readonly go: (path: Path, options: { readonly replace: boolean }) => Promise<void>
+  /**
+   * Where a path is drawn, as the router's options for a link there, which
+   * the substrate draws with the router's `Link`: a click with a modifier, or
+   * with any button but the first, leaves its address to the browser. Null
+   * for a path that has no address, as `go` goes nowhere for it.
+   */
+  readonly link: (path: Path) => LinkOptions | null
   readonly crumb: (path: Path, index: number, drawn: boolean) => Crumb
   readonly facts: (path: Path) => readonly Fact[]
   /** What a command acts on, as the palette names it beside the command. */

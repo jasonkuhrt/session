@@ -127,8 +127,24 @@ export const idOf = (node: Node) => encodeId(node)
 
 const readNode = Schema.decodeUnknownOption(NodeIdSchema)
 
+/**
+ * The ids decoded so far, and what each names: an id always names the same
+ * node, and every node drawn asks about the ids on its path each time it
+ * draws, so each is decoded once. It is let go whole when it grows past what
+ * any one set of views names.
+ */
+const decoded = new Map<string, Node | null>()
+const decodedLimit = 20_000
+
 /** The node an id names, or null for an id that names none. */
-export const nodeOf = (id: string): Node | null => Option.getOrNull(readNode(id))
+export const nodeOf = (id: string): Node | null => {
+  const known = decoded.get(id)
+  if (known !== undefined) return known
+  const node = Option.getOrNull(readNode(id))
+  if (decoded.size >= decodedLimit) decoded.clear()
+  decoded.set(id, node)
+  return node
+}
 
 /** The root's id. */
 export const rootId = idOf({ kind: 'all' })

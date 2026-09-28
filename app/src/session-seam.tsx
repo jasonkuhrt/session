@@ -1,4 +1,5 @@
-import { useNavigate } from '@tanstack/react-router'
+import type { LinkOptions } from '@tanstack/react-router'
+import { linkOptions, useNavigate } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { DaemonCapabilities, FocusResult } from '../contract'
@@ -28,9 +29,16 @@ import { makeTree } from './tree'
  * the runners here say what each command does to it and why it cannot.
  */
 
-/** What a page does with its entries: Enter on one, and the file each is, for a copy. */
+/**
+ * What a page does with its entries: Enter on one, which opens another page
+ * from some and stays on the page for the rest, and the file each is, for a
+ * copy.
+ */
 export type PageActions = {
-  readonly enter: (at: string, surface: SurfaceApi) => void | Promise<void>
+  /** Enter on an entry that stays on the page: a fold, or a tab of its own. */
+  readonly enter?: ((at: string, surface: SurfaceApi) => void | Promise<void>) | undefined
+  /** Where Enter on an entry takes the focus, from the entry's path, when it opens another page; null when it stays. */
+  readonly opens?: ((at: string, path: Path) => Path | null) | undefined
   readonly pathOf: (at: string) => string | null
   /** The page's own file or directory, absolute. */
   readonly path: string | null
@@ -64,8 +72,14 @@ export function useSessionSeam(input: SeamInput): { readonly seam: Seam; readonl
   const [busy, setBusy] = React.useState(false)
   const writing = busy || input.pending
 
-  /** Puts a path in the address: the view that draws it, and the focus as its leaf. */
-  const go = async (path: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
+  /**
+   * Where a path is drawn, as the router's options for going there, each
+   * checked against its route where it is written: the view that draws it,
+   * and the focus as its leaf; null for a path no view draws. A move within a
+   * view replaces its entry, which for a page is where the focus comes back
+   * to. A key goes there and a link names it, so the two go to one address.
+   */
+  const address = (path: Path, { replace }: { readonly replace: boolean }): LinkOptions | null => {
     const index = (kind: Node['kind']) => path.findLastIndex((id) => nodeOf(id)?.kind === kind)
     const leaf = path.at(-1)
     const itemAt = index('item')
@@ -75,49 +89,41 @@ export function useSessionSeam(input: SeamInput): { readonly seam: Seam; readonl
     if (sectionAt !== -1 && itemAt === sectionAt - 1) {
       const item = nodeOf(path[itemAt] ?? '')
       const row = item?.kind === 'item' ? tree.rowOfKey(item.key) : null
-      if (item?.kind !== 'item' || row === null) return
+      if (item?.kind !== 'item' || row === null) return null
       const context = stageAt === -1 ? null : nodeOf(path[stageAt - 1] ?? '')?.kind
       const via = context === 'epic' ? 'epic' : context === 'project' ? 'project' : undefined
-      await navigate({ to: '/w/$key/item/$id', params: { key: row.name, id: item.id }, search: { focus: leaf, via }, replace })
-      return
+      return linkOptions({ to: '/w/$key/item/$id', params: { key: row.name, id: item.id }, search: { focus: leaf, via } })
     }
     if (recordAt !== -1) {
       const record = nodeOf(path[recordAt] ?? '')
       const owner = nodeOf(path[recordAt - 1] ?? '')
       // Opened, a page lands on its first entry; come back to within it, the page itself keeps the focus.
       const search = { focus: sectionAt === -1 && !replace ? undefined : leaf }
-      if (record?.kind !== 'record' || owner === null) return
-      if (owner.kind === 'epic') {
-        await navigate({ to: '/e/$name/ledger', params: { name: owner.name }, search, replace })
-        return
-      }
-      if (owner.kind === 'project') {
-        await navigate({ to: '/p/$key/ledger', params: { key: owner.key }, search, replace })
-        return
-      }
+      if (record?.kind !== 'record' || owner === null) return null
+      if (owner.kind === 'epic') return linkOptions({ to: '/e/$name/ledger', params: { name: owner.name }, search })
+      if (owner.kind === 'project') return linkOptions({ to: '/p/$key/ledger', params: { key: owner.key }, search })
       const row = owner.kind === 'worktree' ? tree.rowAt(owner.path) : null
-      if (row === null) return
-      if (record.page === 'file') {
-        await navigate({ to: '/w/$key/file/$', params: { key: row.name, _splat: record.path }, search, replace })
-        return
-      }
+      if (row === null) return null
+      if (record.page === 'file') return linkOptions({ to: '/w/$key/file/$', params: { key: row.name, _splat: record.path }, search })
       const to = record.page === 'ledger' ? '/w/$key/ledger' : record.page === 'context' ? '/w/$key/context' : '/w/$key/archive'
-      await navigate({ to, params: { key: row.name }, search, replace })
-      return
+      return linkOptions({ to, params: { key: row.name }, search })
     }
     const board = stageAt === -1 ? (itemAt === -1 ? -1 : itemAt) : stageAt
     if (board !== -1) {
       const owner = nodeOf(path[board - 1] ?? '')
       const search = { focus: leaf }
-      if (owner?.kind === 'epic') await navigate({ to: '/e/$name/', params: { name: owner.name }, search, replace })
-      else if (owner?.kind === 'project') await navigate({ to: '/p/$key/', params: { key: owner.key }, search, replace })
-      else if (owner?.kind === 'worktree') {
-        const row = tree.rowAt(owner.path)
-        if (row !== null) await navigate({ to: '/w/$key/', params: { key: row.name }, search, replace })
-      }
-      return
+      if (owner?.kind === 'epic') return linkOptions({ to: '/e/$name/', params: { name: owner.name }, search })
+      if (owner?.kind === 'project') return linkOptions({ to: '/p/$key/', params: { key: owner.key }, search })
+      const row = owner?.kind === 'worktree' ? tree.rowAt(owner.path) : null
+      return row === null ? null : linkOptions({ to: '/w/$key/', params: { key: row.name }, search })
     }
-    await navigate({ to: '/', search: { focus: leaf === rootId ? undefined : leaf }, replace })
+    return linkOptions({ to: '/', search: { focus: leaf === rootId ? undefined : leaf } })
+  }
+
+  /** Puts a path in the address: the view that draws it, and the focus as its leaf. */
+  const go = async (path: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
+    const to = address(path, { replace })
+    if (to !== null) await navigate({ ...to, replace })
   }
 
   /** Runs a write, one at a time, saying why it did not land. */
@@ -156,6 +162,8 @@ export function useSessionSeam(input: SeamInput): { readonly seam: Seam; readonl
     normalize: tree.normalize,
     viewOf: tree.viewOf,
     go,
+    // A link opens its page afresh, as a move to another view does.
+    link: (path) => address(path, { replace: false }),
     crumb: tree.crumb,
     facts: tree.facts,
     targetName: tree.targetName,

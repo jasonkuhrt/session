@@ -4,19 +4,39 @@ import type { Drawn } from './motion'
 import { leafOf, pathOfKey } from './path'
 import type { Path, Seam, SurfaceApi } from './seam'
 
-/** What a click on a view leaves to the element it landed in: a link, a button, a field. */
-const ownClick = 'a[href], button, input, summary'
+/**
+ * What a click on a view leaves to the element it landed in: a link, a button,
+ * a field. A node drawn as a link is not one of them, since its click is the
+ * node's, and neither is a word with its tip behind it, which Tips draws as a
+ * button and which is still a word, as it is to a drag.
+ */
+const ownClick = 'a[href]:not([data-node]), button:not([data-explained]), input, summary'
+
+/**
+ * Whether a click is the browser's rather than the view's: one with ⌘, Ctrl,
+ * Alt or Shift held, or with any button but the first, which on a link opens
+ * its address in a tab or a window of its own, as TanStack Router's `Link`
+ * leaves it.
+ */
+export const browserClick = (event: MouseEvent | React.MouseEvent) =>
+  event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey
 
 /**
  * The view's clicks, heard once, on the view, and handed to the node they
- * landed in; a click on a link or a button inside a node is its own. A press
- * on a node leaves the browser's focus where it is, so the keys that follow
- * still reach the registry rather than the node.
+ * landed in, with what the node is; a click on a link or a button inside a
+ * node is its own, and a click the browser answers is left to it. A node
+ * drawn as a link leaves its address to the browser that way and nothing
+ * else: a plain click on it is the view's, so the link does not follow
+ * itself. A press on a node leaves the browser's focus where it is, so the
+ * keys that follow still reach the registry rather than the node. A drag
+ * takes the pointer: the drag library captures it on the document's body, so
+ * the release that drops a card, and any click the browser makes of it, lands
+ * there, outside the view, and runs nothing.
  */
 export function useViewClicks({ view, drawn, clicked }: {
   readonly view: React.RefObject<HTMLElement | null>
   readonly drawn: React.RefObject<ReadonlyMap<string, Drawn>>
-  readonly clicked: (path: Path) => void
+  readonly clicked: (path: Path, node: Drawn) => void
 }) {
   const latest = React.useRef(clicked)
   React.useEffect(() => {
@@ -28,8 +48,12 @@ export function useViewClicks({ view, drawn, clicked }: {
     const nodeOfEvent = (event: MouseEvent) =>
       event.target instanceof HTMLElement && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
     const onClick = (event: MouseEvent) => {
+      if (browserClick(event)) return
       const key = nodeOfEvent(event)?.dataset['node']
-      if (key !== undefined && drawn.current.has(key)) latest.current(pathOfKey(key))
+      const node = key === undefined ? undefined : drawn.current.get(key)
+      if (key === undefined || node === undefined) return
+      event.preventDefault()
+      latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {
       if (nodeOfEvent(event) !== null) event.preventDefault()
@@ -90,6 +114,8 @@ const addressMilliseconds = 150
 export function useAddressedFocus(seam: Seam) {
   const [pending, setPending] = React.useState<Path | null>(null)
   const timer = React.useRef(0)
+  /** The move the timer is to write into the address, until it does. */
+  const waitingFor = React.useRef<Path | null>(null)
   React.useEffect(() => () => window.clearTimeout(timer.current), [])
   const addressLeaf = leafOf(seam.focus)
   const [addressSeen, setAddressSeen] = React.useState(addressLeaf)
@@ -99,26 +125,35 @@ export function useAddressedFocus(seam: Seam) {
   }
   const focus = pending !== null && leafOf(pending) !== addressLeaf ? pending : seam.focus
 
-  /** Writes a move, settling once the address holds it when it changes the view; `replace` puts another view in place of this entry. */
+  /**
+   * Writes a move, settling once the address holds it when it changes the
+   * view; `replace` puts another view in place of this entry. The move still
+   * waiting is read from where it waits rather than from what was drawn, so a
+   * move and another view in one tick, as a click that focuses a card and
+   * opens it, leaves the card in the entry it leaves.
+   */
   const write = (target: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
-    const waited = timer.current !== 0
+    const waited = waitingFor.current
     window.clearTimeout(timer.current)
     timer.current = 0
+    waitingFor.current = null
     if (seam.viewOf(target) !== seam.viewOf(focus)) {
       if (replace) return seam.go(target, { replace: true })
-      const before = waited && leafOf(focus) !== addressLeaf ? seam.go(focus, { replace: true }) : Promise.resolve()
+      const before = waited !== null && leafOf(waited) !== addressLeaf ? seam.go(waited, { replace: true }) : Promise.resolve()
       return before.then(() => seam.go(target, { replace: false }))
     }
     setPending(target)
+    waitingFor.current = target
     timer.current = window.setTimeout(() => {
       timer.current = 0
+      waitingFor.current = null
       void seam.go(target, { replace: true })
     }, addressMilliseconds)
     return Promise.resolve()
   }
 
   /** Whether a move is still waiting for the address. */
-  const waiting = () => timer.current !== 0
+  const waiting = () => waitingFor.current !== null
 
   return { focus, write, waiting }
 }

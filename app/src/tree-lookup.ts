@@ -3,6 +3,7 @@ import type { AcrossSection, Dashboard, ProjectSection } from './lib/dashboard'
 import { dashboardOf, epicCardsOf, sectionKeyOf } from './lib/dashboard'
 import type { UnionFilter } from './lib/filter'
 import { keyTaken, unionOf } from './lib/filter'
+import type { Lane } from './lib/lanes'
 import { laneItems, lanesOf } from './lib/lanes'
 import type { Section } from './lib/sections'
 import { sectionsOf } from './lib/sections'
@@ -20,13 +21,30 @@ export const kindOf = (id: string) => nodeOf(id)?.kind ?? null
 /** Whether a board path is a union's: an epic's or a project's, whose lanes hold each worktree's part. */
 export const isUnion = (board: Path) => kindOf(board.at(-1) ?? '') !== 'worktree'
 
-/** An item as a session holds it, with its stage and its lane: null for one no stage holds. */
-const findItem = (session: Session | undefined, id: string) => {
+/** An item as a session holds it, with its stage and its lane. */
+type Filed = { readonly item: Item; readonly stage: Lane['stage']; readonly lane: Lane }
+
+/** A session's items by id, each where it is first filed, in the order the lanes draw them. */
+const filedIn = (session: Session | undefined): ReadonlyMap<string, Filed> => {
+  const filed = new Map<string, Filed>()
   for (const lane of lanesOf(session?.stages ?? [])) {
-    const item = laneItems(lane).find((candidate) => candidate.id === id)
-    if (item !== undefined) return { item, stage: lane.stage, lane }
+    for (const item of laneItems(lane)) if (!filed.has(item.id)) filed.set(item.id, { item, stage: lane.stage, lane })
   }
-  return null
+  return filed
+}
+
+/**
+ * An item's sections, parsed once for as long as the item is the one read:
+ * every card's node asks for its page's sections as it draws, and parsing
+ * Markdown each time would make a move on a full board wait for all of them.
+ */
+const parsed = new WeakMap<Item, readonly Section[]>()
+const sectionsOfItemRead = (item: Item): readonly Section[] => {
+  const known = parsed.get(item)
+  if (known !== undefined) return known
+  const sections = sectionsOf(item.body)
+  parsed.set(item, sections)
+  return sections
 }
 
 /** The rows by where they are and by the key a board serves each under. */
@@ -95,17 +113,24 @@ const pathLookups = ({ rowOfKey, epicHome }: Pick<Rows, 'rowOfKey'> & Pick<Secti
 /** The items of the sessions read, where each is on a board, and the worktree a path is in. */
 const itemLookups = (data: TreeData, { rowAt }: Pick<Rows, 'rowAt'>) => {
   const { sessions } = data
+  // Each session's items are indexed once for the tree, when it is first asked about.
+  const indexed = new Map<string, ReadonlyMap<string, Filed>>()
+  const findItem = (key: string, id: string): Filed | null => {
+    const known = indexed.get(key) ?? filedIn(sessions.get(key))
+    indexed.set(key, known)
+    return known.get(id) ?? null
+  }
   const itemOf = (key: string, id: string): Item | null =>
-    findItem(sessions.get(key), id)?.item ?? (data.archived?.key === key && data.archived.item.id === id ? data.archived.item : null)
+    findItem(key, id)?.item ?? (data.archived?.key === key && data.archived.item.id === id ? data.archived.item : null)
   return {
     itemOf,
     sectionsOfItem: (key: string, id: string): readonly Section[] => {
       const item = itemOf(key, id)
-      return item === null ? [] : sectionsOf(item.body)
+      return item === null ? [] : sectionsOfItemRead(item)
     },
     /** Where an item is on a board: its stage, its worktree's part on a union, its group, and itself; null when no stage holds it. */
     itemPath: (board: Path, key: string, id: string): Path | null => {
-      const found = findItem(sessions.get(key), id)
+      const found = findItem(key, id)
       if (found === null) return null
       const { item, stage } = found
       return [

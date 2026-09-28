@@ -9,10 +9,10 @@ import { entriesOf, NameMode, Palette, SettingsMode } from './modes'
 import type { Drawn } from './motion'
 import { into, outOf, ownWhen, peerOf, settled } from './motion'
 import type { Direction } from './moves'
-import { leafOf, pathKey, recall, remember, samePath } from './path'
+import { leafOf, pathKey, recall, remember } from './path'
 import { PathLine } from './path-line'
 import type { Key } from './registry'
-import { keptByPage, resolveKey, runnableAt, targetsOf } from './resolve'
+import { keptByPage, linkAt, resolveClick, resolveKey, runnableAt, targetsOf } from './resolve'
 import { useRoot } from './root'
 import type { Path, Seam, Target } from './seam'
 import { ApiContext, SurfaceContext } from './surface-context'
@@ -203,20 +203,35 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
     },
   })
 
-  /** A click on a node focuses it; a click on the focused node is its Enter. */
-  const clicked = (path: Path) => {
-    if (samePath({ left: path, right: focus })) act({ key: 'Enter', shift: false, ctrl: false }, false)
-    else setFocus(path)
+  /**
+   * A click on a node puts the focus on it and runs its own Enter at once,
+   * saying why when that cannot run; a node that binds none, or that holds
+   * other nodes and was clicked on its own space, only takes the focus.
+   */
+  const clicked = (path: Path, node: Drawn) => {
+    setFocus(path)
+    if (node.holds) return
+    const hit = resolveClick({ seam, path, own: ownWhen({ seam, memory, drawn, focus: path, moded: false }) })
+    if (hit === null) return
+    if (hit.refused === null) runCommand(hit.command.id, hit.target)
+    else flash(hit.refused)
   }
   const main = React.useRef<HTMLElement>(null)
   useViewClicks({ view: main, drawn, clicked })
+
+  const linkOf = React.useCallback((path: Path) => linkAt({ seam, path, surface: api }), [seam, api])
+  /** Where a step of the path line goes, as a click on it moves the focus: its node, and from All the child last focused there. */
+  const stepTo = (index: number): Path => {
+    const inside = index > 0 ? focus.slice(0, index + 1) : into({ seam, memory, focus: [seam.root] })
+    return typeof inside === 'string' ? [seam.root] : inside
+  }
 
   const register = React.useCallback((key: string, node: Drawn | null) => {
     if (node === null) drawn.current.delete(key)
     else drawn.current.set(key, node)
   }, [])
   const { scopeOf } = seam
-  const context = React.useMemo(() => ({ focusKey, marks, scopeOf, register }), [focusKey, marks, scopeOf, register])
+  const context = React.useMemo(() => ({ focusKey, marks, scopeOf, register, linkOf }), [focusKey, marks, scopeOf, register, linkOf])
 
   const modeWord = mode === null ? null : { palette: 'palette', choose: 'choose', name: 'name', keymap: 'keys', settings: 'settings' }[mode.kind]
   const modes = [...(marks.size > 0 ? [`${marks.size} marked`] : []), ...(modeWord === null ? [] : [modeWord])]
@@ -231,6 +246,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
             focus={focus}
             view={view}
             marks={marks}
+            linkOf={(index) => seam.link(seam.normalize(stepTo(index)))}
             onStep={(index) => {
               if (index > 0) setFocus(focus.slice(0, index + 1))
               else moveTo(into({ seam, memory, focus: [seam.root] }))
