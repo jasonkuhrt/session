@@ -8,8 +8,8 @@ import { InsideLinkContext, useSurfaceContext } from './surface-context'
 /**
  * A node the view draws: something the focus can be on. It says where it is,
  * so the moves read it at its level in the drawn geometry, and it draws the
- * focus as a ring around its whole surface, which a card or a row the view
- * draws inside it fills, and a mark as a dot. The surface hears its clicks. A
+ * focus as a ring around its whole surface, the surface of what the view
+ * draws inside it, and a mark as a dot. The surface hears its clicks. A
  * node a click opens another page from is drawn as the app's link to that
  * page's address, so the browser treats it as one: a click with a modifier or
  * the middle button opens a new tab, the context menu offers it, and the

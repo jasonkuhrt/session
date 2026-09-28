@@ -197,17 +197,21 @@ const revealEntry = (element: HTMLButtonElement | null) => element?.scrollIntoVi
 
 /**
  * What an entry names dim after its own name: the node a command acts on, the
- * id of an item to go to, or what a choice is.
+ * id a place goes by, or what a choice is.
  */
 function EntryAfter({ entry }: { readonly entry: PaletteEntry }) {
   if (entry.kind === 'go') return entry.id === undefined ? null : <span className="ml-2 font-mono text-xs text-muted-foreground">{entry.id}</span>
   return entry.on === '' ? null : <span className="ml-2 text-muted-foreground">{entry.on}</span>
 }
 
-/** What an entry holds at its right: a command's keys as key caps, or what a place to go to is, dim. */
+/**
+ * What an entry holds at its right: a command's keys as key caps, or what a
+ * place to go to is, dim, which takes at most two fifths of the line and is
+ * cut short past that, so a long one never squeezes out the name.
+ */
 function EntryEnd({ entry }: { readonly entry: PaletteEntry }) {
   if (entry.kind === 'command') return <Keys keys={entry.keys} />
-  return entry.kind === 'go' ? <span className="shrink-0 text-xs text-muted-foreground">{entry.on}</span> : null
+  return entry.kind === 'go' ? <span className="max-w-[40%] min-w-0 truncate text-xs text-muted-foreground">{entry.on}</span> : null
 }
 
 function Heading({ children }: { readonly children: React.ReactNode }) {

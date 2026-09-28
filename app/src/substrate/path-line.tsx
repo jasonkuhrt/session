@@ -31,19 +31,24 @@ export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
           const path = focus.slice(0, index + 1)
           const drawn = seam.viewOf(path) === view
           const crumb = seam.crumb(path, index, drawn)
-          const words = <span className="truncate">{crumb.text}</span>
-          const step = cn('inline-flex max-w-72 min-w-0', crumb.literal === true && 'font-mono text-xs')
+          // The marks are part of the step, so a click or a ⌘-click on one is the step's.
+          const content = (
+            <>
+              <span className="truncate">{crumb.text}</span>
+              {drawn ? null : crumb.marks}
+              {!drawn && marks.has(leafOf(path)) && id !== ''
+                ? <span aria-label="marked" className="size-1.5 shrink-0 rounded-full bg-primary" />
+                : null}
+            </>
+          )
+          const step = cn('inline-flex max-w-72 min-w-0 items-center gap-1.5', crumb.literal === true && 'font-mono text-xs')
           return (
             <React.Fragment key={path.join('\u001F')}>
               {index === 0 ? null : <BreadcrumbSeparator />}
               <BreadcrumbItem className="min-w-0">
                 {index === focus.length - 1
-                  ? <BreadcrumbPage title={seam.tip(crumb.meaning)} className={step}>{words}</BreadcrumbPage>
-                  : <StepLink seam={seam} address={linkOf(index)} title={seam.tip(crumb.meaning)} className={step} onStep={() => onStep(index)}>{words}</StepLink>}
-                {drawn ? null : crumb.marks}
-                {!drawn && marks.has(leafOf(path)) && id !== ''
-                  ? <span aria-label="marked" className="size-1.5 shrink-0 rounded-full bg-primary" />
-                  : null}
+                  ? <BreadcrumbPage title={seam.tip(crumb.meaning)} className={step}>{content}</BreadcrumbPage>
+                  : <StepLink seam={seam} address={linkOf(index)} title={seam.tip(crumb.meaning)} className={step} onStep={() => onStep(index)}>{content}</StepLink>}
               </BreadcrumbItem>
             </React.Fragment>
           )

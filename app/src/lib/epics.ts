@@ -128,7 +128,9 @@ function sectionLanding({ dashboard, path, key, below }: {
 
 /**
  * Where a worktree held inside its own epic's card lands: over another of its
- * worktrees by its upper or lower half, and over the card's heading first.
+ * worktrees by its upper or lower half, and over the rest of the epic's block
+ * by its half of the block, first from the epic's heading and the room above
+ * it, and last from the room below its last worktree.
  */
 function memberLanding({ dashboard, row, epic, target, below }: {
   readonly dashboard: Dashboard
@@ -146,7 +148,7 @@ function memberLanding({ dashboard, row, epic, target, below }: {
     list: epicList(epic),
     entries,
     held,
-    slot: over === -1 ? 0 : over + (below ? 1 : 0),
+    slot: over === -1 ? (target.kind === 'epic' && below ? others.length : 0) : over + (below ? 1 : 0),
     idOf: (entry) => entry.path,
     pathOf: (entry) => entry.path,
     rankOf: (entry) => entry.rank,

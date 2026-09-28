@@ -8,9 +8,9 @@ import type { Seam } from './seam'
  * The key map: every registered command, one line each, its name, what it
  * does, its keys as key caps, and its clicks, by scope, the scopes on the
  * focus path first, nearest first, the nearest marked current. Each scope is
- * headed by its name in small capitals, with a rule between its lines. A
- * command that cannot run at the focus is dim. It lists the registry as it
- * is, so registering a command lists it.
+ * headed by its name in small uppercase letters, with a rule between its
+ * lines. A command that cannot run at the focus is dim. It lists the registry
+ * as it is, so registering a command lists it.
  */
 export function KeyMap({ seam, current, runnable, focusName, onClose }: {
   readonly seam: Seam
@@ -43,7 +43,7 @@ export function KeyMap({ seam, current, runnable, focusName, onClose }: {
                     key={command.id}
                     className={cn(
                       'grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-0.5 border-t py-1.5 text-sm sm:grid-cols-[13rem_minmax(0,1fr)_auto]',
-                      // Its words are dim, not the rule above them, which is every row's.
+                      // Its words are dim, not the rule above them, which every line has.
                       !runnable.has(command.id) && '*:opacity-35',
                     )}
                   >

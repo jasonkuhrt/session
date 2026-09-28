@@ -651,7 +651,8 @@ routes take it, and refuses any other body.
 
 The index at `/` draws the tracked worktrees as an outline, one column of
 projects, each a card holding its rows: the project's row, then its epics, each
-a heading within the card over its worktrees, then its worktrees in no epic, one
+a heading within the card over its worktrees, and its worktrees in no epic, the
+two standing together busiest first, one
 step further in at each level; the epics across projects stand in a card of
 their own. Like every view it has
 the path line along its top and the detail line along its bottom, as
@@ -702,7 +703,8 @@ commands act on the project's row, and Enter on a project that holds nothing
 but its head opens that worktree's board, while on any other it opens the
 project's board, below. Under its row a project holds its epics whose worktrees
 all belong to it, each a row of its own, the epic's name, whose Enter opens the
-epic's board, and then its worktrees in no epic. An epic whose worktrees belong
+epic's board, and its worktrees in no epic, the two standing together busiest
+first. An epic whose worktrees belong
 to more than one project is drawn once, under a row of its own, Across
 projects, since it is the one thing higher than a project, and a project whose
 worktrees are all in such epics is its row alone. So every worktree the index
@@ -843,7 +845,8 @@ by hand, so a project carried toward one says it cannot go past it. Held, a
 project goes before or after the project nearest the pointer, the gaps between
 them included, by which half of it the pointer is in. A worktree held within
 its own epic goes before or after the worktree of that epic it is over, the
-same way, and first over the epic's row; over a worktree of another epic it
+same way, first over the epic's row and the room above it, and last over the
+room below its last worktree; over a worktree of another epic it
 joins that epic, as over the epic. It lands where it was dropped, as a carry
 lands one step on. Over the ranked siblings it goes in front of the one it would
 be drawn before; among the unranked ones, the siblings drawn above the place it
@@ -1493,9 +1496,9 @@ opens the palette's second half alone.
 
 `?` opens the key map: every command there is, by scope, the current scope
 first and the rest nearest first, each scope headed by its name in small
-capitals and each command a line of its own under a rule, with its name, its
-summary and the click that stands for it, and its keys as key caps, and a
-command that cannot run at the focus drawn
+uppercase letters and each command a line of its own under a rule, with its
+name, its summary and the click that stands for it, and its keys as key caps,
+and a command that cannot run at the focus drawn
 dim. `?` or Escape closes it.
 
 | Scope | Command | Keys |
@@ -1542,17 +1545,18 @@ group's or a page's heading, only takes the focus, since the Enter of a scope
 above it is the keyboard's, reached from the focus, and so does a node drawn
 around what a click inside it is meant for: a worktree's part of a lane on an
 epic's or a project's board, around its cards, and the body of an item with no
-sections, around its prose. A click on a step of the path line moves the focus
-there. A node a click opens another page from is drawn as a link to that page's
-address, through TanStack Router's `Link`, and so is every step of the path
-line before the focus, to where a click on it moves the focus: a click with ⌘,
-Ctrl, Alt or Shift held, or with any button but the first, is the browser's, so
-⌘-click and a middle click open the address in a new tab and leave the page and
-its focus as they were, the context menu offers the link, and the status bar
-shows where it goes. A word with its tip behind it, while Tips is on, is part of
-the link it is in, and never a button there. A drag is the carry, join, leave or
-group its drop makes; it starts anywhere on a card or a row, its title included,
-and a click a browser makes of the release that drops it runs nothing.
+sections, around its prose. A click on a step of the path line before the focus
+moves the focus there. A node a click opens another page from is drawn as a link
+to that page's address, through TanStack Router's `Link`, and so is every step
+of the path line before the focus, to where a click on it moves the focus: a
+click with ⌘, Ctrl, Alt or Shift held, or with any button but the first, is the
+browser's, so ⌘-click and a middle click open the address in a new tab and leave
+the page and its focus as they were, the context menu offers the link, and the
+status bar shows where it goes. A word with its tip behind it, while Tips is on,
+is part of the link it is in, and never a button there. A drag is the carry,
+join, leave or group its drop makes; it starts anywhere on a card or a row, its
+title included, and a click a browser makes of the release that drops it runs
+nothing.
 
 Every key is a TanStack Hotkeys registration made from the registry, in
 `app/src/substrate/bind.ts` and nowhere else, which the lint rule
