@@ -205,34 +205,38 @@ One daemon serves the board of every worktree it knows, along with an index of
 them, and each board follows the files as they change. Run `session open` only
 when the user asks for the board. `session daemon status` says whether the
 daemon is running from the sources on disk, and `session daemon restart`
-replaces it without opening a board. The board also lists, read-only, the Claude Code
-sessions and Codex threads under that worktree, which the operations reference
-describes along with what that listing deliberately does not claim. For the app
-and its file operations, read
+replaces it without opening a board. The board also knows, read-only, the Claude
+Code sessions and Codex threads under each worktree, which the operations
+reference describes along with what that listing deliberately does not claim.
+For the app and its file operations, read
 [references/operations.md](references/operations.md). The UI owns no second copy
 of work state. Do not recreate a per-task viewer, content module, or task
 database.
 
-A worktree's board's header shows the branch's pull request and the Linear
-issues that the branch and the pull request name, as chips carrying only what gh
-and linear answered, several issues sharing one chip that lists them, and the
-index carries each worktree's pull request chip on its row. Beside the board's
-picker sit a terminal action that brings forward the worktree's cmux workspace
-or opens one, and a Zed action that brings forward the Zed window on that
-worktree or opens a new one, and beside the chips an icon for `RULES.md`, when
-the session has one, and one for each of the session's three pages. The chips
-and both actions open their target once, bringing back the tab, the workspace or
-the window already open rather than opening another. An epic's board and a
-project's carry the picker and one icon, for the ledger of every worktree in
-view, since the chips, the terminal, Zed and the session's pages each belong to
-one worktree.
+The board is keyboard first and draws only the path and the work: a path line
+naming where the one focus is, the lanes or the index's outline of projects,
+epics and worktrees, and a detail line holding the focused node's facts, the
+branch's pull request and the Linear issues it names among them, carrying only
+what gh and linear answered. A worktree's marks, a dot per live agent, a `!` for
+a source that could not answer or a file that breaks a rule, and its pull
+request's number, go wherever the worktree is drawn. Every action is a command
+the palette, `;`, lists and the key map, `?`, names: a worktree's terminal,
+`t`, brings forward its cmux workspace or opens one, its editor, `e`, brings
+forward the Zed window on it or opens a new one, and `e` on an item opens the
+item's file there at its first line; Agents…, the Pull request, Linear issue…,
+Rules, Ledger, Context and Archive commands reach the rest. Each opens its
+target once, bringing back the tab, the workspace or the window already open
+rather than opening another, and a command that cannot run says why in the
+detail line. An epic's board and a project's draw each worktree's name with its
+marks at its row's left edge, and every worktree command runs from its row.
 
 The pages sit beside the board, under its address `/w/<key>/`, where the key
-names the worktree; they are read-only views of the files and follow them as
-the board does. The ledger page, `/w/<key>/ledger`, shows the entries newest
-first. The context page, `/w/<key>/context`, shows `context/` as a tree. The
-archive page, `/w/<key>/archive`, lists the archive's records newest first, for
-a person looking back rather than as context for an agent. The file page,
+names the worktree; they are read-only views of the files and follow them as the
+board does, and the Ledger, Context, Archive and Rules commands open them. The
+ledger page, `/w/<key>/ledger`, shows the entries newest first. The context
+page, `/w/<key>/context`, shows `context/` as a tree. The archive page,
+`/w/<key>/archive`, lists the archive's records newest first, for a person
+looking back rather than as context for an agent. The file page,
 `/w/<key>/file/<path>`, renders one Markdown file of the session at the item
 page's reading width. A Markdown file opens there from the context page, a
 record from the archive page, and a linked Markdown file from an item, so each

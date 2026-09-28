@@ -7,6 +7,9 @@ import { ClientOnly, createRootRouteWithContext, HeadContent, Outlet, Scripts } 
 import type * as React from 'react'
 
 import { NoPage } from '../components/no-page'
+import { addressSearch } from '../lib/base'
+import { FoldsRoot } from '../lib/folds'
+import { SubstrateRoot } from '../substrate/root'
 
 /** The board's mark on its tab. */
 const icon =
@@ -23,8 +26,12 @@ type RouterContext = { readonly queryClient: QueryClient }
  * into the shell the daemon serves at every page's address; the page the
  * address names is drawn once the document has hydrated, never during it,
  * so the document the browser receives and the one it hydrates are the same.
+ * Every address carries the focus after its path, which every page reads, and
+ * the substrate's root keeps focus memory and the marks for the whole
+ * document, whichever page is drawn.
  */
 export const Route = createRootRouteWithContext<RouterContext>()({
+  validateSearch: addressSearch,
   head: () => ({
     meta: [
       { charSet: 'UTF-8' },
@@ -57,7 +64,11 @@ function Document({ children }: { readonly children: React.ReactNode }) {
 function Page() {
   return (
     <ClientOnly>
-      <Outlet />
+      <SubstrateRoot>
+        <FoldsRoot>
+          <Outlet />
+        </FoldsRoot>
+      </SubstrateRoot>
     </ClientOnly>
   )
 }

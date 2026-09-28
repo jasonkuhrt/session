@@ -47,7 +47,10 @@
     "react-perf/jsx-no-jsx-as-prop": "off",
     "react-perf/jsx-no-new-array-as-prop": "off",
     "react-perf/jsx-no-new-function-as-prop": "off",
-    "react-perf/jsx-no-new-object-as-prop": "off"
+    "react-perf/jsx-no-new-object-as-prop": "off",
+    // Every key is bound from the registry, in the substrate's one binder,
+    // the one file the rule lets import the hotkey library.
+    "session/hotkeys-in-binder": "error"
   },
   "overrides": [
     {

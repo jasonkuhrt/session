@@ -160,6 +160,14 @@
   letter-spacing: -0.011em;
   text-wrap: balance;
 }
+/*
+ * A section drawn as a node the focus can be on: the space above its heading
+ * goes above the node, so the ring around the focused section holds its
+ * heading, and the word folded under it, never an empty band.
+ */
+.markdown-reader section:not(:first-child) { margin-top: 2rem; }
+.markdown-reader section > [data-node] > :is(h1,h2,h3,h4) { margin-block: 0; }
+.markdown-reader section > [data-node] > p { margin-block: .25em 0; }
 /* A record's sections are written as `###`, so that is the level that has to
    read as a section; `##` above it is rare and `####` is an aside inside one. */
 .markdown-reader h1 { font-size: 1.6rem; }
@@ -201,11 +209,11 @@
  * prose starts, so reading down the page never jumps sideways; a line longer
  * than the room to the right scrolls inside the band. The page frame is the
  * container `cqw` counts, and the column is centred in it. Only a block whose
- * box is the column's own bleeds, at the top level or in Evidence: `50%` is
+ * box is the column's own bleeds, at the top level or in a section: `50%` is
  * half of the box a block sits in, and one inside a list item or a quote sits
  * in an indented box, so it keeps to it.
  */
-:is(.markdown-page, .markdown-page > .evidence-panel > div) > pre {
+:is(.markdown-page, .markdown-page > section > [data-section-body]) > pre {
   width: 100cqw;
   margin-left: calc(50% - 50cqw);
   padding-inline: calc(50cqw - 50%) 1.5rem;
@@ -222,7 +230,7 @@
  * chooses, which the settings set on the document's root as `--term`. The
  * Term cell is the term's defining instance, a `dfn`, drawn as the term it is
  * rather than in the browser's italics. A term's row is where a card's
- * "Table" link lands, so it stops clear of the page's sticky trail.
+ * "Table" link lands, so it stops clear of the path line along the page's top.
  */
 .markdown-reader .term { color: var(--term); }
 .markdown-reader dfn.term { font-style: normal; }
@@ -230,43 +238,3 @@
 /* A term's meaning in its card: read as the reader reads, at the card's size, with nothing under its last line. */
 .markdown-reader.markdown-meaning { font-size: inherit; line-height: 1.55; }
 .markdown-meaning > :last-child { margin-bottom: 0; }
-
-/*
- * The index's cards, one grid under each repository's head and one for the
- * epics across repositories: columns as wide as a card needs, as many as the
- * window holds, each card as tall as its rows, so every grid on the page has
- * the same columns. Where the browser lays cards out as masonry, a card packs
- * up under the one above it in its column; elsewhere each starts at the top of
- * its row. No script lays them out. Chrome 153 supports neither syntax as it
- * ships: behind its experimental web platform features flag it has `display:
- * grid-lanes`, the syntax the CSS Working Group settled on, and never
- * `display: masonry` or `grid-template-rows: masonry`, the earlier proposal,
- * which Firefox keeps behind a flag of its own.
- */
-.worktree-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
-  align-items: start;
-  gap: 1rem;
-}
-@supports (display: grid-lanes) {
-  .worktree-cards { display: grid-lanes; }
-}
-@supports (grid-template-rows: masonry) and (not (display: grid-lanes)) {
-  .worktree-cards { grid-template-rows: masonry; }
-}
-
-/* Evidence is the long tail of an item: present, one click away, and never in
-   the way of the argument above it. */
-.evidence-panel { margin-top: 2.5em; border-top: 1px solid var(--border); padding-top: 1em; }
-.evidence-panel > summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: .875rem;
-  color: var(--muted-foreground);
-  width: fit-content;
-}
-.evidence-panel > summary::-webkit-details-marker { display: none; }
-.evidence-panel > summary::before { content: "▸ "; }
-.evidence-panel[open] > summary::before { content: "▾ "; }
-.evidence-panel > summary:hover { color: var(--foreground); }

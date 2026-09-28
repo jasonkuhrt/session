@@ -3,15 +3,16 @@ import { pointerIntersection } from '@dnd-kit/collision'
 import { useDroppable } from '@dnd-kit/react'
 
 import type { Item, Stage } from '../../contract'
-import { isBatchedStage } from '../../contract'
 import { landing } from '../lib/drag'
-import type { Dragging, Lane as LaneLayout } from '../lib/lanes'
-import { dragOf, laneItems, landingIn, listId } from '../lib/lanes'
+import type { Dragging } from '../lib/lanes'
+import { dragOf, landingIn, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { groupMeta } from '../lib/workflow'
-import type { LaneActions, LanePart } from './lane'
-import { Explained, Tip } from './tip'
-import { Button } from './ui/button'
+import { Node } from '../substrate/node'
+import type { Path } from '../substrate/seam'
+import type { LanePart, PathsOf } from './lane'
+import { useTip } from './tip'
+import type { CardActions } from './workflow-card'
 import { WorkflowCard } from './workflow-card'
 
 /**
@@ -20,17 +21,18 @@ import { WorkflowCard } from './workflow-card'
  * dropped there lands at the end of its lane, in no group. The list is
  * outlined while a held card of this worktree would land in it in no group.
  */
-export function LaneList({ part, stage, dragging, endRef, className, endClassName, ...actions }: LaneActions & {
+export function LaneList({ part, stage, dragging, endRef, paths, className, endClassName, ...actions }: CardActions & {
   part: LanePart
   stage: Stage
   /** The card being dragged, and what dropping it now would do; drawn only if it is this worktree's. */
   dragging: Dragging | null
   endRef: (element: Element | null) => void
+  paths: PathsOf
   /** How tall the list is at least, and the space under its last entry. */
   className: string
   endClassName: string
 }) {
-  const { board, name, lane } = part
+  const { board, key, lane } = part
   // A card in no group is sorted among the lane's other cards in no group, so
   // its place in that list is what dnd-kit is told.
   const looseIndex = new Map<string, number>()
@@ -38,10 +40,35 @@ export function LaneList({ part, stage, dragging, endRef, className, endClassNam
   const landsIn = landingIn({ dragging, board })
   const heldHere = landsIn !== null && landsIn.to === stage ? landsIn : null
   return (
-    <div className={cn(className, 'space-y-3 rounded-lg', heldHere?.group === null && landing)}>
-      {lane.entries.map(entry => (entry.kind === 'item'
-        ? <WorkflowCard key={entry.item.id} {...actions} {...dragOf({ dragging, board, id: entry.item.id })} board={board} worktree={name} item={entry.item} index={looseIndex.get(entry.item.id) ?? 0} stage={stage} />
-        : <GroupBlock key={`group:${entry.name}`} {...actions} board={board} worktree={name} stage={stage} name={entry.name} items={entry.items} dragging={dragging} landing={heldHere?.group === entry.name} />))}
+    <div className={cn(className, 'flex flex-col gap-0.5 rounded-md', heldHere?.group === null && landing)}>
+      {lane.entries.map((entry) => (entry.kind === 'item'
+        ? (
+          <WorkflowCard
+            key={entry.item.id}
+            {...actions}
+            {...dragOf({ dragging, board, id: entry.item.id })}
+            path={paths.item({ key, stage, group: null, id: entry.item.id })}
+            board={board}
+            item={entry.item}
+            index={looseIndex.get(entry.item.id) ?? 0}
+            stage={stage}
+          />
+        )
+        : (
+          <GroupBlock
+            key={`group:${entry.name}`}
+            {...actions}
+            path={paths.group({ key, stage, name: entry.name })}
+            paths={paths}
+            board={board}
+            groupKey={key}
+            stage={stage}
+            name={entry.name}
+            items={entry.items}
+            dragging={dragging}
+            landing={heldHere?.group === entry.name}
+          />
+        )))}
       <div ref={endRef} className={endClassName} />
     </div>
   )
@@ -49,17 +76,17 @@ export function LaneList({ part, stage, dragging, endRef, className, endClassNam
 
 /**
  * One group of a lane: its name as a heading over its cards, in the lane's
- * file order. In Batch a group is a proposed batch and can be queued as one;
- * in the lanes where an item may be in no group it can be taken apart. Queue
- * and Execute hold only batches, which change only by starting and finishing.
- * A card dropped on its heading joins it last, and one dropped on its edges
- * joins it at its start or its end, by which half of it the card is over. A
- * group is one worktree's, and takes only that worktree's cards.
+ * file order, the heading a node the focus can be on. A card dropped on its
+ * heading joins it last, and one dropped on its edges joins it at its start
+ * or its end, by which half of it the card is over. A group is one
+ * worktree's, and takes only that worktree's cards.
  */
-function GroupBlock({ board, worktree, stage, name, items, dragging, landing: lands, ...actions }: LaneActions & {
+function GroupBlock({ path, paths, board, groupKey, stage, name, items, dragging, landing: lands, ...actions }: CardActions & {
+  path: Path
+  paths: PathsOf
   board: string
-  /** The name of the worktree the group is filed in. */
-  worktree: string
+  /** The key of the worktree the group is filed in. */
+  groupKey: string
   stage: Stage
   name: string
   items: readonly Item[]
@@ -67,27 +94,20 @@ function GroupBlock({ board, worktree, stage, name, items, dragging, landing: la
   /** Whether a card being dragged would be dropped into this group. */
   landing: boolean
 }) {
+  const tip = useTip()
   const accept = (source: { readonly id: unknown }) => actions.accepts(source.id, { board, stage, group: name })
   const { ref } = useDroppable({
     id: `group:${listId({ board, stage, group: name })}`,
     type: 'group',
     data: { board, stage, group: name },
     accept,
-    // A card under the pointer is what a held card is over; otherwise the
-    // group under the pointer is, ahead of any card the held card merely
-    // overlaps and of the lane. Its pointer collision ranks with cards' overlap
-    // collisions and above them, so its edges take a card even with cards
-    // around them, and a group a drag has emptied still does.
     collisionPriority: CollisionPriority.Normal,
     disabled: actions.pending,
   })
-  // The heading is a place of its own, the group's end, as the index's epic
-  // card takes a worktree dropped on it: the pointer alone decides it, and it
-  // outranks the group around it. It spans the group's top edge, so a card
-  // brought from above meets the heading before any part of the group that
-  // would place it first. Keys step a card among places by rank before
-  // distance, so a heading that outranks them would take every step; it is
-  // no place for a card they carry.
+  // The heading is a place of its own, the group's end: the pointer alone
+  // decides it, and it outranks the group around it. It spans the group's top
+  // edge, so a card brought from above meets the heading before any part of
+  // the group that would place it first.
   const { ref: headingRef } = useDroppable({
     id: `heading:${listId({ board, stage, group: name })}`,
     type: 'group',
@@ -95,42 +115,27 @@ function GroupBlock({ board, worktree, stage, name, items, dragging, landing: la
     accept,
     collisionDetector: pointerIntersection,
     collisionPriority: CollisionPriority.High,
-    disabled: actions.pending || dragging?.keyboard === true,
+    disabled: actions.pending,
   })
-  const ids = items.map(item => item.id)
-  // A drag can empty a group before the move is written; there is nothing in
-  // it to queue or to take out until then.
-  const canQueue = stage === 'Batch' && ids.length > 0
-  const canUngroup = !isBatchedStage(stage) && ids.length > 0
   return (
-    <div ref={ref} className={cn('space-y-2 rounded-xl border p-2', lands && landing)}>
-      {/* Out to the group's border on three sides, so the top edge is the heading's; it draws where it always has. */}
-      <div ref={headingRef} className="-mx-2 -mt-2 flex items-start gap-1 px-2 pt-2">
-        <h3 className="min-w-0 flex-1 py-1 text-xs font-medium tracking-wide break-words text-foreground">
-          <Explained meaning={groupMeta[stage].heading} className="block">{name}</Explained>
-        </h3>
-        {canQueue ? (
-          <Tip
-            meaning="Name these items as a batch, starting from the name of this group, and append it to Queue."
-            render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onQueue(board, ids, name)} />}
-          >
-            Queue batch
-          </Tip>
-        ) : null}
-        {canUngroup ? (
-          <Tip
-            meaning={`Take these items out of the group, each to the end of ${stage}.`}
-            render={<Button variant="ghost" size="xs" disabled={actions.pending} onClick={() => actions.onUngroup(board, ids)} />}
-          >
-            Ungroup
-          </Tip>
-        ) : null}
+    <div ref={ref} className={cn('my-1 flex flex-col gap-0.5 rounded-md', lands && landing)}>
+      <Node path={path} nodeRef={headingRef} className="px-2.5 py-1 text-xs font-medium tracking-wide text-muted-foreground">
+        <span title={tip(groupMeta[stage].heading)}>{name}</span>
+      </Node>
+      <div className="flex flex-col gap-0.5 pl-3">
+        {items.map((item, index) => (
+          <WorkflowCard
+            key={item.id}
+            {...actions}
+            {...dragOf({ dragging, board, id: item.id })}
+            path={paths.item({ key: groupKey, stage, group: name, id: item.id })}
+            board={board}
+            item={item}
+            index={index}
+            stage={stage}
+          />
+        ))}
       </div>
-      {items.map((item, index) => <WorkflowCard key={item.id} {...actions} {...dragOf({ dragging, board, id: item.id })} board={board} worktree={worktree} item={item} index={index} stage={stage} />)}
     </div>
   )
 }
-
-/** The lane's chosen items, in lane order: the ones of this part of it that are chosen. */
-export const chosenIn = ({ lane, chosenIds }: { readonly lane: LaneLayout; readonly chosenIds: ReadonlySet<string> }) =>
-  laneItems(lane).flatMap(item => (chosenIds.has(item.id) ? [item.id] : []))

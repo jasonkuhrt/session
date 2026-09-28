@@ -20,6 +20,7 @@ import type {
   LedgerListing,
   MoveItem,
   QueueBatch,
+  RenameGroup,
   Session,
   SkippedEntry,
   Stage,
@@ -1074,6 +1075,51 @@ export const makeRepository = (directory: string) =>
       );
 
     /**
+     * Rename a group where it stands: its directory keeps its number and its
+     * place among the stage's entries, and its items keep theirs, so only the
+     * name changes. A name the stage already has is refused rather than
+     * merged, and Execute's batch keeps its name, since Execute is frozen.
+     */
+    const renameGroup = (input: RenameGroup) =>
+      mutate(input.revision, (loaded) =>
+        Effect.gen(function*() {
+          const from = input.from.trim();
+          const to = input.to.trim();
+          const state = stageOf(loaded, input.stage);
+          const noun = groupNoun(input.stage);
+          if (input.stage === 'Execute') {
+            return yield* new RepositoryError({ kind: 'conflict', message: 'Execute is frozen; its batch keeps its name.' });
+          }
+          if (!state.items.some((item) => item.group === from)) {
+            return yield* new RepositoryError({ kind: 'not-found', message: `${stageDirectory(input.stage)} has no ${noun} ${quote(from)}.` });
+          }
+          if (to === from) return [];
+          if (state.items.some((item) => item.group === to)) {
+            return yield* new RepositoryError({
+              kind: 'validation',
+              message: `${stageDirectory(input.stage)} already has a ${noun} named ${quote(to)}.`,
+            });
+          }
+          const items = yield* attempt(() => {
+            validateGroupName(input.stage, to);
+            return state.items.map((item) => (item.group === from ? draftOf(item, to) : item));
+          });
+          // The files on disk read as if the group already had its new name,
+          // so its directory and its items keep the numbers they have.
+          const renamed = state.files.map((entry) => {
+            const [stage = '', group = '', ...rest] = entry.path.split('/');
+            const parsed = entryName.exec(group);
+            return parsed !== null && parsed[2] === from && rest.length > 0
+              ? { ...entry, path: [stage, `${parsed[1] ?? ''}-${to}`, ...rest].join('/') }
+              : entry;
+          });
+          return yield* attempt(() =>
+            diffFiles(state.files, renderStageDirectory({ stage: input.stage, items, current: renamed }))
+          );
+        }),
+      );
+
+    /**
      * Take items out of their groups, each to the end of its own stage, in the
      * order given. An item in no group stays where it is. Queue and Execute
      * refuse, because every item there belongs to a batch.
@@ -1910,6 +1956,7 @@ export const makeRepository = (directory: string) =>
       moveItem,
       groupItems,
       ungroupItems,
+      renameGroup,
       queueBatch,
       startBatch,
       completeItem,

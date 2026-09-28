@@ -1,34 +1,20 @@
 import { queryOptions } from '@tanstack/react-query'
+import { useSearch } from '@tanstack/react-router'
 
-import type { Crumb } from './components/board-page'
-import { BoardPageFrame, PageLoading } from './components/board-page'
-import { Copyable } from './components/copyable'
+import { encodeWorktreeKey } from '../contract'
+import type { Sections } from './components/markdown'
 import { Markdown } from './components/markdown'
+import { PageLoading, PageSurface, useFocusUpTo } from './components/page'
 import { useTip } from './components/tip'
-import { ApiError, problemOf, readPlace, SessionApi, worktreeOf } from './lib/api'
-import { absoluteHref, isMarkdownPath, rawFileHref, toBoard, toListing, useBoardName, useBoardPath } from './lib/base'
+import { ApiError, problemOf, readPlace, SessionApi } from './lib/api'
+import { absoluteHref, isMarkdownPath, rawFileHref, useBoardName, useBoardPath } from './lib/base'
+import { useFolds } from './lib/folds'
 import { useFollowed } from './lib/follow'
-import { listingMeta } from './lib/listings'
 import { openOnceOnClick } from './lib/open-once'
-
-/**
- * The page's trail is the file's path. The first step, when it is one of the
- * listings, goes to that listing's page; the directories between are names,
- * and the file is where you are.
- */
-function crumbsOf(name: string, path: string): readonly Crumb[] {
-  const segments = path.split('/')
-  return segments.map((segment, position): Crumb => {
-    const through = segments.slice(0, position + 1).join('/')
-    if (position === segments.length - 1) {
-      return { label: segment, meaning: `The file ${path}, rendered from the session as it is on disk.`, literal: true }
-    }
-    if (position === 0 && (segment === 'ledger' || segment === 'context' || segment === 'archive')) {
-      return { label: segment, meaning: listingMeta[segment].meaning, link: toListing({ name, listing: segment }), literal: true }
-    }
-    return { label: segment, meaning: `The directory ${through}/ under the session.`, literal: true }
-  })
-}
+import { extentOf, isEvidence, sectionsOf } from './lib/sections'
+import { idOf } from './levels'
+import { Node } from './substrate/node'
+import type { Entry } from './tree-types'
 
 /** A file as the files route answered: its text, or the daemon's sentence for why there is none. */
 type FileText = { readonly kind: 'text'; readonly text: string } | { readonly kind: 'refused'; readonly sentence: string }
@@ -66,14 +52,17 @@ function withFrontmatterShown(text: string) {
 
 /**
  * One Markdown file of the session, on a page of its own: a ledger entry, a
- * file under `context/`, an archived record, or any other file a link in the
- * session names. It is read at the item page's width with the same reader,
- * Evidence collapsed, and it follows the file as it changes on disk. The trail
- * is the file's path, and the line under it copies where the file is.
+ * file under `context/`, an archived record, `RULES.md`, or any other file a
+ * link in the session names. It is read at the item page's width with the
+ * same reader, each section's heading a node whose Enter folds it, Evidence
+ * folded to start with, and it follows the file as it changes on disk.
  */
 export function FilePage({ path }: { path: string }) {
+  const { focus: leaf } = useSearch({ strict: false })
   const board = useBoardPath()
   const worktree = useBoardName()
+  const key = encodeWorktreeKey(worktree)
+  const folds = useFolds()
   const markdown = isMarkdownPath(path)
   // Only a Markdown file is read here; any other file is offered as it is on disk.
   const { value, error } = useFollowed({
@@ -86,46 +75,77 @@ export function FilePage({ path }: { path: string }) {
   })
   const [place, text] = value ?? [null, null]
   const name = path.split('/').at(-1) ?? path
+  const shown = text?.kind === 'text' ? withFrontmatterShown(text.text) : ''
+  const sections = sectionsOf(shown)
+  const foldKey = `file:${key}:${path}`
+  const startsFolded = (at: string) => sections.some((section) => section.at === at && isEvidence(section))
+  const directory = place?.kind === 'read' ? place.directory : null
+  const recordId = idOf({ kind: 'record', page: 'file', path })
+  const entries: Entry[] = sections.map((section) => ({
+    at: section.at,
+    heading: section.heading,
+    facts: [{ key: 'extent', text: extentOf(section), meaning: 'How much the section holds.' }],
+  }))
   return (
-    <BoardPageFrame
+    <PageSurface
+      place={{ kind: 'file', key, path }}
+      leaf={leaf}
       title={name}
-      boardName={worktreeOf(place)}
-      boardLink={toBoard(worktree)}
-      boardMeaning="The board of the session this file belongs to."
-      crumbs={crumbsOf(worktree, path)}
-      problem={error ?? problemOf(place)}
+      sessions={new Map()}
+      archived={null}
+      entries={new Map([[recordId, entries]])}
+      write={null}
+      pending={false}
+      rules={null}
+      page={{
+        enter: (at) => folds.toggle(`${foldKey}/${at}`),
+        pathOf: () => null,
+        path: directory === null ? null : `${directory}/${path}`,
+      }}
       ready={value !== null || error !== null}
+      problem={error ?? problemOf(place)}
     >
       {place === null ? (error === null ? <PageLoading /> : null) : (
-        <article>
-          {place.kind === 'read'
-            ? (
-              <p className="mb-8 font-mono text-xs text-muted-foreground">
-                <Copyable value={`${place.directory}/${path}`} label={`the file ${place.directory}/${path}`}>
-                  <span className="break-all">{`${place.directory}/${path}`}</span>
-                </Copyable>
-              </p>
-            )
-            : null}
-          <div className="border-t pt-8">
-            <FileContent path={path} markdown={markdown} text={text} />
-          </div>
-        </article>
+        <FileBody path={path} name={name} markdown={markdown} text={text} shown={shown} foldKey={foldKey} startsFolded={startsFolded} />
       )}
-    </BoardPageFrame>
+    </PageSurface>
   )
 }
 
 /**
- * The file as this page can show it: a Markdown file rendered, the daemon's
- * sentence for one it will not serve, and for any other file the way to see
- * it as it is.
+ * The file as this page can show it, under its name, the record node: a
+ * Markdown file rendered in sections, the daemon's sentence for one it will
+ * not serve, and for any other file the way to see it as it is.
  */
-function FileContent({ path, markdown, text }: { path: string; markdown: boolean; text: FileText | null }) {
-  if (!markdown) return <NotMarkdown path={path} />
+function FileBody({ path, name, markdown, text, shown, foldKey, startsFolded }: {
+  path: string
+  name: string
+  markdown: boolean
+  text: FileText | null
+  shown: string
+  foldKey: string
+  startsFolded: (at: string) => boolean
+}) {
+  const record = useFocusUpTo('record')
+  const tip = useTip()
+  const heading = <span className="font-mono" title={tip(`The file ${path}, rendered from the session as it is on disk.`)}>{name}</span>
+  return (
+    <article>
+      {record === null
+        ? <h1 className="mb-6 text-xl font-medium">{heading}</h1>
+        : <Node path={record} as="h2" className="-mx-2.5 mb-6 px-2.5 py-1 text-xl font-medium">{heading}</Node>}
+      <div className="border-t pt-8">
+        {markdown ? <MarkdownFile text={text} shown={shown} sections={record === null ? null : { base: record, foldKey, startsFolded }} /> : <NotMarkdown path={path} />}
+      </div>
+    </article>
+  )
+}
+
+/** A Markdown file as the files route answered: rendered in sections, or the daemon's sentence for why it will not serve it. */
+function MarkdownFile({ text, shown, sections }: { text: FileText | null; shown: string; sections: Sections | null }) {
   if (text === null) return null
   if (text.kind === 'refused') return <p className="text-sm text-muted-foreground">{text.sentence}</p>
-  return <Markdown collapseEvidence page>{withFrontmatterShown(text.text)}</Markdown>
+  return <Markdown page sections={sections}>{shown}</Markdown>
 }
 
 /** What the page says of a file it does not render, and the way to see the file as it is. */

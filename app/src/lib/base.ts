@@ -20,9 +20,6 @@ import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
  * board through `BoardScope`.
  */
 
-/** The three listings a board serves beside its lanes, by the name of their page. */
-export type Listing = 'ledger' | 'context' | 'archive'
-
 /**
  * The pages under a board whose key may hold a slash, after the key: a
  * worktree's item, listings and file, and a project's ledger. The key is
@@ -108,6 +105,27 @@ export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ 
   if (!named(answer)) throw notFound()
 }
 
+/**
+ * What every address carries after its path: the focus, as the id of the node
+ * it is on, and on an item's page the board it was opened from, an epic's or
+ * a project's, when it was not its worktree's own. Each is decoded where the
+ * address is read, and one that does not decode is left out, as if the
+ * address had not carried it.
+ */
+const AddressSearchSchema = Schema.Struct({
+  focus: Schema.optional(Schema.String),
+  via: Schema.optional(Schema.Literals(['epic', 'project'])),
+})
+
+const decodeFocus = Schema.decodeUnknownOption(AddressSearchSchema.fields.focus)
+const decodeVia = Schema.decodeUnknownOption(AddressSearchSchema.fields.via)
+
+/** An address's search as the router reads it, each field decoded or left out. */
+export const addressSearch = (raw: Readonly<Record<string, unknown>>): typeof AddressSearchSchema.Type => ({
+  focus: Option.getOrUndefined(decodeFocus(raw['focus'])),
+  via: Option.getOrUndefined(decodeVia(raw['via'])),
+})
+
 /** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */
 export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`
 
@@ -153,57 +171,6 @@ const exact = { exact: true } as const
 
 /** Every worktree the daemon tracks, at the root. */
 export const toIndex = linkOptions({ to: '/', activeOptions: exact })
-
-/** A worktree's board, by the worktree's name. */
-export const toBoard = (name: string) =>
-  linkOptions({ to: '/w/$key/', params: { key: name }, activeOptions: exact })
-
-/** One item of a board, by its id. */
-export const toItem = ({ name, id }: { readonly name: string; readonly id: string }) =>
-  linkOptions({ to: '/w/$key/item/$id', params: { key: name, id }, activeOptions: exact })
-
-/** Each listing's route. */
-const listingRoutes = {
-  ledger: '/w/$key/ledger',
-  context: '/w/$key/context',
-  archive: '/w/$key/archive',
-} as const satisfies Record<Listing, string>
-
-/** One of a board's listings. */
-export const toListing = ({ name, listing }: { readonly name: string; readonly listing: Listing }) =>
-  linkOptions({ to: listingRoutes[listing], params: { key: name }, activeOptions: exact })
-
-/** The page that renders one Markdown file of a board's session, by its path under the session. */
-export const toFile = ({ name, path }: { readonly name: string; readonly path: string }) =>
-  linkOptions({ to: '/w/$key/file/$', params: { key: name, _splat: path }, activeOptions: exact })
-
-/** An epic's board, by the epic's name. */
-export const toEpic = (name: string) =>
-  linkOptions({ to: '/e/$name/', params: { name }, activeOptions: exact })
-
-/** The ledger of every worktree of an epic. */
-export const toEpicLedger = (name: string) =>
-  linkOptions({ to: '/e/$name/ledger', params: { name }, activeOptions: exact })
-
-/** A project's board, by the path the index heads its section with. */
-export const toProject = (path: string) =>
-  linkOptions({ to: '/p/$key/', params: { key: path }, activeOptions: exact })
-
-/** The ledger of every worktree of a project. */
-export const toProjectLedger = (path: string) =>
-  linkOptions({ to: '/p/$key/ledger', params: { key: path }, activeOptions: exact })
-
-/** A page of the board a link can go to. */
-export type Destination =
-  | typeof toIndex
-  | ReturnType<typeof toBoard>
-  | ReturnType<typeof toItem>
-  | ReturnType<typeof toListing>
-  | ReturnType<typeof toFile>
-  | ReturnType<typeof toEpic>
-  | ReturnType<typeof toEpicLedger>
-  | ReturnType<typeof toProject>
-  | ReturnType<typeof toProjectLedger>
 
 /** A path under the session as a URL path, encoded as the address carries it: every segment encoded, the slashes kept. */
 const encodedPath = Schema.encodeSync(AddressPathSchema)

@@ -56,10 +56,23 @@ const word = (text: string) => `'${text.replaceAll("'", String.raw`'\''`)}'`;
  * What the login shell runs. It moves into the worktree the way Zed moves into
  * a folder to learn its environment, so the shell's directory hooks run. Fish,
  * whose direnv and asdf hooks wait for a prompt, is given one. Then the shell
- * becomes the CLI.
+ * becomes the CLI, given the worktree and, to open one of its files at its
+ * first line, that file as `path:1`.
+ *
+ * The worktree goes with the file, never the file alone. Zed 1.21's `--classic`
+ * matches a window by any of the paths it is given being inside one of the
+ * window's projects, and a file under `.session/` is ignored by the session's
+ * own `.gitignore`, which Zed reads as not inside the project at all; a file
+ * no window holds is then opened in the active window, whatever it is on.
+ * The worktree itself, a directory, matches its own window as a root and
+ * matches no window on another worktree, and with a directory among the paths
+ * Zed never falls back to the active window: a worktree no window has opens in
+ * a new window, the file in it.
  */
-const openCommand = (input: { readonly shell: string; readonly cli: string; readonly path: string }) =>
-  `${basename(input.shell) === 'fish' ? 'emit fish_prompt; ' : ''}cd ${word(input.path)}; exec ${word(input.cli)} --classic ${word(input.path)}`;
+const openCommand = (input: { readonly shell: string; readonly cli: string; readonly path: string; readonly file: string | null }) =>
+  `${basename(input.shell) === 'fish' ? 'emit fish_prompt; ' : ''}cd ${word(input.path)}; exec ${word(input.cli)} --classic ${word(input.path)}${
+    input.file === null ? '' : ` ${word(`${input.file}:1`)}`
+  }`;
 
 /** The environment a login starts from: launchd's variables, with launchd's PATH. */
 const launchdEnvironment = Effect.gen(function*() {
@@ -98,12 +111,16 @@ const appOf = (cli: string) =>
   }).pipe(Effect.orElseSucceed(() => null));
 
 /**
- * Open the worktree at `path` in Zed, then bring forward the app that CLI
- * drives through LaunchServices, as the terminal action brings cmux forward.
- * Zed activates itself for the CLI, but a request that starts in a background
+ * Open the worktree at `path` in Zed, and in its window the file `file` at its
+ * first line when one is given, an absolute path the caller has checked lies
+ * in the worktree's session; then bring forward the app that CLI drives
+ * through LaunchServices, as the terminal action brings cmux forward. Zed
+ * activates itself for the CLI, but a request that starts in a background
  * process cannot count on reaching the front by that alone.
  */
-export const openInZed = (path: string): Effect.Effect<OpenResult, never, ChildProcessSpawner | FileSystem.FileSystem> =>
+export const openInZed = (
+  { path, file }: { readonly path: string; readonly file: string | null },
+): Effect.Effect<OpenResult, never, ChildProcessSpawner | FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const cli = yield* zedCli;
     if (cli === null) return { ok: false, line: 'zed is not on the daemon’s PATH.' } satisfies OpenResult;
@@ -114,7 +131,7 @@ export const openInZed = (path: string): Effect.Effect<OpenResult, never, ChildP
     const shell = (user === undefined ? null : yield* loginShell(user)) ?? environment['SHELL'] ?? '/bin/sh';
     const opened = yield* say({
       command: shell,
-      args: ['-l', '-i', '-c', openCommand({ shell, cli, path })],
+      args: ['-l', '-i', '-c', openCommand({ shell, cli, path, file })],
       cwd: environment['HOME'],
       env: { ...environment, SHELL: shell },
       extendEnv: false,

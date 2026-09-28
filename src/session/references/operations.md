@@ -22,6 +22,7 @@ add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
 mv <ID> <STAGE> [--before ID|GROUP]   refuses into Queue or Execute and out of Execute; another stage drops the group
 group "<name>" <ID...>     gather items of one stage into a named group; refuses Queue and Execute
 ungroup <ID...>            take items out of their groups, to the end of their stage; refuses Queue and Execute
+rename-group <STAGE> "<name>" "<new>"   rename a group, or a queued batch, where it stands; refuses Execute
 batch "<name>" <ID...>     compose a named batch from Batch items, grouped or not, and append it to Queue
 start                      move the first Queue batch into Execute
 done <ID>                  finish an Execute item into archive/
@@ -102,6 +103,17 @@ only by leaving Queue. `group` trims the name, as `batch` does, and refuses one
 that is empty or holds a `/`; [records.md](records.md) has the rules a group
 directory keeps.
 
+`rename-group <STAGE> "<name>" "<new>"` gives a group of that stage a new name
+where it stands: its directory keeps its number and its place among the stage's
+entries, and its items keep theirs, so only the name changes. It works in
+Triage, Design and Batch, and in Queue, where a batch waiting to start can be
+renamed, and refuses Execute, which is frozen and keeps its batch's name. The
+new name is trimmed and follows `group`'s rules; one the stage already has is
+refused rather than merged, since joining one group to another is `group`'s to
+do, and a group the stage does not hold is refused with its name. A name the
+group already has changes nothing. Success prints where the group stands now,
+`Renamed "Webhooks" to 3-Batch/050-Hooks`.
+
 `batch` takes items that are all in Batch, in a group there or not. Each leaves
 its group for the batch, and a group it empties goes with it. `start` requires
 Execute to be empty and keeps the batch's name.
@@ -127,14 +139,16 @@ the revision and answered with the session:
   moves nothing there. An `at` that is not among the items, or that names an
   item in a group, is refused.
 - `POST /w/<key>/api/ungroup {ids, revision}` is `ungroup`.
+- `POST /w/<key>/api/rename-group {stage, from, to, revision}` is
+  `rename-group`.
 
 ## Finish and archive
 
 `done <ID>` finishes an item in Execute. `archive <ID>` files an item from any
 stage, Execute included, when the work is not going to happen. Both write the
 item into `.session/archive/` and then delete its file, and both refuse when
-that name is already taken. On the board, "Complete work" runs `done`; `archive`
-has no button.
+that name is already taken. On the board, the Complete command runs `done`;
+`archive` has no command there.
 
 An archive file is named for the day it was archived, the item, and the state it
 left: `2026-09-13 BE-16 — Peel the email backend (done).md`. The state is `done`
@@ -632,195 +646,208 @@ of it. `POST /api/worktrees/refresh` remains as the route the CLI registers
 through; it takes the worktree by its path, `{path}`, as the terminal and Zed
 routes take it, and refuses any other body.
 
-The index at `/` draws the tracked worktrees as a stack of sections, one per
-project, rather than as a table, under a header that holds only the settings
-icon, at its far end. It has no heading: the browser's tab names it Worktrees,
-and every head and card says what it is and how it moves from where it is, in
-the tips of the marks before a name, of an epic's heading, of a head's badge and
-of whatever is dim, so nothing needs a page-wide sentence. A project is a
-repository, or a folder outside Git, which is a project of its own. A repository
-is what Git names for every worktree of it: the worktrees that share one Git
-directory, named by what Git lists first for it: its main worktree, or the Git
-directory Git lists in the main worktree's place. Every row
+The index at `/` draws the tracked worktrees as an outline, one column of rows:
+each project's row, then its epics, each with its worktrees under it, then its
+worktrees in no epic, one step further in at each level. Like every view it has
+the path line along its top and the detail line along its bottom, as
+[Keys](#keys) has them, and nothing else around the rows: no header and no
+heading, since the browser's tab names it Worktrees. A row is a name, the glyph
+of what the session holds, and the marks of what can need you now. Every other
+fact about a row is in the detail line while the row has the focus, and every
+action on it is a command, which the palette lists and the key map names. A
+project is a repository, or a folder outside Git, which is a project of its own.
+A repository is what Git names for every worktree of it: the worktrees that
+share one Git directory, named by what Git lists first for it: its main
+worktree, or the Git directory Git lists in the main worktree's place. Every row
 the daemon serves carries its repository, the name and path of what Git lists
 first and what the listing says is checked out there, from the same `git
 worktree list` as the row's own branch. Nothing about a repository is stored:
 when Git cannot list one, its rows are Not served, with the reason, and keep
-their section, named by what Git listed first when each was taken on, which
-the daemon holds for as long as it tracks the row. A path the daemon holds until
+their project, named by what Git listed first when each was taken on, which the
+daemon holds for as long as it tracks the row. A path the daemon holds until
 Git answers names no repository and is no folder outside Git, so it stands in no
-section: the notices under the header name it, with Git's line.
+project: it is a dim row after the last project, whose detail line gives the
+path and Git's line; the Terminal and Copy path commands act on it, and every
+other command refuses with that reason.
 
-A section is headed by what heads its project, drawn as the constant it is and
-never dragged over the project's cards; a main worktree's head, while it has a
-session, is what places its section among the others, as below. A repository's
-main worktree with a session is its row, a
-worktree's two lines with a house before its name, since a main worktree is
-never in an epic. A main worktree with no session heads its repository all the
-same, so that its worktrees have a home: by its name and branch as Git lists
-them, marked Not tracked, with no glyph, no link, no actions and no agents,
-since there is no session there to show and the daemon opens and lists nothing
-for a worktree it does not track; when Git cannot list the repository, this head
-says so where its branch would be. A repository Git lists by its Git directory,
-where a main worktree would be, is headed by that directory's name alone, marked
-Git directory, with no branch: always for a bare repository, which Git marks so,
-and for a submodule or a separate Git directory, whose Git directory Git lists
-in the main worktree's place, until the daemon tracks that main worktree; none
-of these directories is a worktree or holds a session. The main worktree of a
+A project's row is what heads it, and never moves among the rows under it; a
+main worktree's row, while it has a session, is what places its project among
+the others, as below. A repository's main worktree with a session heads it as
+its own row, and a main worktree is never in an epic. A main worktree with no
+session heads its repository all the same, so that its worktrees have a home:
+by its name, dim, with `Not tracked` beside it, and no glyph and no marks, since
+there is no session there to show and the daemon opens and lists nothing for a
+worktree it does not track. A repository Git lists by its Git directory, where a
+main worktree would be, is headed by that directory's name, dim, with `Git
+directory` beside it: always for a bare repository, which Git marks so, and for
+a submodule or a separate Git directory, whose Git directory Git lists in the
+main worktree's place, until the daemon tracks that main worktree; none of
+these directories is a worktree or holds a session. The main worktree of a
 submodule or a separate Git directory is a main worktree all the same, known by
 its Git directory being the repository's own rather than by where Git lists it:
 once the daemon tracks it, which `session open` in it does, it heads the
-repository as its row, under its own name, with its Git directory in the tip of
-the mark before that name. A folder outside Git is headed by its name, marked
-Outside Git. Every head carries a book, a repository's mark, after its name,
-which opens the project's board, below. A section carries its head's name, and
-two sections whose heads would carry the same name carry each the name of the
-folder what its head names is in before it, as a linked worktree is named whose
-folder shares its main worktree's name. Below its head a section holds the
-project's cards: a card per epic whose worktrees all belong to it, headed by
-the epic's name, which opens the epic's board, below, how many worktrees are in
-it and an icon that renames it, with its worktrees inside, and a card of its
-own for each of its worktrees in no epic. An epic whose worktrees belong to
-more than one project is drawn once, in a section of its own, Across projects,
-since it is the one thing higher than a project, and a project whose worktrees
-are all in such epics is its head alone. So every worktree the index lists is
-drawn once: as a head, in an epic's card, or as a card of its own.
+repository as its row, under its own name. A folder outside Git heads its
+project as its own row, and its detail line says `Outside Git`. A project's
+name is its head's, and two projects whose heads would carry the same name
+carry each the name of the folder what its head names is in before it, as a
+linked worktree is named whose folder shares its main worktree's name. A
+project whose main worktree heads it stands for that worktree: the worktree's
+commands act on the project's row, and Enter on a project that holds nothing
+but its head opens that worktree's board, while on any other it opens the
+project's board, below. Under its row a project holds its epics whose worktrees
+all belong to it, each a row of its own, the epic's name, whose Enter opens the
+epic's board, and then its worktrees in no epic. An epic whose worktrees belong
+to more than one project is drawn once, under a row of its own, Across
+projects, since it is the one thing higher than a project, and a project whose
+worktrees are all in such epics is its row alone. So every worktree the index
+lists is drawn once: as a project's row, in an epic, or on its own.
 
-The sections whose main worktree was placed by hand come first, in the order of
+The projects whose main worktree was placed by hand come first, in the order of
 their ranks, and keep their places when they go quiet, dim but not last. The
-rest are ordered as the cards in them are, by what is happening in them, the
-one across projects among them: a section with a live agent first, live as a
-pill counts it, then the newest activity first, and a section with nothing live
-and nothing in five days is drawn dim and last, its head or heading saying so
-in its tip. A project is as busy as every worktree of it, wherever that
-worktree is drawn, in an epic across projects included, and the section across
-projects as busy as the worktrees in its epics. The cards in a section follow
-the same order: a card with a live agent first, then the newest activity, and a
-card with nothing live and nothing in five days dim and last. The worktrees in
-an epic's card stand the same way as the sections: the ones placed by hand
-first, in the order of their ranks, then the rest by what is happening in each,
-and a name settles a tie. Nothing stores a section or a fold, and the one order
-stored is each worktree's rank, in its own `meta/rank`; every read draws the
-rest again. Each section's
-cards stand in columns as wide as a card needs, the same columns in every
-section, and where the browser lays grid items out as masonry, with `display:
-grid-lanes` or `grid-template-rows: masonry`, each card packs up under the one
-above it; elsewhere each starts at the top of its row. No script lays them out.
+rest are ordered as the rows in them are, by what is happening in them, Across
+projects among them: a project with a live agent first, then the newest
+activity first, and a project with nothing live and nothing in five days is
+drawn dim and last. A project is as busy as every worktree of it, wherever that
+worktree is drawn, in an epic across projects included, and Across projects as
+busy as the worktrees in its epics. The epics and the worktrees in no epic under
+a project follow the same order: one with a live agent first, then the newest
+activity, and one with nothing live and nothing in five days dim and last. The
+worktrees in an epic stand the same way as the projects: the ones placed by
+hand first, in the order of their ranks, then the rest by what is happening in
+each, and a name settles a tie. Nothing stores a project or a fold, and the one
+order stored is each worktree's rank, in its own `meta/rank`; every read draws
+the rest again.
 
-A worktree is two lines wherever it is drawn, beside the glyph of what its
-session holds at its top left: a folder and its name, a terminal icon and a Zed
-icon, and a pill per live agent, then a branch mark and its branch and the pull
-request gh reports for it. The marks are the board picker's, a folder, a
-branch, and a commit in place of the branch for a detached HEAD, so a name and a
-branch are told apart wherever a worktree is drawn. The folder's tip says what
-the worktree is here: on the page while it has a session, at the head of its
-repository, in an epic or in none, under its repository or its own head outside
-Git, and where it can be dropped. A name stands without its path, which is its
-tip. A linked worktree whose folder shares its main worktree's name carries its
-parent folder's name before it, but two worktrees can still share a name: the
-main worktrees of two repositories whose folders share one, or a linked worktree
-named like the main worktree of a separate Git directory, whose name Git does
-not list. The daemon serves the board of the one it took on first, and the other
-is Not served, naming the worktree that has the name. A worktree with
-a commit checked out rather than a branch reads `Detached HEAD` where the branch
-would be, and a folder outside Git reads `No branch`. What every row has checked
-out comes from one `git worktree list` per repository, run in the Git directory
-the repository's worktrees share, rather than from Git asked once per row. The
-pull request is the chip a board's header carries, or gh's sentence in its
-place, and a branch with no pull request, like a repository with no remote on
-GitHub, shows none. The glyph says what the session holds in place of words: one
-small bar per stage in the flow's order, Triage to Execute, and no total beside
-it. Every glyph on the page is measured against one range, the fewest and the
-most items any stage drawn on the page holds, so a bar's height is the same
-count on every card: the fewest sits at the baseline and the most is full
-height, which with an empty stage anywhere is a count's share of the page's
-largest. An empty stage is a dim stub at the baseline, and when every stage on
-the page holds the same number every bar is drawn there. The range is read from
-the rows each time the page draws them and kept nowhere, and a row the daemon
-does not serve draws no glyph and counts for none of it. The Execute bar takes
-the accent while a batch runs there, and the tip names each stage with its
-count, the batch under way, which is where a batch is named, and the total. Each
-board sits under `/w/<key>/`, where the key is the worktree name, `Heartbeat` or
-`email-backend/Heartbeat`. Two tracked worktrees whose names collide are a
-conflict: the later one is listed with a reason that names both folders, and is
-not served until the first one leaves. A row the daemon does not serve, for such
-a conflict or for a session or a Git it cannot read, reads Not served with the
-reason in place of its second line and has no link to its board; it stays in its
-epic's card while its file names one. A `meta/epic` the rules reject puts its
-worktree in no epic and says why on the second line, in the sentence `check`
-gives, and the row is served as ever: the file is about the index, not the work.
+A worktree's row is its name, with its path as its tip, the glyph of what its
+session holds, and its marks, which are drawn wherever the worktree is, its
+step of the path line included on a view that does not draw its row: a dot per
+live agent, live as the agents' listing says, in the one accent while the
+session waits on a person; a red `!` while a file of its session or a commit
+breaks a rule, a `Session-Done` trailer it cannot act on or a `meta/epic` or
+`meta/rank` the rules reject; a dim `!` while a source could not answer for it,
+gh, linear or an agents' listing; and the number of its branch's pull request,
+green while open, dim as a draft, magenta once merged, red once closed, and red
+whatever its state while any check fails. The detail line of a worktree says
+the rest, in this order: its name; what it has checked out, its branch,
+`Detached HEAD` for a commit, or `No branch` for a folder outside Git; why it is
+not served when it is not; its pull request, as the pull request's fact below
+has it; each Linear issue it names, with linear's state for it, on a board,
+which alone asks linear; each live agent, its name and its word with its time,
+the name very dim when Claude Code made it from the folder; each source that
+could not answer, in the source's own words; and each problem, in the sentence
+`check` gives. A name stands without its path. A linked worktree whose folder
+shares its main worktree's name carries its parent folder's name before it, but
+two worktrees can still share a name: the main worktrees of two repositories
+whose folders share one, or a linked worktree named like the main worktree of a
+separate Git directory, whose name Git does not list. The daemon serves the
+board of the one it took on first, and the other is Not served, dim, naming the
+worktree that has the name in its detail line. What every row has checked out
+comes from one `git worktree list` per repository, run in the Git directory the
+repository's worktrees share, rather than from Git asked once per row. The glyph
+says what the session holds in place of words: one small bar per stage in the
+flow's order, Triage to Execute, and no total beside it. Every glyph on the page
+is measured against one range, the fewest and the most items any stage drawn on
+the page holds, so a bar's height is the same count on every row: the fewest
+sits at the baseline and the most is full height, which with an empty stage
+anywhere is a count's share of the page's largest. An empty stage is a dim stub
+at the baseline, and when every stage on the page holds the same number every
+bar is drawn there. The range is read from the rows each time the page draws
+them and kept nowhere, and a row the daemon does not serve draws no glyph and
+counts for none of it. The Execute bar takes the accent while a batch runs
+there, and the tip names each stage with its count, the batch under way, which
+is where a batch is named, and the total. Each board sits under `/w/<key>/`,
+where the key is the worktree name, `Heartbeat` or `email-backend/Heartbeat`.
+Two tracked worktrees whose names collide are a conflict: the later one is
+listed with a reason that names both folders, and is not served until the first
+one leaves. A row the daemon does not serve, for such a conflict or for a
+session or a Git it cannot read, is drawn dim, with the reason in its detail
+line, and opens no board; it stays in its epic while its file names one. A
+`meta/epic` the rules reject puts its worktree in no epic and gives it a red
+`!`, whose sentence in the detail line is the one `check` gives, and the row is
+served as ever: the file is about the index, not the work.
 
-The cards change their epics by drag, and the heads and the worktrees in an epic
-their order. A worktree is held by its row, a whole epic by its heading, and a
-project by its head; the pointer carries a copy of what is held while the card
-itself stays in place, faint, and the copy says above it what dropping it there
-would do, `Join "Back burner"`, `Merge into "Back burner"`, `New epic with
-alpha-two` or `Leave "Back burner"`, and nothing when the drop would change
-nothing; the card it would land in is outlined. A place among siblings is drawn
-as a dashed line where the held thing would go instead, and its words say where
-it would stand, `Before alpha-two`, `After Heartbeat` or `First`. Where the
-pointer is decides the drop. A worktree dropped onto an epic's card joins it,
-and so do all of a whole epic's worktrees. A worktree dropped onto another
-worktree's card in no epic makes an epic of the two, named in the dialog groups
-and batches are named in, which starts empty and makes nothing without a name.
-While a worktree is held, from a card of its own or out of an epic, a `+` is
-drawn after its project's cards, and only then, since it can do nothing
-otherwise, and there, since an epic of one worktree stands with its project; its
-tip is `New epic of <name>`, and so are the words over the held copy. A worktree
-dropped on it opens the same dialog and makes an epic of that one worktree, or
-puts it in the epic that already has the name given, and no name makes nothing.
-A worktree dragged out of its epic onto the space between and below the cards,
-the heads included, leaves it and becomes a card of its own in its project's
-section, whichever section it was dropped in. Escape puts it back. Every drop
-works across projects as it does within one, and where the epic stands follows
-from whose worktrees it holds: a worktree dropped onto a card or an epic of
-another project makes or joins an epic that moves to the section across
+Every change the index makes has a command, which takes the marked worktrees
+when there are any and the focused one otherwise: Join an epic… puts them in
+the epic of the name it asks for, new or existing, and so takes each out of any
+other; Leave the epic takes them out of theirs; Carry up and Carry down,
+`Shift+k` and `Shift+j`, place the focused worktree one step up or down its
+epic, and the focused project one step up or down the projects; and Rename the
+epic… gives an epic a new name. A main worktree is in no epic, so it neither
+joins nor leaves one, and a worktree in no epic stands by what is happening in
+it and is carried nowhere; each command that cannot act says why in the detail
+line instead.
+
+Drag stays for the mouse, and every drop is one of those commands. A worktree
+is held by its row, a whole epic by its row, and a project by its row; the
+pointer carries a copy of what is held while the row itself stays in place,
+faint, and the copy says above it what dropping it there would do, `Join "Back
+burner"`, `Merge into "Back burner"`, `New epic with alpha-two` or `Leave "Back
+burner"`, and nothing when the drop would change nothing; the epic or the row it
+would land in is outlined. A place among siblings is drawn as a dashed line
+where the held thing would go instead, and its words say where it would stand,
+`Before alpha-two`, `After Heartbeat` or `First`. Where the pointer is decides
+the drop. A worktree dropped onto an epic joins it, and so do all of a whole
+epic's worktrees. A worktree dropped onto another worktree's row in no epic
+makes an epic of the two, named in the dialog groups and batches are named in,
+which starts empty and makes nothing without a name. While a worktree is held,
+from a row of its own or out of an epic, a `+` is drawn after its project's
+rows, and only then, since it can do nothing otherwise, and there, since an
+epic of one worktree stands with its project; its tip is `New epic of <name>`,
+and so are the words over the held copy. A worktree dropped on it opens the same
+dialog and makes an epic of that one worktree, or puts it in the epic that
+already has the name given, and no name makes nothing. A worktree dragged out of
+its epic onto the space between and below the rows leaves it and becomes a row
+of its own in its project, whichever project it was dropped in. Escape puts it
+back. Every drop works across projects as it does within one, and where the
+epic stands follows from whose worktrees it holds: a worktree dropped onto a
+row or an epic of another project makes or joins an epic that moves to Across
 projects; a worktree that leaves such an epic goes back to its project, and the
-epic, once what it holds belongs to one project, goes into that project's
-section. The rename icon opens the same dialog with the epic's name in it and
-moves every worktree in the epic to the new name. A name no epic has is the same
-epic under another name, so every worktree keeps its rank and the card its
-order; a name another epic already has merges the two, and the worktrees that
-arrive join it unranked, after its ranked ones, whose ranks are untouched. The
-daemon tells which it is from the worktrees it tracks, through the rename route,
-one request for the epic. A drop is written with the epic route, one request per
-worktree, which is drawn where it lands at once and read again once it is
-written; a refusal, such as a file changed since the index read it, shows above
-the cards in the daemon's words. While a card is held, the index draws what it
-drew when the card was picked up, its rows, pull requests and clock alike, so no
-card moves under the pointer: a change it is told of meanwhile is read once the
-card is let go, and a read already under way at pickup lands unseen until then.
-While a drop is being written it holds its reads the same way, and then reads
-once. Every worktree the index lists can be dragged into and out of epics but a
-main one, a worktree it does not serve included, since the epic route takes a
-path; a main one is held by its head, to place its project, served or not, since
-the order route takes a path too. Each drop is written against the epic drawn
-for every worktree when it was dropped, a new epic's worktrees through the
-dialog as well, so one whose file was changed in the meantime is refused as
-changed on disk, and the index reads again.
+epic, once what it holds belongs to one project, goes into that project. Rename
+the epic… opens the same dialog with the epic's name in it and moves every
+worktree in the epic to the new name, and an epic dropped onto another is
+renamed to that one's name. A name no epic has is the same epic under another
+name, so every worktree keeps its rank and the epic its order; a name another
+epic already has merges the two, and the worktrees that arrive join it
+unranked, after its ranked ones, whose ranks are untouched. The daemon tells
+which it is from the worktrees it tracks, through the rename route, one request
+for the epic. A drop or a command is written with the epic route, one request
+per worktree, which is drawn where it lands at once and read again once it is
+written; a refusal, such as a file changed since the index read it, is said in
+the detail line in the daemon's words. While a row is held, the index draws what
+it drew when the row was picked up, its rows, pull requests and clock alike, so
+no row moves under the pointer: a change it is told of meanwhile is read once
+the row is let go, and a read already under way at pickup lands unseen until
+then. While a write is under way it holds its reads the same way, and then reads
+once. Every worktree the index lists can join and leave epics but a main one, a
+worktree it does not serve included, since the epic route takes a path; a main
+one places its project, served or not, since the order route takes a path too.
+Each change is written against the epic drawn for every worktree when it was
+asked for, a new epic's worktrees through the dialog as well, so one whose file
+was changed in the meantime is refused as changed on disk, and the index reads
+again.
 
-A project is held by its head only while a main worktree with a session heads
-it, since no other head has a file of its own to keep a place in: a main
-worktree with no session, a Git directory, a folder outside Git and the epics
-across projects are never held, and stand after the projects placed by hand.
-Held, a project goes before or after the section nearest the pointer, the gaps
-between the sections included, by which half of it the pointer is in. A worktree
-held within its own epic's card goes before or after the worktree of that epic
-it is over, the same way, and first over the card's heading; over a row of
-another epic's card it joins that epic, as over the card. It lands where it was
-dropped. Over the ranked siblings it goes in front of the one it would be drawn
-before; among the unranked ones, the siblings drawn above the place it was
-dropped are ranked first, in their drawn order, and it right after them, so what
-stood above it still does, and the siblings below it stay unranked. A section
-that cannot hold a rank, one that no main worktree with a session heads, stands
-after every ranked one, so a project dropped below one lands right after the
-last section ranked before it; the line and the words show that place. Over the
-place it already has, nothing is drawn and nothing written. A placement is
-written with the order route, one request, since the engine ranks and renumbers
-whatever it needs, and is drawn where it lands at once and read again once it is
-written, as a drop into an epic is. A drop that puts a worktree in another epic,
-or takes it out of one, removes its rank, as `join` and `leave` do; a rename
-keeps every rank unless it merges, as above.
+A project is carried, by its keys or by its row, only while a main worktree
+with a session heads it, since no other project has a file of its own to keep a
+place in: a main worktree with no session, a Git directory, a folder outside
+Git and Across projects are never carried, and stand after the projects placed
+by hand, so a project carried toward one says it cannot go past it. Held, a
+project goes before or after the project nearest the pointer, the gaps between
+them included, by which half of it the pointer is in. A worktree held within
+its own epic goes before or after the worktree of that epic it is over, the
+same way, and first over the epic's row; over a worktree of another epic it
+joins that epic, as over the epic. It lands where it was dropped, as a carry
+lands one step on. Over the ranked siblings it goes in front of the one it would
+be drawn before; among the unranked ones, the siblings drawn above the place it
+was dropped are ranked first, in their drawn order, and it right after them, so
+what stood above it still does, and the siblings below it stay unranked. A
+project that cannot hold a rank stands after every ranked one, so a project
+dropped below one lands right after the last project ranked before it; the line
+and the words show that place. Over the place it already has, nothing is drawn
+and nothing written. A placement is written with the order route, one request,
+since the engine ranks and renumbers whatever it needs, and is drawn where it
+lands at once and read again once it is written. A change that puts a worktree
+in another epic, or takes it out of one, removes its rank, as `join` and
+`leave` do; a rename keeps every rank unless it merges, as above.
 
 ## Use the board
 
@@ -828,61 +855,47 @@ A board shows the worktrees of a filter: one worktree's at `/w/<key>/`, an
 epic's at `/e/<name>/`, every worktree whose session names the epic, and a
 project's at `/p/<path>/`, every worktree of its repository, or the one folder
 outside Git that is a project of its own. A project goes by the path the index
-heads its section with, encoded segment by segment as a worktree's key is, so
+heads its project with, encoded segment by segment as a worktree's key is, so
 `/Users/me/projects/session` is `/p/Users/me/projects/session/`. Nothing about a
 filter is stored: every row `GET /api/worktrees` serves names its worktree's
-epic and repository, and an epic's or a project's board reads them there. The
-index opens each board: a worktree's name its own, an epic's name the epic's,
-and the book on a project's head the project's. The picker, below, switches
-between all three.
+epic and repository, and an epic's or a project's board reads them there. On the
+index, Enter or `i` on a worktree opens its board, Enter on an epic the epic's,
+and Enter on a project the project's; the palette's go-to reaches every one of
+them by name from any view.
 
-A board's header starts with "All projects", which links back to the index,
-then the picker with the terminal and Zed icons beside it, since both open that
-worktree, then the branch's pull request, the Linear issues the worktree names,
-an icon for the session's rules when it has `RULES.md`, which opens it on the
-file page, and one icon apiece for its Ledger, Context and Archive pages; the
-settings icon is at the far end. The picker is where the board says what it
-shows: on a worktree's board the control shows the worktree's name over the
-branch checked out in it, and on an epic's or a project's the epic's or the
-project's name over how many worktrees are in it. It opens a list of every
-board there is, under a heading for each kind: every worktree the daemon serves,
-each as the same two lines, its name over its branch, then every epic and every
-project, each its name over its count of worktrees, every line cut short rather
-than wrapped. Each line is marked with what it is: a folder for a worktree, a
-branch for its branch, or a commit when the worktree has a detached HEAD, boxes
-for an epic and a book for a project. Typing in the list narrows it by a
-worktree's name or branch, an epic's name, or a project's name or path, and
-picking one opens that board. Until the index answers, and if it never does,
-the control is plain text, a worktree's name and branch from its own board's
-read. The page icons carry no count
-and no age; each names its page as its tip. A non-Git folder uses its own
-`.session` and has no branch, so it has no pull request and names no issue
-either.
+A board has no header. Its path line names where the focus is, from All down,
+and each of its steps is a click away: All is the index, a project's or an
+epic's step its place there, and a worktree's step, on a worktree's board, the
+worktree, which carries its marks there, since the board draws no row of its
+own for it. What the header held is a command now, and a fact of the detail line
+while the worktree has the focus, the focus on any of its cards included, since
+a worktree's commands run from anywhere inside it: its pull request and Linear
+issues, its terminal and Zed, its agents, its rules, ledger, context and
+archive. The palette and the key map, in [Keys](#keys), list them all.
 
-The settings icon, at the far end of the board's header, of every page's
-trail, and of the index, opens the board's own settings. They are kept in the
-browser's localStorage under `session.settings`, as the JSON an Effect Schema
-writes, so they survive a reload and follow a change made in another tab of
-the same address; they say only how the board draws, and nothing in them
-reaches the daemon or the files. A setting missing from what is stored reads as
-its default; a stored value the schema cannot read leaves the defaults
-standing, and a write the browser refuses holds on the page until it reloads,
-and the menu says so either way. The settings are Tips, Code colour and Term
-colour.
+The Settings command opens the board's own settings, from the palette on every
+view. They are kept in the browser's localStorage under `session.settings`, as
+the JSON an Effect Schema writes, so they survive a reload and follow a change
+made in another tab of the same address; they say only how the board draws, and
+nothing in them reaches the daemon or the files. A setting missing from what is
+stored reads as its default; a stored value the schema cannot read leaves the
+defaults standing, and a write the browser refuses holds on the page until it
+reloads, and the settings say so either way. The settings are Tips, Code colour
+and Term colour, and each says what it does beside it.
 
 Tips is off by default. With Tips on, every word and control says what it
 means when it is hovered or focused: the sentences this reference calls a
-tooltip, or says are on hover, are tips. With Tips off nothing comes up under
-the pointer, and a word that only carried a tip is plain text. A title that
-reports what just happened, such as a copy the clipboard refused, is not a tip
-and shows either way.
+tooltip, or says are on hover, are tips, the meaning of each fact of the detail
+line among them. With Tips off nothing comes up under the pointer, and a word
+that only carried a tip is plain text. A title that reports what just happened,
+such as a copy the clipboard refused, is not a tip and shows either way.
 
 Code colour is the hue inline code is drawn in wherever the board reads
-Markdown, on an item's page, a file's and the ledger's cards, over the muted
+Markdown, on an item's page, a file's and the ledger's entries, over the muted
 ground behind it; a code block keeps the text's colour. It is one of the
 theme's hues, `blue`, `red`, `yellow`, `green`, `teal` or `magenta`, and green
-by default, the one that stands out most on that ground. The menu draws it as
-a row of swatches, one per hue, each with its name as its tip and the chosen
+by default, the one that stands out most on that ground. The settings draw it
+as a row of swatches, one per hue, each with its name as its tip and the chosen
 one pressed, and a press changes it at once on every open page of the address.
 
 Term colour is the hue a document's terms are drawn in, below: the Term cells
@@ -891,57 +904,57 @@ hues from the same row of swatches, and is magenta by default, a hue that is
 neither the code colour nor one the board already means something by: blue is
 a link, yellow someone waited on, and red danger.
 
-The pull request is one chip, and the chip is a link to it: its number, gh's
-state word (`open`, `merged` or `closed`, and `draft` for an open draft), gh's
-review decision when it gives one (`approved`, `changes requested`,
-`review required`), and one glyph for the head commit's checks: a cross when any
-failed, a dashed circle while any has not finished, a tick when all passed, and
-none when gh reports no checks. The tooltip names gh's exact words, prints the
-three counts, and says when gh was asked. The counts are taken from gh's
-`statusCheckRollup`, every entry once: a check run passed when it completed with
-`SUCCESS`, `NEUTRAL` or `SKIPPED` and failed when it completed any other way; a
-commit status, such as a deployment's, carries only a state, and passed on
-`SUCCESS` and failed on `FAILURE` or `ERROR`; anything else is pending. Nothing
-on the chip has a colour. A branch with no pull request and a detached head
-draw no chip. Any other way gh can fail, missing from the daemon's PATH, signed
-out, or offline, reads "gh did not answer, so the pull request is not shown."
-where the chip would be.
+The pull request is one fact of the worktree's detail line and one mark: the
+fact is its number, gh's state word (`open`, `merged` or `closed`, and `draft`
+for an open draft), gh's review decision when it gives one (`approved`,
+`changes requested`, `review required`), and how the head commit's checks
+stand: `checks failed` when any failed, `checks pending` while any has not
+finished, `checks passed` when all passed, and nothing when gh reports no
+checks. Its tip names gh's exact words, prints the three counts, and says when
+gh was asked. The mark is the number alone, coloured by the state, green while
+open, dim as a draft, magenta once merged and red once closed, and red whatever
+the state while any check fails, since a failing check can need you now. The
+counts are taken from gh's `statusCheckRollup`, every entry once: a check run
+passed when it completed with `SUCCESS`, `NEUTRAL` or `SKIPPED` and failed when
+it completed any other way; a commit status, such as a deployment's, carries
+only a state, and passed on `SUCCESS` and failed on `FAILURE` or `ERROR`;
+anything else is pending. A branch with no pull request and a detached head
+have neither. Any other way gh can fail, missing from the daemon's PATH, signed
+out, or offline, puts a dim `!` on the worktree, and "gh did not answer, so the
+pull request is not shown." in the detail line where the pull request would
+be. The Pull request command opens it.
 
-The Linear issues the worktree names are one chip after the pull request's,
-however many there are. One issue's chip is a link to it that shows its
-identifier, such as `HEA-5454`, and nothing else; the tooltip gives the issue's
-title, its state in linear's own words, and when linear was asked. Several
-issues share a chip that shows the first one named and how many more, such as
-`HEA-5523 +3`, and opens a list of them all, each with its identifier, title
-and state in linear's own words, under a line saying when linear was asked;
-each opens its issue as a single chip does. The identifiers are read from the branch
-name and from the pull request's title and body: anything written the way
-Linear writes one, a team key of two or more letters and digits that starts with a letter, a hyphen, and a number
-that does not start with 0, in any case, so `jason/hea-5454-upgrade` names
-`HEA-5454`. They are uppercased and kept once each, in the order they are first
-named. Each is asked for with `linear issue view <ID> --json` in the worktree,
-so linear reads that worktree's own configuration, and an issue is shown only
-when linear answers with it. An identifier linear cannot find draws
-nothing, so a word that only looks like one, such as `to-400` in a branch name,
-costs one ask and nothing else. Linear answers a moved issue's old identifier
-with the issue under its new one, so two names for one issue show it once. A
-worktree that names no identifier asks linear nothing. linear without an API
-key reads "linear is not authenticated, so issues are not shown." where the
-chip would be. linear missing from the daemon's PATH, offline, slower than
-fifteen seconds, or answering any other way reads "linear did not answer, so
-issues are not shown.", and when linear printed a reason, the daemon's log has
-it. Either way no issue is drawn, because a partial list would read as the
-whole one. When gh does not answer, only the branch is read.
+The Linear issues the worktree names are facts of its detail line on its
+board, one each: the identifier, such as `HEA-5454`, and linear's state for it
+in linear's own words, with the issue's title and when linear was asked in the
+tip. The Linear issue… command lists them, each with its title and state, and
+opens the one chosen. The identifiers are read from the branch name and from
+the pull request's title and body: anything written the way Linear writes one,
+a team key of two or more letters and digits that starts with a letter, a
+hyphen, and a number that does not start with 0, in any case, so
+`jason/hea-5454-upgrade` names `HEA-5454`. They are uppercased and kept once
+each, in the order they are first named. Each is asked for with `linear issue
+view <ID> --json` in the worktree, so linear reads that worktree's own
+configuration, and an issue is shown only when linear answers with it. An
+identifier linear cannot find draws nothing, so a word that only looks like
+one, such as `to-400` in a branch name, costs one ask and nothing else. Linear
+answers a moved issue's old identifier with the issue under its new one, so two
+names for one issue show it once. A worktree that names no identifier asks
+linear nothing. linear without an API key puts a dim `!` on the worktree and
+"linear is not authenticated, so issues are not shown." in the detail line.
+linear missing from the daemon's PATH, offline, slower than fifteen seconds, or
+answering any other way reads "linear did not answer, so issues are not
+shown.", and when linear printed a reason, the daemon's log has it. Either way
+no issue is drawn, because a partial list would read as the whole one. When gh
+does not answer, only the branch is read.
 
 Everything the board opens outside itself is opened once, except a Markdown
 link whose address the URL parser rejects, which is left to the browser as a
-plain link. A click on a chip
-opens its pull request or issue in a tab named for its address, and a later
-click brings that tab forward as it is, without reloading it, instead of
-opening another; a tab is opened only when there is none. The name is found
-from the board tab that opened it, so a board opened separately in a tab of
-its own opens its own, and a middle click or a click with a modifier is left
-to the browser, so a copy of the reader's own is always one gesture away. The
+plain link. The Pull request command and an issue chosen from Linear issue…
+open it in a tab named for its address, and a later command brings that tab
+forward as it is, without reloading it, instead of opening another; a tab is
+opened only when there is none. The name is found from the board tab that
+opened it, so a board opened separately in a tab of its own opens its own. The
 tab keeps the board as its opener, because Chrome loses the name of a tab that
 has none as soon as it loads another site; that tab can therefore reach back to
 the board's.
@@ -949,68 +962,87 @@ the board's.
 The daemon asks gh with `gh pr view` in the worktree, reading the branch with
 `git branch --show-current` at the same moment, and asks linear about every
 identifier that branch and gh's answer name, four at a time. It keeps only the
-last answer of each, and gh's answer is one answer for the index and the
-worktree's boards alike, each source dated by its own ask. gh's answer stands
-while it is under a minute old and nothing has moved since it was asked, where
-a move is another branch checked out in the worktree, or a push or fetch moving
-the remote-tracking ref of the branch gh answered for; a fetch that moves only
-the repository's other refs moves nothing. A board's read is served gh's answer
-while it stands and asks again once it does not; the index's read,
-`GET /api/pull-requests`, serves the last answer of every served row and leaves
-the asking to the daemon. The issues are served while they were read from gh's
-current answer, so linear is asked again whenever gh is, for a board and never
-for the index. While a board of that worktree or the index is open, the daemon
-also asks gh again once its answer is a minute old or at once after a move, and
-with a board open it asks linear after each new answer of gh's; with neither
-open it spawns nothing. An index that starts listening for `pull-requests`
-starts an ask for every served row whose answer does not stand. The index's
-asks take turns, four at a time, and one whose turn comes after every page that
-wanted it has closed, or after a board has already asked, is dropped; a board's
-own ask never waits behind them. A page's stream carries only the events that
-page names, and says in a comment line, which no page reads as an event, any
-name it has no event for; an item page names only `changed`, so an open item
-page keeps nothing asking. Every ask of gh, and every ask of linear read from gh's newest
-answer, pushes a `links` event to that worktree's open boards, and every ask of
-gh a `pull-requests` event to the open index. Each ask of gh is at least one
-GitHub API request counted against the signed-in account's hourly limit, more
-when gh pages a long list of checks, so an open index spends at least one a
-minute for each Git worktree it serves. The pull request is the one gh reports
-for the branch when it is asked, and nothing about it is inferred: no state is
-concluded from a
-timestamp, and no check outcome is one gh did not report. An issue is drawn
-only once linear has confirmed it: the identifiers are read from the branch
-and the pull request, and each is confirmed by linear before it is drawn.
-Each ask costs one Linear API request per identifier, counted against the
-key's hourly limit, and a request Linear refuses for that reads "linear did
-not answer, so issues are not shown." The index shows no issues, which is why
-it never asks linear.
+last answer of each, and gh's answer is one answer for the index and every
+board alike, each source dated by its own ask. gh's answer stands while it is
+under a minute old and nothing has moved since it was asked, where a move is
+another branch checked out in the worktree, or a push or fetch moving the
+remote-tracking ref of the branch gh answered for; a fetch that moves only the
+repository's other refs moves nothing. A worktree's board is served gh's
+answer while it stands and asks again once it does not; the index's read,
+`GET /api/pull-requests`, which an epic's and a project's board read too,
+serves the last answer of every served row and leaves the asking to the
+daemon. The issues are served while they were read from gh's current answer,
+so linear is asked again whenever gh is, for a worktree's board and never for
+the index or an epic's or a project's board. While a board of that worktree,
+an epic's or a project's board it is in, or the index is open, the daemon also
+asks gh again once its answer is a minute old or at once after a move, and with
+the worktree's own board open it asks linear after each new answer of gh's;
+with none open it spawns nothing. A page that starts listening for
+`pull-requests` starts an ask for every served row whose answer does not stand.
+Those asks take turns, four at a time, and one whose turn comes after every
+page that wanted it has closed, or after a board has already asked, is dropped;
+a worktree board's own ask never waits behind them. A page's stream carries
+only the events that page names, and says in a comment line, which no page
+reads as an event, any name it has no event for; an item page names only
+`changed`, so an open item page keeps nothing asking. Every ask of gh, and every
+ask of linear read from gh's newest answer, pushes a `links` event to that
+worktree's open boards, and every ask of gh a `pull-requests` event to the
+pages that name it. Each ask of gh is at least one GitHub API request counted
+against the signed-in account's hourly limit, more when gh pages a long list of
+checks, so an open index spends at least one a minute for each Git worktree it
+serves. The pull request is the one gh reports for the branch when it is asked,
+and nothing about it is inferred: no state is concluded from a timestamp, and
+no check outcome is one gh did not report. An issue is drawn only once linear
+has confirmed it: the identifiers are read from the branch and the pull
+request, and each is confirmed by linear before it is drawn. Each ask costs one
+Linear API request per identifier, counted against the key's hourly limit, and
+a request Linear refuses for that reads "linear did not answer, so issues are
+not shown." The index shows no issues, which is why it never asks linear.
 
-The terminal icon, in the header and beside each name on the index, asks the
-daemon for a terminal in that worktree with `POST /api/terminal`. The daemon
-lists cmux's windows and each window's workspaces, and brings forward the
-workspace working in that worktree: one whose directory is the worktree itself
-first, else one inside it, where a directory belongs to the longest tracked
-worktree holding it, as an agent's does. When the listing works and names
-none, it runs `cmux <path>`, which opens a new workspace there, so asking again
-brings back the workspace it opened rather than opening another. A listing that
-fails is not an empty one: when cmux cannot list its windows, or one of them,
-nothing opens and the line cmux printed shows beside the icon, unless
-`cmux ping` fails too, which means cmux is not running, and then `cmux <path>`
-starts it. When cmux refuses any step, its line shows beside the icon. The
-icon is drawn only while `cmux` is on the daemon's PATH, which `GET /api/daemon`
-reports as `terminal`, so a daemon started from a shell without cmux on its
-PATH draws none.
+The Terminal command, `t`, on any worktree or anything in one, asks the daemon
+for a terminal in that worktree with `POST /api/terminal`. The daemon lists
+cmux's windows and each window's workspaces, and brings forward the workspace
+working in that worktree: one whose directory is the worktree itself first,
+else one inside it, where a directory belongs to the longest tracked worktree
+holding it, as an agent's does. When the listing works and names none, it runs
+`cmux <path>`, which opens a new workspace there, so asking again brings back
+the workspace it opened rather than opening another. A listing that fails is
+not an empty one: when cmux cannot list its windows, or one of them, nothing
+opens and the line cmux printed is said in the detail line, unless `cmux ping`
+fails too, which means cmux is not running, and then `cmux <path>` starts it.
+When cmux refuses any step, its line is said in the detail line. The command
+runs only while `cmux` is on the daemon's PATH, which `GET /api/daemon` reports
+as `terminal`, and otherwise refuses, saying so.
 
-The Zed icon beside it asks the daemon for Zed on that worktree with
-`POST /api/zed`, and the daemon runs `zed --classic <path>`. `--classic`
-decides the same whatever the user's `cli_default_open_behavior`:
+The Editor command, `e`, asks the daemon for Zed with `POST /api/zed {path,
+file?}`: on a worktree, or anything in one but an item, for the worktree, and on
+an item, or anything in its page, for the item's file too, at its first line, in
+the worktree's own window. The daemon runs `zed --classic <path>`, or `zed
+--classic <path> <file>:1` for an item, the worktree always first, both
+absolute. `file` is a path under the session, and one that does not resolve to
+a regular file inside that worktree's `.session`, a link out of it included, is
+refused with "<file> is no file of this worktree's session."; a request its
+schema cannot read is refused too. `--classic` decides the same whatever the user's
+`cli_default_open_behavior`:
 - **Focus.** Zed brings forward the window one of whose projects has the
-  worktree itself as a root.
+  worktree itself as a root, and opens the file there.
 - **New window.** A worktree no window has opens in a new window, never in
-  another window's sidebar.
+  another window's sidebar, with the file in it.
+- **Files alone.** The worktree goes with the file because a file under
+  `.session/` is ignored by the session's own `.gitignore`, which Zed reads as
+  not inside the worktree's window at all, and a file no window holds opens in
+  the active window, whatever it is on. With a directory among the paths, Zed
+  never falls back to the active window.
 - **Parent folders.** A window on a folder that holds the worktree matches
-  only while that project has not scanned the worktree as a folder yet, or
-  excludes it from scanning.
+  only while that project has not scanned the worktree as a folder yet,
+  excludes it from scanning, or stops short of it at Zed's scan depth outside
+  Git; such a window can then take the file as a tab, with no root added to
+  it. A window someone opened on a session record itself, as a project of its
+  own, can have the worktree added to it when the worktree has no window of
+  its own. Nothing guards against either.
+- **Saved layout.** A new window opened for an item's file does not restore the
+  worktree's saved layout, since Zed looks that up by the exact list of paths
+  it was given.
 - **Without the flag.** A CLI that no one can answer settles on the existing
   window, and Zed writes that choice into the user's settings and puts the
   worktree in the active window's sidebar.
@@ -1028,66 +1060,73 @@ reaching the front by itself. A worktree whose session has gone opens nothing,
 in Zed or in cmux, and leaves the index. Zed would read a path that has gone as
 a file, and open it in the active window.
 
-When zed or `open` refuses, its line shows beside the icon. When Zed is not
-running, it first restores its last session, so a worktree that was in it can
-end up with a second window. The icon is drawn only while `zed` is on the
-daemon's PATH, which `GET /api/daemon` reports as `zed`.
+When zed or `open` refuses, its line is said in the detail line. When Zed is
+not running, it first restores its last session, so a worktree that was in it
+can end up with a second window. The command runs only while `zed` is on the
+daemon's PATH, which `GET /api/daemon` reports as `zed`, and otherwise refuses,
+saying so.
 
 The board is a viewer with workflow actions. It shows the five lanes in stage
 order and reads the item files directly; it never writes an item's content, and
-there is no way to type a body or create an item in it. A card shows the start of
-the item's first paragraph under its title, up to 180 characters, as a reader
-of the Markdown sees it, without the marks around its words. Headings, code,
+there is no way to type a body or create an item in it. A card is the item's
+title and its id, dim, and nothing else. The start of the item's first
+paragraph, up to 180 characters, as a reader of the Markdown sees it, without
+the marks around its words, is the title's tip and a fact of the card's detail
+line, beside the id and the item's path under the session. Headings, code,
 tables and HTML are not paragraphs, and neither a footnote nor the word `None`
-where it says a required section is intentionally empty is where a body
-starts, so a body that opens with an example shows the paragraph after it, and
-a body with no paragraph shows nothing more than the title. The item's id sits
-under that, very dim until pointed at, and a click copies it. A card's title is a link
-to that item's page at `/w/<key>/item/<ID>`, which reads its Markdown at a
-reading width, shows the item's id and its path under the session, and above
-its title the name of its group when it has one, labelled Batch in Queue and
-Execute and Group elsewhere, and resolves
-Markdown links inside the body against the session directory; the path copies
-the absolute file, which is what a terminal beside the page can open. An id
-with a dot in it, such as `BE-1.2`, has its page like any other: a path under
-a board that is not one of its routes gets the app, dots and all, except an
-unknown `/api/` path, which is an error, and a path ending in the name of one of
-the app's own files, which is that file. It is an
-ordinary link, so it opens in a tab like any other. The page carries the stage
-control, which moves an item in one click and leaves you on the page in its new
-stage. All five stages are always drawn, because together they show the shape
-of the flow: a stage the item cannot reach is drawn very dim, as dim under the
-pointer as beside it, and says on hover what is needed first. "Complete work"
-is there for an item in Execute, and leaves you on the page with the item
-archived. Settle missing content with the agent or in the editor. Where the one
-word `None` is all a required section holds, the reader draws it very dim, and
-its tip says the section is intentionally empty. A code block on the page is a
-band across the window's full width, its text starting where the prose starts,
-and a line longer than the room to the right scrolls inside the band.
+where it says a required section is intentionally empty is where a body starts,
+so a body that opens with an example gives the paragraph after it, and a body
+with no paragraph gives none. Enter or `i` on a card opens the item's page at
+`/w/<key>/item/<ID>`, and `n` there comes back to the card. The page reads the
+item's Markdown at a reading width, and resolves Markdown links inside the body
+against the session directory. Its path line names the item's worktree, its
+stage and its group, and above its title stands the name of its group when it
+has one, labelled Batch in Queue and Execute and Group elsewhere; the detail
+line gives its id and path. Copy id and Copy path copy them, the path as the absolute file, which
+is what a terminal beside the page can open. An id with a dot in it, such as
+`BE-1.2`, has its page like any other: a path under a board that is not one of
+its routes gets the app, dots and all, except an unknown `/api/` path, which is
+an error, and a path ending in the name of one of the app's own files, which is
+that file. The page draws the item's five stages under its title, all five
+always, because together they show the shape of the flow, the item's own lit:
+a click on one moves the item there and leaves you on the page in its new stage,
+as Move to a stage… does from the keys, and a stage the item cannot reach is
+drawn very dim, as dim under the pointer as beside it, and says on hover what is
+needed first. Complete, for an item in Execute, files it and leaves you on the
+page with the item archived. Settle missing content with the agent or in the
+editor. Each section of the body, a heading and what follows it, is a node the
+focus can be on, and a body with no heading is one: `j` and `k` step through
+them, and Enter folds one to its heading or opens it again, for as long as the
+document is open; a section headed Evidence starts folded.
+Where the one word `None` is all a required section holds, the reader draws it
+very dim, and its tip says the section is intentionally empty. A code block on
+the page is a band across the window's full width, its text starting where the
+prose starts, and a line longer than the room to the right scrolls inside the
+band.
 
-An item filed under `archive/`, by "Complete work", `done`, `archive` or a
-commit's trailer, keeps its page. When no stage holds the id, the page reads
-the record under `archive/` whose name carries it, the one filed on the latest
-day when there are several, and shows the item as it was filed: "Archived" above the title with the state its name gives, `done`
-or the stage it was filed from, and the day; the record's path under the
-session; all five stages very dim, saying the item is archived; and the
-record's text in the reader. The record is read before the page changes, so an
-item filed while its page is open goes from its stage to the archive in one
-step. An id that is in no stage and no record reads "No item <ID> in this
-session.".
+An item filed under `archive/`, by Complete, `done`, `archive` or a commit's
+trailer, keeps its page. When no stage holds the id, the page reads the record
+under `archive/` whose name carries it, the one filed on the latest day when
+there are several, and shows the item as it was filed: "Archived" above the
+title with the state its name gives, `done` or the stage it was filed from, and
+the day; the record's path under the session; all five stages very dim, saying
+the item is archived; and the record's text in the reader. The record is read
+before the page changes, so an item filed while its page is open goes from its
+stage to the archive in one step. An id that is in no stage and no record reads
+"No item <ID> in this session.".
 
 A relative link in an item's Markdown names a path under the session. A link to
 a Markdown file opens it on the file page, below; a link to any other file, and
 an image, resolve through the board's files route, `/w/<key>/files/<path>`, so
 an image kept under `context/` shows in the body. Each link opens beside the
-page, once, in a tab named for its address, as the header's chips do. The route
-serves any regular file under the session: Markdown as Markdown, PNG, JPEG, GIF,
-WebP and SVG images as images, and anything else as plain text. Nothing under
-the root's `ignore/` is served, whether asked for by path or reached through a
-link, and neither is anything that resolves outside the session; `archive/` is
-served, and a directory named `ignore` further down is an ordinary one. What the
-route serves never runs: it is sent sandboxed and is never sniffed into another
-type.
+page, once, in a tab named for its address, as the Pull request command does.
+The route serves any regular file under the session: Markdown as Markdown, PNG,
+JPEG, GIF, WebP and SVG images as images, and anything else as plain text.
+Nothing under the root's `ignore/` is served, whether asked for by path or
+reached through a link, and neither is anything that resolves outside the
+session; `archive/` is served, and a directory named `ignore` further down is an
+ordinary one. What the route serves never runs: it is sent sandboxed and is
+never sniffed into another type.
 
 A document can define its own terms, as a ubiquitous-language glossary does: a
 table whose head is `Term | Meaning`, one term to a row, its Term cell in
@@ -1107,31 +1146,33 @@ Evidence the row is in. The card is the document's content, not a tip, so it
 shows whether Tips is on or not. Nothing is stored and no file changes.
 
 Every lane draws its groups as they are filed: a group is a heading over its
-cards, in its place in the lane's file order among the cards in no group. The
-heading's tooltip says what a group is in that lane: candidates or work
+cards, in its place in the lane's file order among the cards in no group, and a
+heading is a node the focus can be on, between the lane and its cards. Its tip
+and its detail line say what a group is in that lane: candidates or work
 gathered under one name in Triage and Design, a proposed batch in Batch, and a
-batch in Queue and Execute. A card carries no checkbox until its lane is
-choosing: "Group…" beside the heading of Triage, Design or Batch starts it, and
-in Batch "Queue batch…" too. Only then do that lane's cards offer a checkbox,
-the lane says "Choose the items for the group" or "for the batch" until one is
-chosen, and "Cancel" stops it with nothing changed. With cards chosen, "Group
-(n)" names them as a group of that lane in the dialog "Queue batch" uses; a
-name the lane already has adds them to that group, as `group` does. "Queue
-batch (n)" names them as a batch and appends it to Queue. Chosen items join the
-group or the batch in the order the lane shows them. A group's heading in Batch offers
-"Queue batch" too: the dialog starts from the group's name, and it queues
-exactly that group's items, which takes the group with them. A group's heading
-in Triage, Design or Batch offers "Ungroup", which takes its items out of the
-group, each to the end of its lane, as `ungroup` does. A batch's heading in
-Queue and Execute offers nothing, because a batch is composed in Batch and a
-queued card leaves it only by leaving Queue. The Queue lane offers "Start next
-batch" while there is a batch to start and Execute is empty. None of these is
-ever drawn disabled with a reason: an empty choice and an occupied Execute
-are already visible in the lanes themselves. Execute is frozen: its cards can
-only be completed, which files them under `archive/`.
+batch in Queue and Execute. A card carries nothing to choose it by: `Space`
+marks it, as it marks anything, and the commands that take several cards take
+the marked cards of the focused card's lane when there are any, else the
+focused card. Group the marks…, in Triage, Design or Batch, asks for a name in
+the dialog every name is asked for in and gathers them as a group of that lane;
+a name the lane already has adds them to that group, as `group` does. Queue the
+marks as a batch…, in Batch, names them as a batch and appends it to Queue.
+Marked items join the group or the batch in the order the lane shows them, and
+the marks clear once the write lands. On a group's heading, Queue the group as a
+batch…, in Batch, starts from the group's name and queues exactly that group's
+items, which takes the group with them; Ungroup, in Triage, Design or Batch,
+takes its items out of the group, each to the end of its lane, as `ungroup`
+does; and Rename the group… gives it a new name where it stands, as
+`rename-group` does, in Queue as well, where a batch waiting to start can be
+renamed. A batch in Execute takes none of them, because Execute is frozen. Start
+the first batch, in Queue, runs while there is a batch to start and Execute is
+empty. A command that cannot run where the focus is runs nothing and says why
+in the detail line: an empty Execute's start, a group in Queue, a lane with
+nothing marked in it. Execute's cards can only be completed, which files them
+under `archive/`.
 
-A card is dragged by its whole self and picked up as a card on the index is, and
-picking it up moves nothing. Unlike a card on the index, which stays where it is
+A card is dragged by its whole self and picked up as a row on the index is, and
+picking it up moves nothing. Unlike a row on the index, which stays where it is
 until the drop, a held card is drawn where the move would write it, and the list
 it would land in is outlined: one group, or the lane's cards in no group. Held
 over a card, it goes in front of that card while its own centre is above the
@@ -1163,6 +1204,19 @@ a Queue card can be reordered inside its own batch or dragged back to Batch,
 Design, or Triage, into a group there or not. Escape puts the held card back,
 and so does a move the engine refuses.
 
+Every drop has its keys, the carries. `Shift+h` and `Shift+l` carry the focused
+card to the stage before or after its own, through the same route a drop into
+that lane takes, landing in no group at the lane's end, when the rules let it go
+there: from Triage there is no stage back, Queue and Execute are entered only by
+composing and starting a batch, and an Execute item leaves only by being
+completed, and each refusal says so. `Shift+k` and `Shift+j` carry it up or
+down its lane, past the card before or after it; at its group's start or end it
+steps out of the group, before or after it, but for a queued batch, which a
+card leaves only by leaving Queue; a card in no group next to a group steps
+past the whole group, so a card carried down a lane passes each group rather
+than falling into it. Joining a group is Group the marks… or a
+drop on the group's heading. The focus goes with the card.
+
 A card makes a group with another the way a worktree makes an epic on the index:
 by being dropped on it. Held with its centre over the middle third of a card in
 no group of its own lane, in Triage, Design or Batch, it moves nothing; that
@@ -1175,12 +1229,10 @@ its file was, written with `POST /api/group` and `at` naming that card; the held
 card leaves any group it was in, and a name the lane already has adds both to
 that group's end, as `group` does. Over a card's top or bottom third, and over a
 card in a group or in another lane, a held card is placed as above and makes no
-group. The keys step a card from place to place as they always have, landing on
-the middle of each card, so neither a card's middle nor a group's heading is a
-place for a card they carry.
+group.
 
 The held card says above it what the drop would do to its group, as the copy a
-card on the index carries does: `New group with "Drag a card onto another"` over
+row on the index carries does: `New group with "Drag a card onto another"` over
 a card it would make a group with, `Join "Needs a decision"` where it would land
 in a group it is not in, and `Leave "Needs a decision"` where it would leave its
 group for no group, cut short at the card's width. It says nothing when the drop
@@ -1193,9 +1245,12 @@ told of meanwhile is read once the card is let go, and a read already under way
 at pickup lands unseen until then. A move is written against that session's
 revision, so one dropped on files that changed in the meantime is refused as
 changed on disk, and the board reads again. The group a dropped card's dialog
-names is written against the files as the board has read them when the name is
-given, as the writes of its other dialogs are, and starts where the card dropped
-on stands then; the engine refuses it once the two are no longer in one lane.
+names, and every name a command asks for, is written against the files as the
+board has read them when the name is given, and a dropped card's group starts
+where the card dropped on stands then; the engine refuses it once the two are no
+longer in one lane. A refusal is said in the detail line in the daemon's words,
+and a name a dialog's write refuses stays in the dialog with the reason under
+it.
 
 Beside the session, each board serves three read-only listings. `GET
 /w/<key>/api/ledger` is the ledger's entries, newest first by date and then by
@@ -1210,27 +1265,33 @@ what refresh reads there: a directory named `archive` or `ignore` under
 the day, the item, the title and the state it left in, newest first; a name the
 engine did not write is listed as it is.
 
-The header's icons for those three listings open a page apiece, and a fourth
-page renders one file, `RULES.md` among them from the header's rules icon. Each carries the trail All projects / worktree / page,
-with the settings at its far end, reads at the item page's width, and follows
-the files as the board does. The ledger page, `/w/<key>/ledger`, shows the
-entries newest first as cards: the title, the age with the exact moment on
-hover, the body in the item page's reader, and one small line of the entry's
-other keys as `key: value`. The context page, `/w/<key>/context`, shows
+The worktree's Ledger, Context and Archive commands open a page apiece, and its
+Rules command, while the session has `RULES.md`, opens that on a fourth page,
+the file page, which renders one file. Each is a view of the worktree: its path
+line runs All, the project, the epic when there is one, the worktree and the
+page; `n` from an entry comes to the page itself, and `n` from the page to the
+worktree on the index; and each reads at the item page's width and follows the
+files as the board does. The focus
+lands on the page's first entry, and `j` and `k` step through the entries. The
+ledger page, `/w/<key>/ledger`, shows the entries newest first: each its title,
+its age with the exact moment on hover, and its body in the item page's reader,
+with its other keys as `key: value` in its detail line; Enter folds an entry to
+its title or opens it again. The context page, `/w/<key>/context`, shows
 `context/` as a tree, directories first and then by name. A directory starts
-collapsed and shows how many entries it holds; a file shows when it was written,
-copies its absolute path, and opens: a Markdown file on the file page, anything
-else as it is on disk, once, in a tab of its own. The archive page,
-`/w/<key>/archive`, lists the records newest first with the day, the id, the
-title and the state, whose meaning is on hover; each opens on the file page, and
-a name the engine did not write is listed as it is. The file page,
-`/w/<key>/file/<path>`, renders one Markdown file of the session with the item
-page's reader, Evidence collapsed and code at the window's width, under the
-file's path as its trail and a copy of its absolute path; frontmatter at the top
-of a file, such as a ledger entry's, shows as the block of keys it is. A
-listing's notices stand above it, and an empty one reads "No entries.", "No
-files." or "No records.". A session whose items cannot be read still shows these
-pages, with the reason above them, because none of them reads the items.
+folded and shows how many entries it holds, and Enter opens or folds it; a file
+shows when it was written, Copy path copies its absolute path, and Enter opens
+it: a Markdown file on the file page, anything else as it is on disk, once, in
+a tab of its own. The archive page, `/w/<key>/archive`, lists the records newest
+first with the day, the id, the title and the state, whose meaning is on hover;
+Enter opens each on the file page, and a name the engine did not write is listed
+as it is. The file page, `/w/<key>/file/<path>`, renders one Markdown file of
+the session with the item page's reader, each section a node that Enter folds,
+Evidence folded to start with, and code at the window's width, under the file's
+path, which Copy path copies as the absolute file; frontmatter at the top of a
+file, such as a ledger entry's, shows as the block of keys it is. A listing's
+notices stand above it, and an empty one reads "No entries.", "No files." or
+"No records.". A session whose items cannot be read still shows these pages,
+with the reason above them, because none of them reads the items.
 
 The board follows the files, and so does every page under it. The daemon watches
 that worktree's `.session` and pushes an event when anything under it changes,
@@ -1239,10 +1300,10 @@ Refetching pauses while a card is being dragged or a write is under way, and one
 read catches up after.
 
 Every mutation checks the revision, a digest over every item file's path and
-content, so a stale tab cannot overwrite a later edit on disk; reload and repeat
-the action when one is rejected. A mutation writes its files before it deletes
-the paths it replaced, so an interrupted one can only leave an item in two
-places, which `check` reports as a duplicate ID.
+content, so a stale tab cannot overwrite a later edit on disk; the board reads
+again and the action can be repeated when one is rejected. A mutation writes its
+files before it deletes the paths it replaced, so an interrupted one can only
+leave an item in two places, which `check` reports as a duplicate ID.
 
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
@@ -1250,18 +1311,20 @@ The agent continues execution from the user's request and the selected batch.
 ### An epic's board and a project's
 
 An epic's board and a project's are the union of the sessions of every worktree
-in view, and draw them as a worktree's board draws one. The header carries "All
-projects", the picker, which names the epic or the project over how many
-worktrees are in it, and one icon, for the ledger of every worktree in view.
-Nothing that belongs to one worktree alone is drawn there, neither its pull
-request and issues nor its agents, trailers, rules, context, archive, terminal
-or Zed, since every worktree's name in the lanes opens its own board, where they
-are. Each worktree stands in a row across the five lanes, under its name in
-each, so its work reads across its stages and a batch and a group stay whole,
-and each lane's heading counts every worktree's items. The rows stand in one
-order that no activity moves, since every write on the board is activity: a
-project's main worktree first, as it heads the project on the index, an epic's
-worktrees placed by hand first, in their ranks' order, and the rest by name.
+in view, and draw them as a worktree's board draws one, with the same path line
+and detail line: the path runs All, the project or the epic, the stage, the
+worktree's part of it, the group and the item. Each worktree stands in a row
+across the five lanes, its name once at the row's left edge with its marks
+beside it, so its work reads across its stages and a batch and a group stay
+whole; a click on the name opens that worktree's own board. A worktree's part of
+a lane is a node of the worktree's scope, so every command of a worktree, its
+terminal, Zed, agents, pull request, ledger and the rest, runs from anywhere in
+its row, and its detail line carries the worktree's facts, as on its own board,
+save the Linear issues, which only a worktree's own board asks linear for. A
+lane's detail line counts every worktree's items. The rows stand in one order
+that no activity moves, since every write on the board is activity: a project's
+main worktree first, as it heads the project on the index, an epic's worktrees
+placed by hand first, in their ranks' order, and the rest by name.
 
 A card moves only among its own worktree's lanes, which are the only ones whose
 session a move could be written to. Held over another worktree's lanes, it goes
@@ -1272,32 +1335,35 @@ worktree that refuses it is a place it can be near, and over one it keeps the
 place it last had, as on a worktree's board. Dropped onto the middle of another
 card, or onto a group's heading, it acts in its own worktree alone, since
 neither takes a card of another worktree's, and only its own worktree's lanes
-draw its outline and its words. While it is held, every worktree in view is
-drawn as it was at pickup, and its move is written against its own worktree's
-revision then. Choosing, a group, a batch, the next batch's start and an item's
-completion each act within one worktree, and every write goes to that
-worktree's own board, the routes under `/w/<key>/api/`, carrying its own
-session's revision, so one made on a stale read is refused there alone: the
-board reads that session again and says it caught up. An item is known by its
-worktree and its id, so two worktrees can each file an item under one id and
-neither's card answers for the other's. A worktree whose key reaches another
-worktree's board, the later of two tracked under one name, is not served, and
-says so above the lanes; a session that could not be read says why there too.
-An address no tracked worktree is in, an epic nothing names or a path no
-worktree is under, draws the not-found page with its link to All projects
+draw its outline and its words. The carries keep to its own worktree's part of
+a lane the same way. While it is held, every worktree in view is drawn as it was
+at pickup, and its move is written against its own worktree's revision then.
+Marks, a group, a batch, the next batch's start and an item's completion each
+act within one worktree, the marks of the focused card's own part, and every
+write goes to that worktree's own board, the routes under `/w/<key>/api/`,
+carrying its own session's revision, so one made on a stale read is refused
+there alone: the board reads that session again and says it caught up. An item
+is known by its worktree and its id, so two worktrees can each file an item
+under one id and neither's card answers for the other's. A worktree whose key
+reaches another worktree's board, the later of two tracked under one name, is
+not served, and says so above the lanes; a session that could not be read says
+why there too. An address no tracked worktree is in, an epic nothing names or a
+path no worktree is under, draws the not-found page with its link to the index
 before the page mounts, from the rows at hand and, when those do not name it,
-from the rows asked for again, so it draws no header, no lanes and no stream.
+from the rows asked for again, so it draws no path line, no lanes and no
+stream.
 
 The ledger of an epic's board or a project's, at `/e/<name>/ledger` and
-`/p/<path>/ledger`, merges the entries of every worktree in view, newest first
-by date and then by name, each named beside its age for the worktree it was
-written in, which that name opens. Each entry's Markdown links resolve in its
-own worktree's session, and a file a ledger leaves out is named above the cards
-with its worktree's name. A worktree whose items cannot be read still has its
-entries merged, as its own ledger page lists them, with the reason above the
-cards; only a worktree whose key reaches another's board is left out, and says
-so there. Its trail is All projects / the epic or the project /
-Ledger.
+`/p/<path>/ledger`, which Ledger of the epic and Ledger of the project open,
+merges the entries of every worktree in view, newest first by date and then by
+name, each named beside its age for the worktree it was written in, which that
+name opens. Each entry's Markdown links resolve in its own worktree's session,
+and a file a ledger leaves out is named above the entries with its worktree's
+name. A worktree whose items cannot be read still has its entries merged, as its
+own ledger page lists them, with the reason above the entries; only a worktree
+whose key reaches another's board is left out, and says so there. Its path line
+runs All, the project or the epic, and Ledger, and `n` comes back to the epic
+or the project on the index.
 
 A page of an epic or a project follows one stream, the root's, however many
 worktrees are in view, so it has one subscription and one hold. `changed` there
@@ -1308,161 +1374,227 @@ second and at least every two seconds while they keep coming; on it the page
 reads every session or ledger in view again. It carries nothing but its name,
 and a stream that does not name it, as the index's does not, never carries it.
 `worktrees` says the rows changed, which is how a worktree joining or leaving
-the epic, or taken on or dropped, joins or leaves the view. A drag or a write
-holds both, and one read of the sessions and the rows catches up when it ends.
-A worktree's own board keeps its own stream, as before. The root answers every
-path under `/e/` and `/p/` with the app, dots included, since an epic's name and
-a folder's can carry one.
+the epic, or taken on or dropped, joins or leaves the view, and `agents` and
+`pull-requests` bring the marks up to date. A drag or a write holds `changed`,
+`worktrees` and `agents`, and one read of the sessions and the rows catches up
+when it ends. A worktree's own board keeps its own stream, as before. The root answers
+every path under `/e/` and `/p/` with the app, dots included, since an epic's
+name and a folder's can carry one.
 
 ## Keys
 
-The index and every board answer to keys, and `?` says which: it opens a
-dialog, the legend, that lists each key the page answers to at that moment
-with the sentence of what it does, and Escape closes it as it closes every
-dialog. The legend is read from the keys registered while it is open, the
-page's and the open dialog's, so a key the page cannot offer then is not in
-it. The pages under a board, an item's, the listings, an epic's or a
-project's ledger among them, and a file's, answer to no keys, and `?` does
-nothing there.
+Every action the board offers is a command, and every command is reachable from
+the keyboard; the mouse is optional and has no action the keys lack. There is
+one focus, always drawn, ringed in the theme's ring colour, on one node of a
+tree: All, the root; a project; an epic; a worktree; a stage, its lane; a group,
+or a batch in Queue and Execute; an item, a card on a board; a section of a
+page, which is also each entry of a ledger, of `context/` and of the archive;
+and a record, the page of a ledger, of `context/`, of the archive or of a file.
+Each level is a scope, and every command belongs to one. On an epic's or a
+project's board the tree under the project or the epic is the stage, then each
+worktree's part of it, a node of the worktree's scope, then the group and the
+item, as the board draws them. The level the focus is at picks the view: the
+index draws projects, epics and worktrees; a board draws stages, groups and
+cards; an item's page its sections; and the ledger, context, archive and file
+pages their entries.
 
-The legend's sentences, word for word:
+Two lines are on every view and stand still around it. The path line along the
+top is the only header there is: the focus's path from All, each step a click
+away, the focused one bright. A step carries its node's marks when the view does
+not draw the node, so a worktree's board shows the worktree's agents and pull
+request in its step, and a marked node's step carries the mark. The detail line
+along the bottom holds the focused node's facts, and only that node's, one line
+cut short rather than wrapped, which never moves what is above it; with Tips on,
+each fact says what it means as its tip. For a moment after a command it says
+what happened instead, or why nothing did, and at its end it names the mode
+while one is open, `-- 2 marked --`, `-- palette --`, `-- keys --`, and nothing
+in the normal one. Until the first key, it says where the keys are: "Press ? for
+every key, ; for the palette."
 
-| Key | On the index | On a board |
+`h`, `j`, `k` and `l`, and the arrows, move the focus to the nearest peer at
+its level in the drawn geometry, left, down, up and right, across containers: a
+card's peers are every card on the board, in every lane and group, and a lane's
+peers the other lanes. On the index `j` and `k` move among rows of one level, a
+worktree to the next worktree, whatever epic or project it is in, and a heading
+is one `n` away. `i` goes in, to the child last focused there, else the first,
+and `n` comes out, to the parent, which the view that draws it takes, landing on
+the node you came from; out and in again comes back to the same place. `i` on a
+worktree opens its board, since the stages are its children, and `i` on a card
+opens the item's page, which Enter opens too; `n` from a stage returns to the
+index with the worktree focused, and `n` from a section to the card on its
+board. A node can stand for another it heads: a project headed by its main
+worktree stands for that worktree, so the worktree's commands act on the
+project's row, and `i` and Enter on a project that holds nothing but its head
+open the main worktree's board, from which `n` comes back to the project. A
+move that has nowhere to go stays where it is and says so. A step brings the
+focused node into view, and a read that moves things around never scrolls the
+page.
+
+A key finds its command by the focus path, nearest first: the focused node's
+scope, then what it stands for, then each node above it, to All. The nearest
+scope that binds the key decides, and a command runs on the nearest node of its
+scope on the path, so a worktree's `t` works from any card of it without
+stepping out first, and Enter is the primary verb of whatever is focused. When
+the nearest command cannot run there, nothing runs and the detail line says
+why, in the app's words, rather than the key falling through to a farther
+scope: `Shift+j` on a worktree in no epic says it stands by what is happening
+in it and to join an epic to place it.
+
+`Space` marks the focused node, or unmarks it; a mark is a dot on the node
+wherever it is drawn, the path line included. A command that takes several
+nodes takes the marks when there are any, else the focus: Group the marks… and
+Queue the marks as a batch… take the marked cards of the focused card's lane,
+and Join an epic… and Leave the epic the marked worktrees. The marks stay while
+the view changes, and the mode names their count. Escape closes the palette,
+the key map or a dialog; with none open it clears the marks. The focus stays
+either way.
+
+Shift with a movement key carries the focused node that way, where the view
+lets it move: a card to the stage before or after its own with `Shift+h` and
+`Shift+l`, and up or down its lane with `Shift+k` and `Shift+j`; a worktree up
+or down its epic's order, and a project up or down the projects, with
+`Shift+k` and `Shift+j`. Each is the write its drag makes, as the board and the
+index sections above describe.
+
+`;` opens the command palette, the one mode that takes typing. It lists the
+commands that can run at the focus, nearest scope first, each beside the node
+it acts on and with its keys, then everything there is to go to: every project,
+epic and worktree, and every item of the sessions read, by name or id. Typing
+narrows both, each word typed in a line's name, what it acts on, or its id;
+`Ctrl+j` and `Ctrl+k`, or the arrows, move the highlight, and Enter or a click
+runs the command or goes there. A command that asks for more asks in the same
+place: Agents… for an agent and then what to do with it, Linear issue… for an
+issue, Move to a stage… for a stage. A command that takes a name, Join an
+epic…, Rename the epic…, Group the marks…, Queue the marks as a batch…, Queue
+the group as a batch… and Rename the group…, asks in a dialog, where Enter
+takes the name, Escape cancels, and a refusal stays under the name. Go to…
+opens the palette's second half alone.
+
+`?` opens the key map: every command there is, by scope, the current scope
+first and the rest nearest first, each with its name, its keys, its summary and
+the click that stands for it, and a command that cannot run at the focus drawn
+dim. `?` or Escape closes it.
+
+| Scope | Command | Keys |
 | --- | --- | --- |
-| `?` | "Show the keys this page answers to." | the same |
-| `j`, `↓` | "Select the next worktree in this section." | "Select the item below, in the same lane." |
-| `k`, `↑` | "Select the previous worktree in this section." | "Select the item above, in the same lane." |
-| `h` | "Select a worktree in the previous section." | "Select an item in the nearest lane to the left." |
-| `l` | "Select a worktree in the next section." | "Select an item in the nearest lane to the right." |
-| `←` | | the same as `h` |
-| `→` | | the same as `l` |
-| Enter | "Open this worktree’s board." | "Open this item’s page." |
-| `[` | | "Move this item back to Design.", naming the stage before the item's |
-| `]` | | "Move this item forward to Batch.", naming the stage after the item's |
-| `t` | "Open a terminal here in cmux: the cmux workspace already in this worktree comes to the front, and otherwise a new one opens in it.", the selected worktree's icon | the same, the board's icon |
-| Escape | "Close this dialog.", in any dialog | the same |
+| All | Command palette | `;` |
+| All | Key map | `?` |
+| All | Leave | Escape |
+| All | Left, Down, Up, Right | `h` `j` `k` `l`, the arrows |
+| All | In, Out | `i`, `n` |
+| All | Mark | `Space` |
+| All | Go to…, Settings | |
+| Project | Open the project's board | Enter |
+| Project | Carry up, Carry down | `Shift+k`, `Shift+j` |
+| Project | Ledger of the project | |
+| Epic | Open the epic's board | Enter |
+| Epic | Rename the epic…, Ledger of the epic | |
+| Worktree | Open the board | Enter |
+| Worktree | Terminal | `t` |
+| Worktree | Editor | `e` |
+| Worktree | Agents… | `a` |
+| Worktree | Carry up, Carry down | `Shift+k`, `Shift+j` |
+| Worktree | Pull request, Linear issue…, Ledger, Context, Archive, Rules, Join an epic…, Leave the epic, Copy path, Copy branch | |
+| Stage | Group the marks…, Queue the marks as a batch…, Start the first batch | |
+| Group | Ungroup, Rename the group…, Queue the group as a batch… | |
+| Item | Open | Enter |
+| Item | Carry to the stage before, Carry to the next stage | `Shift+h`, `Shift+l` |
+| Item | Carry up its lane, Carry down its lane | `Shift+k`, `Shift+j` |
+| Item | Editor | `e` |
+| Item | Move to a stage…, Complete, Copy id, Copy path | |
+| Section | Fold, unfold or open | Enter |
+| Section | Copy path | |
+| Record | Copy path | |
 
-The selection is the one card the keys act on, ringed in the theme's ring
-colour, and nothing is selected until a key selects something, so a page no
-key has touched is drawn as it always was. A board's cards stand in its
-lanes, and the index's worktrees in its sections, each read the way the page
-draws it: an item in a group in its place in the lane, and a section's head
-before its cards, an epic's worktrees in its card's order. On an epic's or a
-project's board a lane is every worktree's part of it, one under another in
-the order the board stands the worktrees in, so `j` and `k` step from the
-last card of one worktree's part to the first of the next's. `j` and `k` step
-within a lane or a section, and `h` and `l` go to the nearest lane or section
-either side that holds anything, at the same place in it or its last. The
-first step selects the first card of the first lane or section that holds
-one. On the index `j` and `k` go by the order the section draws its
-worktrees in, which in a section of several columns can be beside or above,
-and the left and right arrows are not bound there: the sections stand one
-above another, so no arrow says which way the next one is. A selection is
-kept by the item's worktree and id or the worktree's path, so it follows an
-item a bracket moves into another lane, an item filed under one id in two
-worktrees is two cards, each selected alone, and an item or a worktree that
-leaves the page takes the selection with it. A step brings the selected
-card into view, and so does a bracket once its move has landed; a read that
-moves cards around never scrolls the page. A step that has nowhere
-further to go does nothing, and an arrow then scrolls the page as it always
-did; `h` and `l` are listed only while two lanes or sections hold anything.
+A click is the mouse's form of a command, and each command's clicks are in the
+key map: a click on a node focuses it, a click on the focused node is its
+Enter, a click on a step of the path line focuses that step, and a drag is the
+carry, join, leave or group its drop makes. Every key is a TanStack Hotkeys
+registration made from the registry, in `app/src/substrate/bind.ts` and nowhere
+else, which the lint rule `session/hotkeys-in-binder` holds, and the registry
+is decoded when the app loads, which the build's prerender does, so a key bound
+twice in one scope, a repeated id or a root key bound anywhere else fails
+`bun run check`.
 
-Enter is listed while something is selected, and on the index only for a
-worktree the daemon serves. The brackets move the selected item through the
-same route the stage control on its page uses, its own worktree's on an
-epic's or a project's board, one stage back or forward in the flow, and each
-is listed only while the rules let the item go there, the way the stage
-control draws a stage it cannot reach dim: from Triage there is no stage back,
-Queue and Execute are entered only by composing and starting a batch, and an
-Execute item leaves only by being completed. A bracket does
-nothing while another write is under way, and a write the engine refuses
-reads as a failed drag does, in the daemon's words above the lanes. `t` is
-listed while `cmux` is on the daemon's PATH, as the terminal icon is drawn,
-on the index only for a selected worktree, and never on an epic's or a
-project's board, which draws no terminal; it presses that icon, on a
-board the header's and on the index the selected worktree's, so cmux's line
-shows beside the icon when it refuses. Each key's sentence is its control's
-tip where it presses one: the terminal icon's, and a card title's for Enter.
-The index's Enter has no tip of its own, since a worktree's name keeps its
-path as its tip.
+A key is the page's own in a field: a letter, a space and the keys that edit
+type there, and outside the palette and a dialog every key does. Enter or
+`Space` on a link or a button that has the browser's focus is that control's.
+Nothing acts while a card or a row is dragged. A movement key repeats while it
+is held; every other key acts on the first keydown of a press, and the repeats
+a held key sends do nothing, so a held `Shift+l` carries a card one stage. A key
+that neither runs nor refuses keeps what the browser does with it.
 
-A key acts only while the keyboard is on the page: with nothing focused, or
-the focus on something of the page's own. It does nothing while a field has
-the focus, so typing in the picker's search or a dialog's name types the
-letter; nothing while a dialog, a menu or a list is open over the page, since
-each takes the focus into itself; and nothing while a card is dragged, by
-the pointer or by the keyboard, whose drag keeps the arrows. A step takes
-the keyboard from a control that held it, so the Enter that follows opens the
-selection rather than pressing that control, and Enter with a control focused
-is that control's, a link's or a button's. A step repeats while its key is
-held. Every other key acts on the first keydown of a press, and the repeats a
-held key sends do nothing, so a held bracket moves an item one stage even as
-its card is drawn again in the next lane. A key that does nothing keeps what
-the browser does with it.
-
-Moving between pages stays in the document. A link between the board's pages,
-the picker and a key that opens a page go through the router, which is safe
-because the board is one script, so no page's code is fetched after the
-document loaded. The page that leaves closes its event stream and any dialog
-or legend it had open and drops its reads; the page that arrives reads what
-it shows and draws only what it has read, and opens its own stream, as it
-did when every move loaded a document. What the daemon says about itself is
-the one answer the document keeps, since its stamp names the build the
-document loaded: each page's stream asks the daemon again when it opens, and
-a daemon started from other sources reloads the page. A board is known by
-the daemon's list of the boards it serves, asked again when the kept list
-does not name it, so a worktree taken on after the document loaded opens
-from the index. An epic's board and a project's are known by the index's
-rows, asked again the same way, so an epic a drag on the index made a moment
-ago opens from it. A move to another board, item or file mounts the page
-afresh, with nothing kept from the one before. The address bar shows each
-page's address, and Back, Forward and a reload return to it scrolled where it
-was left, once its reads have landed; a page reached by a link starts at the
-top. A middle click or a click with a modifier still opens a page in a tab of
-its own.
+The focus is in the address, as `?focus=` and the focused node's id, with
+`via=` on an item's page opened from an epic's or a project's board to say
+which board `n` returns to. A move within a view replaces the address once the
+focus has rested for 150 ms, so a reload lands where it was and a held key
+writes history once; a move to another view pushes a history entry, so the
+browser's Back and Forward are the jumplist, returning to each view with its
+focus. An address whose focus names nothing there lands on the view's first
+node, and on a page, its first section or entry. Moving between views stays in
+the document: they go through the router, which is safe because the board is
+one script, so no page's code is fetched after the document loaded. The view
+that leaves closes its event stream and any dialog, palette or key map it had
+open and drops its reads; the view that arrives reads what it shows and draws
+only what it has read, and opens its own stream, as it did when every move
+loaded a document. The focus memory `i` returns to, the marks and the folds are
+the document's and survive a move between views; a reload starts them afresh.
+What the daemon says about itself is the one answer the document keeps, since
+its stamp names the build the document loaded: each view's stream asks the
+daemon again when it opens, and a daemon started from other sources reloads the
+page. A board is known by the daemon's list of the boards it serves, asked
+again when the kept list does not name it, so a worktree taken on after the
+document loaded opens from the index. An epic's board and a project's are known
+by the index's rows, asked again the same way, so an epic made a moment ago
+opens from it.
 
 ## Agents on the board
 
-The board also shows the coding agents at work in that worktree. It is a
-read-only overlay: it never moves, writes, or names an item, and the files stay
-the work. Every fact in it is read from the agents' own listings at the moment
+The board and the index also know the coding agents at work in each worktree.
+They are a read-only overlay: it never moves, writes, or names an item, and the
+files stay the work. Every fact in it is read from the agents' own listings at the moment
 it is shown; nothing is kept between listings and nothing is inferred from what
 a listing does not say. No CLI command lists agents, and the daemon starts no
 session and sends nothing into one.
 
-The Claude Code rows are the sessions Claude Code's own listing reports. That
+The Claude Code sessions are the ones Claude Code's own listing reports. That
 listing does its own liveness filtering and the daemon adds none of its own,
-so a row exists because Claude Code says it does. They are grouped to worktrees
+so a session is there because Claude Code says it is. They are grouped to worktrees
 by working directory: a session belongs to the worktree whose path is its
 directory or a parent of it, and the longest match wins, so a worktree nested
 inside another keeps its own sessions. Interactive and background sessions both
-appear. The Codex rows are that worktree's interactive threads, the newest three
-by recency, started from the Desktop, an editor, or the CLI. Archived threads,
+appear. The Codex threads are that worktree's interactive threads, the newest
+three by recency, started from the Desktop, an editor, or the CLI. Archived threads,
 `exec` runs, and subagent threads are left out: they are runs, not sessions to
 go to.
 
-The strip is ordered by one concept: live against resumable. A live session has
-a process behind it (`pid` is set) and a live thread is one an app holds open;
-only a live thing can need you now. A resumable session's process is gone and
-its `state` is the last thing Claude Code knew about it, which may be weeks old;
-a resumable thread is one no app holds. Live rows come first, resumable rows
-follow at reduced contrast, and each tier is named as soon as the second one has
-anything in it. Every row keeps its age, because for a resumable row the age is
-the one fact that says how stale its state is.
+The overlay is ordered by one concept: live against resumable. A live session
+has a process behind it (`pid` is set) and a live thread is one an app holds
+open; only a live thing can need you now. A resumable session's process is gone
+and its `state` is the last thing Claude Code knew about it, which may be weeks
+old; a resumable thread is one no app holds. Wherever a worktree is drawn, each
+live session and thread is a dot among its marks, and the worktree's detail
+line names each live session, its name and its word with its time; the
+resumable ones are handles, never drawn as urgent, and only Agents… lists them.
+Agents…, `a`, on a worktree or anything in one, lists every agent of the
+worktree, live ones first and then the resumable ones, each saying
+`resumable`, and every one keeps its age, because for a resumable one the age
+is the one fact that says how stale its state is.
 
-A row reads in one line and lines up with every other row: the session's name
-first, then its harness, its word with its time, what is in its context when
-that can be read, and its actions, as icon buttons in a column as wide as the
-most actions any row has, right after what the row says about the session.
+An agent reads in one line in Agents…: the session's name, then its harness,
+its word with its time, and what is in its context when that can be read.
+Choosing it lists its actions, below.
 
 The name is the listing's `name`. Claude Code makes one from the folder for a
 session nobody named, the folder in lower case and two hex digits,
 `heartbeat-fc`, and the session's registry file, `sessions/<pid>.json` in Claude
 Code's directory, records it as `nameSource: derived`. Such a name repeats the
-folder and says nothing about the work, so it is drawn very dim; it is still
+folder and says nothing about the work, so the detail line draws it very dim,
+and Agents… says it is a name Claude Code made from the folder; it is still
 drawn, because it is what tells two sessions in one folder apart. A name given
 with `/rename` or `--name` is recorded as `user` and drawn as it is, and any
-other word the registry writes there is shown in the name's tip as it arrived.
+other word the registry writes there is shown, as it arrived, in the tip of the
+session's fact in the detail line.
 The registry's word is the whole test: a name that only looks made up is not
 second-guessed, and a session with no process has no registry file to say, so
 its name is drawn as it is.
@@ -1487,14 +1619,15 @@ expected; a word this build has never heard of is shown as it arrived and never
 folded into one it knows. The accent colour is spent on one thing only: a live
 session that is `waiting` or `blocked`, with the reason when the listing gives
 one, because that is a session stopped on a person right now. A resumable
-session's `blocked` is a memory, not a request, so it is never accented; it
-sorts last, and its word's tooltip says that its process is gone, what Claude
-Code last knew, and that `claude attach` picks it up.
+session's `blocked` is a memory, not a request, so it is never accented and
+never a dot: it sorts last in Agents…, which calls it resumable, and its actions
+there offer the command that picks it up.
 
 A live session's word carries its time in status, labeled for what it is, `busy
 for 16 min`, because how long it has held is what decides whether to go to it.
 It is the time since the registry file's `statusUpdatedAt`, which Claude Code
-writes when the status changes, and the tip names that stamp and its file. No
+writes when the status changes, and the tip of the session's fact names that
+stamp and its file. No
 other stamp stands in for it: the file's `updatedAt` moves on a rename as well.
 A live session whose registry file cannot be read, and a resumable session,
 show when they started instead, `started 3 d ago`. Every time carries the exact
@@ -1509,9 +1642,8 @@ line-aligned, which holds the last reply for nearly every transcript whatever
 its size, and the count is the last assistant line's `usage`: its input,
 cache-creation and cache-read tokens, the count Claude Code's own status line
 works from, taken from the last message pass when the usage lists passes. It
-reads `128k in context`, and its tip carries the exact count, when the listing
-it came from ran, when the line was written and the transcript's path. It is a
-count and never a share, because neither the listing nor the line says how large
+reads `128k in context` in the session's line in Agents…. It is a count and
+never a share, because neither the listing nor the line says how large
 the window is. The lines Claude Code leaves out of its own count are passed over
 here too, before anything else about them is read: one with no usage, one naming
 the `<synthetic>` model, as an API error does, an unmetered one, and one that
@@ -1527,23 +1659,22 @@ count it was listed with beside a time in status that keeps growing. The
 transcript's modification time is never read: hooks, progress and link entries
 move it when nothing has been said.
 
-On the strip each action is an icon, named for what it does as the button's
-accessible name, with the sentence of what it does as its tip: a terminal for
-"Focus terminal", an arrow out for "Open in Codex", a clock turning back for
-"Copy resume command", and the copy mark for "Copy session id" and "Copy
-thread id". A copy reports itself on its icon, a tick once taken and a cross
-when the clipboard refused it. "Focus terminal" focuses the cmux tab holding
-the session's process, and appears only when the process is in one; when cmux
-refuses, the line cmux returned shows under the row. When there is no terminal
-to focus, the chip offers "Copy resume command" instead, if the session has
-one: `claude --resume <session id>` for an interactive session,
+Choosing an agent in Agents… lists its actions by name, each with the sentence
+of what it does beside it: "Focus terminal", "Open in Codex", "Copy resume
+command", and "Copy session id" or "Copy thread id". One list of actions serves
+every agent wherever it is chosen. A copy says in the detail line what it
+copied, or that the clipboard refused it. "Focus terminal" focuses the cmux tab
+holding the session's process, and is offered only when the process is in one;
+when cmux refuses, the line cmux returned is said in the detail line. When
+there is no terminal to focus, "Copy resume command" is offered instead, if the
+session has one: `claude --resume <session id>` for an interactive session,
 `claude attach <id>` for a background one. "Copy session id" is there whenever
 the listing carries one. Names are never acted on: a name is not a handle.
 
-A Codex row starts the same way, with the thread's name or, failing that, the
-first line of its preview, as Codex lists them, then its origin, its word, and
-how long ago it was last active; Codex records no context for a thread, so that
-column is empty. "Open in Codex" hands `codex://threads/<id>` to the Codex app,
+A Codex thread's line starts the same way, with the thread's name or, failing
+that, the first line of its preview, as Codex lists them, then its origin, its
+word, and how long ago it was last active; Codex records no context for a
+thread, so the line says nothing of one. "Open in Codex" hands `codex://threads/<id>` to the Codex app,
 which is where the thread opens, so no tab is opened for it; it is always
 available, because that id comes from the same listing being rendered, and
 "Copy thread id" is there beside it. The word is
@@ -1554,24 +1685,21 @@ that carries "Copy resume command", because Codex refuses to resume a thread
 that already has an active writer, and an `unknown` thread is never demoted as
 if nothing held it.
 
-On the index each worktree carries a pill per live session rather than a count:
-its dot, its word with its time as the board's row writes it, `busy for 16 min`,
-and its name, very dim when Claude Code made it, ordered as the board orders its
-rows. A
-pill opens the menu of that session's actions, which is the board's own list
-rendered as a menu with each action's name written beside its icon, under a line
-naming the session, its harness, what its word means, and its age. Copying keeps
-the menu open and says what happened; focusing a terminal closes it, or keeps it
-open showing the line cmux returned. Only live things are named here: a session
-whose process is gone and a thread nothing holds are handles, not work under
-way, and listing them would say something is happening where nothing is. They
-are on that worktree's own board, which is where a reader has already chosen the
-scope. A worktree with nothing live shows no pill, and notices are printed once
-under the header rather than on every row.
+Each worktree carries a dot per live session and thread rather than a count,
+wherever it is drawn, the index, an epic's or a project's board, and its step
+of the path line on its own board: in the accent while the session waits on a
+person, with its name and its word with its time as its tip. Its detail line
+names them, ordered as Agents… orders them: `lead busy for 16 min`. Only live
+things are named there: a session whose process is gone and a thread nothing
+holds are handles, not work under way, and naming them there would say
+something is happening where nothing is. They are in Agents…, where a reader
+has chosen to look. A worktree with nothing live shows no dot, and an agents'
+listing that failed is a dim `!` among its marks, with the listing's notice in
+its detail line.
 
-The index orders its cards by activity, when the worktree last did anything: a
+The index orders its rows by activity, when the worktree last did anything: a
 Claude Code session's status change, a Codex thread's update, or an item file
-written, whichever is newest. What is happening now is the pills' answer, not
+written, whichever is newest. What is happening now is the dots' answer, not
 this one's. A worktree where none of the three has happened has no activity and
 is quiet. A status time is when that status last changed and nothing more: it
 dates activity, it is not a heartbeat, and an old one is an agent that has held
@@ -1599,9 +1727,10 @@ so its threads are not listed" means `codex` could not be started or refused the
 handshake, and "Codex did not answer in time, so its threads are not listed"
 that it started and did not answer inside its budget. Each notice
 stands for its own source, the other source and the rest of the board are
-unaffected, and an empty strip reads "No agent sessions here" with the notices
-beside it, so a failed listing never passes for an empty one. A machine running
-no cmux is not a failure: those rows simply carry no "Focus terminal" action.
+unaffected, and Agents… on a worktree with no agent refuses with "No agent
+sessions in <name>" and the notices after it, so a failed listing never passes
+for an empty one. A machine running no cmux is not a failure: those sessions
+simply offer no "Focus terminal" action.
 
 The `### Agent` line an executing agent writes into its item file, in
 [records.md](records.md), stays a convention between agents. The board does not
@@ -1611,6 +1740,9 @@ read it, does not match it against the sessions it lists, and never writes it.
 
 The item files are ordinary Markdown, and the editor is where their content is
 written. Edit them with the usual filesystem tools and run `check` afterward.
+From a board, `e` on a card or on an item's page opens the item's file in Zed
+at its first line, in its worktree's own window, as the Editor command in
+[Use the board](#use-the-board) has it.
 Preserve any unrelated edits. Prefer `mv`, `group` and `ungroup` to a hand move:
 they validate the target stage, keep the group and batch rules, and renumber the
 directories. A hand move must carry the whole record and remove its old file;

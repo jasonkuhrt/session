@@ -119,8 +119,10 @@ In Queue and Execute every item is in a group, and there the group is a batch.
   counts the directory as a group either, so one left behind by a write that
   was interrupted breaks nothing.
 
-`session group "<name>" <ID...>` gathers items of one lane into a group, and
-`session ungroup <ID...>` takes them out to the end of their lane. An item that
+`session group "<name>" <ID...>` gathers items of one lane into a group,
+`session ungroup <ID...>` takes them out to the end of their lane, and
+`session rename-group <STAGE> "<name>" "<new>"` renames a group where it
+stands, its directory keeping its number, a batch in Queue included. An item that
 leaves its lane leaves its group, as an item that leaves Queue leaves its batch.
 A group made by hand is the same thing: a numbered directory in the stage, with
 the item files moved into it and numbered. [operations.md](operations.md) has
@@ -243,8 +245,8 @@ Back burner
   them depends on it.
 - A main worktree is never in an epic, since its Git directory is the
   repository's own, which the linked worktrees share, and Git will not move,
-  lock or remove it: `session join` refuses one, and the index draws it at the
-  head of its repository's section whatever its file says.
+  lock or remove it: `session join` refuses one, and the index draws it as its
+  repository's row whatever its file says.
 - It is ignored with the rest of `.session/`, so it never enters a repository,
   and it goes with the worktree when the worktree is removed.
 

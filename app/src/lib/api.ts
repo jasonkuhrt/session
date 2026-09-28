@@ -3,7 +3,7 @@ import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient'
 import * as HttpClient from 'effect/unstable/http/HttpClient'
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest'
 
-import type { EpicRename, EpicWrite, OrderWrite, StreamEvent } from '../../contract'
+import type { EpicRename, EpicWrite, OrderWrite, StreamEvent, ZedOpen } from '../../contract'
 import {
   AgentsSummarySchema,
   ArchiveListingSchema,
@@ -28,6 +28,7 @@ import {
   WorktreePathSchema,
   WorktreeRankSchema,
   WorktreeSummarySchema,
+  ZedOpenSchema,
 } from '../../contract'
 import { rawFileHref } from './base'
 
@@ -198,9 +199,6 @@ export async function readPlace({ board, signal }: {
   }
 }
 
-/** The worktree a page's place names, once the session has been read. */
-export const worktreeOf = (place: Place | null) => (place?.kind === 'read' ? place.worktree : null)
-
 /** Why a page's place could not be read, when it could not. */
 export const problemOf = (place: Place | null) => (place?.kind === 'unread' ? place.problem : null)
 
@@ -251,6 +249,10 @@ export const DaemonApi = {
   /** Asks for a terminal in the worktree at this path: its cmux workspace brought forward, or a new one. */
   terminal: (path: string) => run(send(post('/api/terminal', WorktreePathSchema, { path }), decodeOpen)),
 
-  /** Asks for Zed on the worktree at this path: the window open on it brought forward, or a new one. */
-  zed: (path: string) => run(send(post('/api/zed', WorktreePathSchema, { path }), decodeOpen)),
+  /**
+   * Asks for Zed on the worktree at this path: the window open on it brought
+   * forward, or a new one, and in it one of its session's files at its first
+   * line when one is named.
+   */
+  zed: (open: ZedOpen) => run(send(post('/api/zed', ZedOpenSchema, open), decodeOpen)),
 }
