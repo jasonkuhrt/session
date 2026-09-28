@@ -43,41 +43,41 @@ worktree; `-C` goes before the command to point at another one. The
 
 `session open` starts one daemon for your user on `127.0.0.1:53045`, adds this
 worktree to it, and opens its board. The index at the root is an outline of
-every worktree the daemon knows, one column of rows: each project's row, then
-its epics, each with its worktrees under it, then its worktrees in no epic. A
-row is a name, a glyph of how many items each stage holds, every glyph measured
-against the fewest and the most any stage on the page holds so a height means
-the same on every row, and the marks of what can need you now: a dot per live
-agent, a `!` for a source that could not answer or a file that breaks a rule,
-and the pull request's number, coloured by its state and red while a check
-fails. Everything else about the focused row is in the detail line along the
-bottom. A repository is headed by its main worktree, under its own name; when
-that has no session, by its name, marked Not tracked, so its worktrees still
-have a home; and when Git lists the repository by its Git directory, by that
-directory's name, marked Git directory: always for a bare repository, and for a
-submodule or a separate Git directory only while the daemon does not track its
-main worktree. A folder outside Git is a project of its own. An epic whose
-worktrees belong to more than one project is drawn once, under Across projects.
-A project whose main worktree the daemon tracks is carried among the projects
-with `Shift+j` and `Shift+k`, or dragged by its row, and a worktree within its
-epic the same way; the ones placed stand first, in the order they were placed
-in, and keep their places when they go quiet. The rest, projects and the rows
-in each alike, stand in one order: the ones with a live agent first, then by
-their latest activity, and one with nothing live and nothing in five days dim
-and last, a project counting every worktree of it wherever it is drawn. Join an
-epic… puts the marked worktrees, or the focused one, in an epic, new or
-existing, and Leave the epic takes them out; a drag onto an epic, onto a
-worktree in no epic, onto the `+` that appears after its project's rows while
-one is held, or out of its epic onto empty space does the same with the mouse.
-`session join "<epic>"` and `session leave` do the same from a terminal, and
-`session order` places a project or a worktree as a carry does. Each board sits
-under `/w/<worktree name>/`. Activity is when the worktree last did anything: a
-Claude Code session's status change, a Codex thread's update, or an item file
-written. The index has no refresh button and needs none: any command that
-scaffolds a session registers it with a running daemon, a change to a session's
-items or epic reaches it as it is written, and a worktree whose `.session` goes
-away drops off the index by itself. The daemon also finds the other worktrees of
-the same repository that already have a `.session`.
+every worktree the daemon knows, one column of projects, each a card holding its
+rows: the project's row, then its epics, each a heading over its worktrees, and
+its worktrees in no epic, together, busiest first. A row is a name, a glyph of
+how many items each stage holds, every glyph measured against the fewest and the
+most any stage on the page holds so a height means the same on every row, and
+the marks of what can need you now: a dot per live agent, a `!` for a source
+that could not answer or a file that breaks a rule, and the pull request's
+number, a badge coloured by its state and red while a check fails. Everything
+else about the focused row is in the detail line along the bottom. A repository
+is headed by its main worktree, under its own name; when that has no session, by
+its name, marked Not tracked, so its worktrees still have a home; and when Git
+lists the repository by its Git directory, by that directory's name, marked Git
+directory: always for a bare repository, and for a submodule or a separate Git
+directory only while the daemon does not track its main worktree. A folder
+outside Git is a project of its own. An epic whose worktrees belong to more than
+one project is drawn once, under Across projects. A project whose main worktree
+the daemon tracks is carried among the projects with `Shift+j` and `Shift+k`, or
+dragged by its row, and a worktree within its epic the same way; the ones placed
+stand first, in the order they were placed in, and keep their places when they
+go quiet. The rest, projects and the rows in each alike, stand in one order: the
+ones with a live agent first, then by their latest activity, and one with
+nothing live and nothing in five days dim and last, a project counting every
+worktree of it wherever it is drawn. Join an epic… puts the marked worktrees, or
+the focused one, in an epic, new or existing, and Leave the epic takes them out;
+a drag onto an epic, onto a worktree in no epic, onto the `+` that appears after
+its project's rows while one is held, or out of its epic onto empty space does
+the same with the mouse. `session join "<epic>"` and `session leave` do the same
+from a terminal, and `session order` places a project or a worktree as a carry
+does. Each board sits under `/w/<worktree name>/`. Activity is when the worktree
+last did anything: a Claude Code session's status change, a Codex thread's
+update, or an item file written. The index has no refresh button and needs none:
+any command that scaffolds a session registers it with a running daemon, a
+change to a session's items or epic reaches it as it is written, and a worktree
+whose `.session` goes away drops off the index by itself. The daemon also finds
+the other worktrees of the same repository that already have a `.session`.
 
 `session daemon status` says whether the daemon is running and whether it was
 started from the sources on disk, and `session daemon restart` starts it afresh
@@ -97,7 +97,7 @@ mistaken for one that is working. The port stays reachable either way.
 A worktree's board, at `/w/<worktree name>/`, reads that worktree's five stage
 directories and shows a Kanban board; an epic's, at `/e/<name>/`, and a
 project's, at `/p/<path>/`, draw every worktree in view in the same lanes, each
-worktree in a row under its name, which opens its own board. A card is its
+worktree in a row under its name, which opens its own board. A card holds its
 item's title and its id, dim, and Enter opens the item's own page at
 `/w/<worktree name>/item/<ID>`, which reads the Markdown at a reading width,
 with code blocks running the window's full width, each section folding to its
@@ -109,23 +109,23 @@ complete an item. It follows the files as they change, over a stream the daemon
 pushes, and pauses while a card is being dragged. Every mutation checks the
 revision, so a stale tab cannot overwrite a later edit on disk.
 
-Every view is keyboard first, and draws only the path and the work. One focus
-is always on a node, a project, an epic, a worktree, a stage, a group, a card
-or a section, and `h` `j` `k` `l` or the arrows move it among its peers, `i`
-goes in and `o` comes out. The path line along the top, the only header, names
-the focus's path from All, each step a click away, and the detail line along
-the bottom holds the focused node's facts. Every action is a command: `;` opens
-the palette, the commands that can run here, nearest first, then every project,
-epic, worktree and item to go to by name or id; `?` opens the key map, every
-command by scope with its keys. A key runs the nearest scope's command on the
-focus path, so a worktree's `t` for its terminal and `e` for Zed work from any
-card of it, and a command that cannot run says why in the detail line. `Space`
-marks nodes for a command that takes several, and Shift with a movement key
-carries the focused node. The focus is in the address, so a reload keeps it,
-and a move to another view is a history entry, so Back returns to it. The
-Settings command holds the board's own settings, kept in this browser. Tips,
-off by default, makes every word and control say what it means when it is
-hovered or focused.
+Every view is keyboard first, and draws only the path and the work. One focus is
+always on a node, a project, an epic, a worktree, a stage, a group, a card or a
+section, and `h` `j` `k` `l` or the arrows move it among its peers, `i` goes in
+and `o` comes out. The path line along the top, the only header, names the
+focus's path from All as a breadcrumb, each step before the focus a click away,
+and the detail line along the bottom holds the focused node's facts. Every
+action is a command: `;` opens the palette, the commands that can run here,
+nearest first, then every project, epic, worktree and item to go to by name or
+id; `?` opens the key map, every command by scope with its keys. A key runs the
+nearest scope's command on the focus path, so a worktree's `t` for its terminal
+and `e` for Zed work from any card of it, and a command that cannot run says why
+in the detail line. `Space` marks nodes for a command that takes several, and
+Shift with a movement key carries the focused node. The focus is in the address,
+so a reload keeps it, and a move to another view is a history entry, so Back
+returns to it. The Settings command holds the board's own settings, kept in this
+browser. Tips, off by default, makes every word and control say what it means
+when it is hovered or focused.
 
 The [skill](src/session/SKILL.md) owns the workflow and
 [record format](src/session/references/records.md). The user's standing rules

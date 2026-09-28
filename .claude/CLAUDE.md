@@ -140,10 +140,10 @@ pull request fact and the Linear issue… list carry only what `gh` and `linear`
 answered when the daemon last asked, each dated by its own ask, the fact in its
 tip and the list in its prompt. When a source cannot answer, a dim `!` stands in
 their place, with the source's named notice, dated by its ask, in the detail
-line. The pull request's number is a mark coloured by its state and red while a
-check fails. The Terminal and Editor commands ask `cmux` and `zed` when they run
-and give the tool's own line in the detail line when it refuses. `e` on an item
-opens `zed --classic <worktree> <file>:1`, a file inside that worktree's
+line. The pull request's number is a `Badge` coloured by its state and red while
+a check fails. The Terminal and Editor commands ask `cmux` and `zed` when they
+run and give the tool's own line in the detail line when it refuses. `e` on an
+item opens `zed --classic <worktree> <file>:1`, a file inside that worktree's
 `.session` only. The daemon asks a source only for a page that shows its answer:
 gh for the index or any board, and linear for a worktree's board alone, so an
 open index never spends Linear's limit.
@@ -166,7 +166,14 @@ it. An item's page stays with the item when it is archived, all five stages dim.
 The key map draws a command that cannot run at the focus dim, and the palette
 lists only what can run. The overlay adds no state and no verb: the files remain
 the work, the CLI is unchanged, and the `### Agent` convention in the records
-stays a convention the board does not interpret.
+stays a convention the board does not interpret. The surfaces are the stock
+components of `app/src/components/ui/`: a board card is a `Card`, each project
+on the index and the epics across projects a `Card` holding its rows, an epic's
+row a heading within it, a lane a column under its stage's name over a
+`Separator`, the path line a `Breadcrumb` whose last step, the focus, is its
+`BreadcrumbPage`, and every key the palette, the key map and the detail line's
+hint draw a `Kbd`; the focus is a ring around the focused node's whole surface,
+and no command is drawn as a `Button`.
 
 Where data crosses a boundary, its shape is an Effect Schema and the code's type
 for it is that schema's `Type`, never written by hand; this is an axiom, not a
