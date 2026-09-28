@@ -145,6 +145,26 @@ type FileChange = {
   readonly content: string | null;
 };
 
+/** A directory taken to a new name where it stands, in one rename, before any file is written. */
+type DirectoryMove = {
+  readonly move: string;
+  readonly to: string;
+};
+
+/** What a mutation changes on disk: directories it renames, then files it writes and removes. */
+type Change = FileChange | DirectoryMove;
+
+const isMove = (change: Change): change is DirectoryMove => 'move' in change;
+
+/**
+ * A path or a name as the disk compares it. The Mac's default volumes, APFS
+ * and HFS+, read two names that differ only in case or in Unicode
+ * normalization as one, so `010-Webhooks` and `010-webhooks` are one
+ * directory there. Comparing as the most forgiving disk does is safe on a
+ * stricter one.
+ */
+const diskKey = (path: string): string => path.normalize('NFC').toLowerCase();
+
 /** A stage plus the files that carry it, so a mutation can diff them. */
 type StageState = {
   readonly stage: Stage;
@@ -466,18 +486,46 @@ export const makeRepository = (directory: string) =>
       ),
     );
 
+    const moveDirectory = (move: DirectoryMove) =>
+      fs.rename(absolute(move.move), absolute(move.to)).pipe(
+        Effect.mapError(
+          (cause) =>
+            new RepositoryError({
+              kind: 'io',
+              message: `Could not rename ${move.move} to ${move.to}.`,
+              cause,
+            }),
+        ),
+      );
+
     /**
-     * Writes land before deletes. A crash between them leaves an item in two
-     * places, which `check` reports as a duplicate ID and the user resolves by
-     * deleting one file; the reverse order would lose the item.
+     * Directory renames land first, each one atomic step, then writes before
+     * deletes. A crash between writes and deletes leaves an item in two places,
+     * which `check` reports as a duplicate ID and the user resolves by deleting
+     * one file; the reverse order would lose the item. A change set that would
+     * remove a path it writes, as the disk compares paths, is refused before
+     * anything is touched: on a disk that reads the two names as one, the
+     * delete would remove the file just written.
      */
-    const applyChanges = (changes: ReadonlyArray<FileChange>) =>
+    const applyChanges = (changes: ReadonlyArray<Change>) =>
       Effect.gen(function*() {
         if (changes.length === 0) return;
-        for (const change of changes) {
-          if (change.content !== null) yield* atomicWrite(change.path, change.content);
+        const files = changes.filter((change): change is FileChange => !isMove(change));
+        const written = new Set(files.flatMap((change) => (change.content === null ? [] : [diskKey(change.path)])));
+        const clash = files.find((change) => change.content === null && written.has(diskKey(change.path)));
+        if (clash !== undefined) {
+          return yield* new RepositoryError({
+            kind: 'conflict',
+            message: `Nothing was written: removing ${clash.path} would remove a file this change writes, since the disk reads the two names as one.`,
+          });
         }
         for (const change of changes) {
+          if (isMove(change)) yield* moveDirectory(change);
+        }
+        for (const change of files) {
+          if (change.content !== null) yield* atomicWrite(change.path, change.content);
+        }
+        for (const change of files) {
           if (change.content === null) yield* removeFile(change.path);
         }
         yield* pruneEmptyDirectories;
@@ -651,7 +699,7 @@ export const makeRepository = (directory: string) =>
 
     const mutate = (
       revision: string,
-      change: (loaded: Loaded) => Effect.Effect<ReadonlyArray<FileChange>, RepositoryError>,
+      change: (loaded: Loaded) => Effect.Effect<ReadonlyArray<Change>, RepositoryError>,
     ) =>
       semaphore.withPermit(
         Effect.gen(function*() {
@@ -1075,10 +1123,14 @@ export const makeRepository = (directory: string) =>
       );
 
     /**
-     * Rename a group where it stands: its directory keeps its number and its
-     * place among the stage's entries, and its items keep theirs, so only the
-     * name changes. A name the stage already has is refused rather than
-     * merged, and Execute's batch keeps its name, since Execute is frozen.
+     * Rename a group where it stands: its directory is renamed in one step, so
+     * it keeps its number and its place among the stage's entries, and its
+     * items keep theirs, so only the name changes. A rename that changes only
+     * case or Unicode normalization is a rename all the same, which the one
+     * step makes safe on a disk that reads the two names as one. A name
+     * another group of the stage has, as the disk compares names, is refused
+     * rather than merged, and Execute's batch keeps its name, since Execute is
+     * frozen.
      */
     const renameGroup = (input: RenameGroup) =>
       mutate(input.revision, (loaded) =>
@@ -1094,28 +1146,44 @@ export const makeRepository = (directory: string) =>
             return yield* new RepositoryError({ kind: 'not-found', message: `${stageDirectory(input.stage)} has no ${noun} ${quote(from)}.` });
           }
           if (to === from) return [];
-          if (state.items.some((item) => item.group === to)) {
+          const taken = state.items.flatMap((item) => (item.group === null ? [] : [item.group]))
+            .find((group) => group !== from && diskKey(group) === diskKey(to));
+          if (taken !== undefined) {
             return yield* new RepositoryError({
               kind: 'validation',
-              message: `${stageDirectory(input.stage)} already has a ${noun} named ${quote(to)}.`,
+              message: `${stageDirectory(input.stage)} already has a ${noun} named ${quote(taken)}${
+                taken === to
+                  ? ''
+                  : `, which differs from ${quote(to)} only in ${
+                    taken.normalize('NFC') === to.normalize('NFC')
+                      ? 'its Unicode normalization'
+                      : taken.toLowerCase() === to.toLowerCase()
+                      ? 'case'
+                      : 'case and Unicode normalization'
+                  }, and the disk reads the two as one name`
+              }.`,
             });
           }
           const items = yield* attempt(() => {
             validateGroupName(input.stage, to);
             return state.items.map((item) => (item.group === from ? draftOf(item, to) : item));
           });
-          // The files on disk read as if the group already had its new name,
-          // so its directory and its items keep the numbers they have.
-          const renamed = state.files.map((entry) => {
+          // The group's directory, and where it goes: the same number, the new name.
+          const moves = new Map<string, string>();
+          for (const entry of state.files) {
             const [stage = '', group = '', ...rest] = entry.path.split('/');
             const parsed = entryName.exec(group);
-            return parsed !== null && parsed[2] === from && rest.length > 0
-              ? { ...entry, path: [stage, `${parsed[1] ?? ''}-${to}`, ...rest].join('/') }
-              : entry;
-          });
-          return yield* attempt(() =>
-            diffFiles(state.files, renderStageDirectory({ stage: input.stage, items, current: renamed }))
-          );
+            if (parsed !== null && parsed[2] === from && rest.length > 0) moves.set(`${stage}/${group}`, `${stage}/${parsed[1] ?? ''}-${to}`);
+          }
+          // The files as they stand once the directory is renamed, which is what
+          // the stage is rendered against, so nothing else has to move.
+          const renamed: StageFileEntry[] = [];
+          for (const entry of state.files) {
+            const held = [...moves.keys()].find((path) => entry.path.startsWith(`${path}/`));
+            renamed.push(held === undefined ? entry : { path: `${moves.get(held) ?? held}${entry.path.slice(held.length)}`, content: entry.content });
+          }
+          const files = yield* attempt(() => diffFiles(renamed, renderStageDirectory({ stage: input.stage, items, current: renamed })));
+          return [...[...moves].map(([move, into]): DirectoryMove => ({ move, to: into })), ...files];
         }),
       );
 

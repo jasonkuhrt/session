@@ -16,7 +16,7 @@ import { keptByPage, resolveKey, runnableAt, targetsOf } from './resolve'
 import { useRoot } from './root'
 import type { Path, Seam, Target } from './seam'
 import { ApiContext, SurfaceContext } from './surface-context'
-import { useStableApi, useViewClicks } from './surface-hooks'
+import { useAddressedFocus, useStableApi, useViewClicks } from './surface-hooks'
 
 /**
  * A view's surface: the path line at the top, the view between, and the
@@ -27,9 +27,6 @@ import { useStableApi, useViewClicks } from './surface-hooks'
  * back into the address in place of the current entry, while a move to
  * another view pushes one, so the browser's back is the jumplist.
  */
-
-/** How long a move within a view waits for the next before the address follows it, so a held key writes history once. */
-const addressMilliseconds = 150
 
 const plural = (count: number, one: string) => `${count} ${count === 1 ? one : `${one}s`}`
 
@@ -42,34 +39,15 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   const { memory, marks, setMarks, flashed, flash, hinted, heard } = useRoot()
   const drawn = React.useRef(new Map<string, Drawn>())
   const [mode, setMode] = React.useState<Mode | null>(null)
-  // A move of the surface's own, drawn at once and written into the address
-  // once the moves stop, for as long as the address still names the leaf it
-  // named when the move was made: the address changing, as the move's own
-  // write or Back does, is the focus from then on.
-  const [pending, setPending] = React.useState<{ readonly path: Path; readonly leaf: string } | null>(null)
-  const timer = React.useRef(0)
-  React.useEffect(() => () => window.clearTimeout(timer.current), [])
-
-  const addressLeaf = leafOf(seam.focus)
-  const focus = pending !== null && pending.leaf === addressLeaf ? pending.path : seam.focus
+  const { focus, write, waiting } = useAddressedFocus(seam)
   const focusKey = pathKey(focus)
   const view = seam.viewOf(focus)
 
   const setFocus = (path: Path) => {
-    const next = seam.normalize(path)
-    remember({ memory, path: next })
+    const target = seam.normalize(path)
+    remember({ memory, path: target })
     flash(null)
-    window.clearTimeout(timer.current)
-    timer.current = 0
-    if (seam.viewOf(next) !== view) {
-      seam.go(next, { replace: false })
-      return
-    }
-    setPending({ path: next, leaf: addressLeaf })
-    timer.current = window.setTimeout(() => {
-      timer.current = 0
-      seam.go(next, { replace: true })
-    }, addressMilliseconds)
+    write(target)
   }
 
   // The focus is remembered wherever it lands, a view's first focus included,
@@ -77,12 +55,12 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   // put in the address where the view draws it.
   React.useEffect(() => {
     remember({ memory, path: seam.focus })
-    if (!seam.ready || timer.current !== 0) return
+    if (!seam.ready || waiting()) return
     const settledAt = settled({ seam, memory, drawn: drawn.current, focus: seam.focus })
     if (settledAt === null) return
     const next = seam.normalize(settledAt)
     remember({ memory, path: next })
-    seam.go(next, { replace: true })
+    void seam.go(next, { replace: true })
   })
 
   const moveTo = (answer: Path | string) => (typeof answer === 'string' ? flash(answer) : setFocus(answer))

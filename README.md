@@ -218,7 +218,9 @@ board never writes an item's content. The board's own settings are the one thing
 kept outside the files: they live in the browser's localStorage, say only how
 the board draws, and never reach the daemon. Moves preserve stable IDs and
 record content. A revision check guards every mutation, and a mutation writes
-its files before it deletes the ones it replaced.
+its files before it deletes the ones it replaced, and refuses outright to delete
+a path it writes as the disk compares paths, ignoring case and Unicode
+normalization.
 
 The index's unit above the worktree is the epic, and its model is fixed. An epic
 is a name and the linked worktrees whose sessions name it in `meta/epic`, and

@@ -1,8 +1,8 @@
 import * as React from 'react'
 
 import type { Drawn } from './motion'
-import { pathOfKey } from './path'
-import type { Path, SurfaceApi } from './seam'
+import { leafOf, pathOfKey } from './path'
+import type { Path, Seam, SurfaceApi } from './seam'
 
 /** What a click on a view leaves to the element it landed in: a link, a button, a field. */
 const ownClick = 'a[href], button, input, summary'
@@ -69,4 +69,53 @@ export function useStableApi(api: SurfaceApi): SurfaceApi {
     openSettings: () => latest.current.openSettings(),
     recall: (parent, children) => latest.current.recall(parent, children),
   }), [])
+}
+
+/** How long a move within a view waits for the next before the address follows it, so a held key writes history once. */
+const addressMilliseconds = 150
+
+/**
+ * The focus as drawn, and how a move reaches the address. A move within a
+ * view is drawn at once and written once the moves stop; it stands only while
+ * it names another leaf than the address does, so a move back to where the
+ * address is, or a carry that keeps the focus on its card, is the address's
+ * focus at once, found where the node is now, and the address changing, as
+ * the move's own write or Back does, is the focus from then on. A move to
+ * another view is a history entry of its own, and a move still waiting for
+ * the address is written into the entry it leaves first, so Back returns to
+ * where the focus was; the history merges writes made in one tick, so the
+ * new entry waits for that one.
+ */
+export function useAddressedFocus(seam: Seam) {
+  const [pending, setPending] = React.useState<Path | null>(null)
+  const timer = React.useRef(0)
+  React.useEffect(() => () => window.clearTimeout(timer.current), [])
+  const addressLeaf = leafOf(seam.focus)
+  const [addressSeen, setAddressSeen] = React.useState(addressLeaf)
+  if (addressSeen !== addressLeaf) {
+    setAddressSeen(addressLeaf)
+    setPending(null)
+  }
+  const focus = pending !== null && leafOf(pending) !== addressLeaf ? pending : seam.focus
+
+  const write = (target: Path) => {
+    const waited = timer.current !== 0
+    window.clearTimeout(timer.current)
+    timer.current = 0
+    if (seam.viewOf(target) !== seam.viewOf(focus)) {
+      const before = waited && leafOf(focus) !== addressLeaf ? seam.go(focus, { replace: true }) : Promise.resolve()
+      void before.then(() => seam.go(target, { replace: false }))
+      return
+    }
+    setPending(target)
+    timer.current = window.setTimeout(() => {
+      timer.current = 0
+      void seam.go(target, { replace: true })
+    }, addressMilliseconds)
+  }
+
+  /** Whether a move is still waiting for the address. */
+  const waiting = () => timer.current !== 0
+
+  return { focus, write, waiting }
 }

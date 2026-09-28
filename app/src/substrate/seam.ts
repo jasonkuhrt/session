@@ -98,8 +98,13 @@ export type Seam = {
   readonly normalize: (path: Path) => Path
   /** Which view draws a path: two paths with one key are one view. */
   readonly viewOf: (path: Path) => string
-  /** Puts a path in the address: a history entry of its own, or in place of the current one. */
-  readonly go: (path: Path, options: { readonly replace: boolean }) => void
+  /**
+   * Puts a path in the address: a history entry of its own, or in place of
+   * the current one, settling once the address holds it. Two writes in one
+   * tick can land as one, so a write that must stand in its own entry before
+   * the next waits for this.
+   */
+  readonly go: (path: Path, options: { readonly replace: boolean }) => Promise<void>
   readonly crumb: (path: Path, index: number, drawn: boolean) => Crumb
   readonly facts: (path: Path) => readonly Fact[]
   /** What a command acts on, as the palette names it beside the command. */

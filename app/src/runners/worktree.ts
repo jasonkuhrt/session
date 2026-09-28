@@ -1,5 +1,6 @@
 import type { OpenResult } from '../../contract'
 import { DaemonApi } from '../lib/api'
+import { absoluteTime } from '../lib/format'
 import { openOnce } from '../lib/open-once'
 import { idOf } from '../levels'
 import type { Runner, Target } from '../substrate/seam'
@@ -89,9 +90,11 @@ const linearIssue = ({ tree, input }: RunnerContext): Runner => ({
   },
   run: (target, surface) => {
     const row = rowOfTarget({ tree, target })
-    const issues = row === null ? [] : input.data.signalsOf(row).issues?.issues ?? []
+    const report = row === null ? null : input.data.signalsOf(row).issues
+    const issues = report?.issues ?? []
     surface.choose({
-      prompt: `The Linear issues ${row?.name ?? 'the worktree'} names`,
+      // Each source is dated by its own ask, here as on every fact of it.
+      prompt: `The Linear issues ${row?.name ?? 'the worktree'} names${report === null ? '' : `, as linear answered at ${absoluteTime(report.reportedAt)}`}`,
       choices: issues.map((issue) => ({
         key: issue.id,
         name: issue.id,

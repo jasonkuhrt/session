@@ -104,14 +104,17 @@ that is empty or holds a `/`; [records.md](records.md) has the rules a group
 directory keeps.
 
 `rename-group <STAGE> "<name>" "<new>"` gives a group of that stage a new name
-where it stands: its directory keeps its number and its place among the stage's
-entries, and its items keep theirs, so only the name changes. It works in
-Triage, Design and Batch, and in Queue, where a batch waiting to start can be
-renamed, and refuses Execute, which is frozen and keeps its batch's name. The
-new name is trimmed and follows `group`'s rules; one the stage already has is
-refused rather than merged, since joining one group to another is `group`'s to
-do, and a group the stage does not hold is refused with its name. A name the
-group already has changes nothing. Success prints where the group stands now,
+where it stands: its directory is renamed in one step, keeping its number and
+its place among the stage's entries, and its items keep theirs, so only the
+name changes. A new name that differs from the old only in case or in Unicode
+normalization is a rename like any other, though the Mac's disks read the two
+names as one. It works in Triage, Design and Batch, and in Queue, where a batch
+waiting to start can be renamed, and refuses Execute, which is frozen and keeps
+its batch's name. The new name is trimmed and follows `group`'s rules; one
+another group of the stage has, compared as the disk compares names, ignoring
+case and normalization, is refused rather than merged, since joining one group
+to another is `group`'s to do, and a group the stage does not hold is refused
+with its name. A name the group already has changes nothing. Success prints where the group stands now,
 `Renamed "Webhooks" to 3-Batch/050-Hooks`.
 
 `batch` takes items that are all in Batch, in a group there or not. Each leaves
@@ -731,11 +734,11 @@ whatever its state while any check fails. The detail line of a worktree says
 the rest, in this order: its name; what it has checked out, its branch,
 `Detached HEAD` for a commit, or `No branch` for a folder outside Git; why it is
 not served when it is not; its pull request, as the pull request's fact below
-has it; each Linear issue it names, with linear's state for it, on a board,
-which alone asks linear; each live agent, its name and its word with its time,
-the name very dim when Claude Code made it from the folder; each source that
-could not answer, in the source's own words; and each problem, in the sentence
-`check` gives. A name stands without its path. A linked worktree whose folder
+has it; each live agent, its name, its word with its time and what is in its
+context, the name very dim when Claude Code made it
+from the folder; each source that could not answer, in the source's own words,
+dated in its tip by its own ask; and each problem, in the sentence `check`
+gives. A name stands without its path. A linked worktree whose folder
 shares its main worktree's name carries its parent folder's name before it, but
 two worktrees can still share a name: the main worktrees of two repositories
 whose folders share one, or a linked worktree named like the main worktree of a
@@ -924,29 +927,29 @@ out, or offline, puts a dim `!` on the worktree, and "gh did not answer, so the
 pull request is not shown." in the detail line where the pull request would
 be. The Pull request command opens it.
 
-The Linear issues the worktree names are facts of its detail line on its
-board, one each: the identifier, such as `HEA-5454`, and linear's state for it
-in linear's own words, with the issue's title and when linear was asked in the
-tip. The Linear issue… command lists them, each with its title and state, and
-opens the one chosen. The identifiers are read from the branch name and from
-the pull request's title and body: anything written the way Linear writes one,
-a team key of two or more letters and digits that starts with a letter, a
-hyphen, and a number that does not start with 0, in any case, so
-`jason/hea-5454-upgrade` names `HEA-5454`. They are uppercased and kept once
-each, in the order they are first named. Each is asked for with `linear issue
-view <ID> --json` in the worktree, so linear reads that worktree's own
-configuration, and an issue is shown only when linear answers with it. An
-identifier linear cannot find draws nothing, so a word that only looks like
-one, such as `to-400` in a branch name, costs one ask and nothing else. Linear
-answers a moved issue's old identifier with the issue under its new one, so two
-names for one issue show it once. A worktree that names no identifier asks
-linear nothing. linear without an API key puts a dim `!` on the worktree and
-"linear is not authenticated, so issues are not shown." in the detail line.
+The Linear issues the worktree names are what the Linear issue… command lists,
+on the worktree's own board, which alone asks linear: each its identifier, such
+as `HEA-5454`, its title and linear's state for it in linear's own words, under
+a line saying when linear was asked, and the one chosen opens. The identifiers
+are read from the branch name and from the pull request's title and body:
+anything written the way Linear writes one, a team key of two or more letters
+and digits that starts with a letter, a hyphen, and a number that does not start
+with 0, in any case, so `jason/hea-5454-upgrade` names `HEA-5454`. They are
+uppercased and kept once each, in the order they are first named. Each is asked
+for with `linear issue view <ID> --json` in the worktree, so linear reads that
+worktree's own configuration, and an issue is shown only when linear answers
+with it. An identifier linear cannot find draws nothing, so a word that only
+looks like one, such as `to-400` in a branch name, costs one ask and nothing
+else. Linear answers a moved issue's old identifier with the issue under its new
+one, so two names for one issue show it once. A worktree that names no
+identifier asks linear nothing. linear without an API key puts a dim `!` on the
+worktree, in its step of the path line, and Linear issue… says "linear is not
+authenticated, so issues are not shown." in the detail line instead of listing.
 linear missing from the daemon's PATH, offline, slower than fifteen seconds, or
-answering any other way reads "linear did not answer, so issues are not
-shown.", and when linear printed a reason, the daemon's log has it. Either way
-no issue is drawn, because a partial list would read as the whole one. When gh
-does not answer, only the branch is read.
+answering any other way reads "linear did not answer, so issues are not shown.",
+and when linear printed a reason, the daemon's log has it. Either way no issue
+is drawn, because a partial list would read as the whole one. When gh does not
+answer, only the branch is read.
 
 Everything the board opens outside itself is opened once, except a Markdown
 link whose address the URL parser rejects, which is left to the browser as a
@@ -1301,9 +1304,13 @@ read catches up after.
 
 Every mutation checks the revision, a digest over every item file's path and
 content, so a stale tab cannot overwrite a later edit on disk; the board reads
-again and the action can be repeated when one is rejected. A mutation writes its
-files before it deletes the paths it replaced, so an interrupted one can only
-leave an item in two places, which `check` reports as a duplicate ID.
+again and the action can be repeated when one is rejected. A mutation renames a
+directory, when it renames one, in one step first, and writes its files before
+it deletes the paths it replaced, so an interrupted one can only leave an item
+in two places, which `check` reports as a duplicate ID. One that would delete a
+path it writes, compared as the disk compares paths, ignoring case and Unicode
+normalization, is refused before anything is written, since on such a disk the
+delete would remove the file just written.
 
 Stage moves record decisions; they do not start an agent or grant new authority.
 The agent continues execution from the user's request and the selected batch.
@@ -1385,8 +1392,8 @@ name and a folder's can carry one.
 
 Every action the board offers is a command, and every command is reachable from
 the keyboard; the mouse is optional and has no action the keys lack. There is
-one focus, always drawn, ringed in the theme's ring colour, on one node of a
-tree: All, the root; a project; an epic; a worktree; a stage, its lane; a group,
+one focus, always drawn, as a soft fill of the theme's primary colour with a
+rule of it along the node's left edge, on one node of a tree: All, the root; a project; an epic; a worktree; a stage, its lane; a group,
 or a batch in Queue and Execute; an item, a card on a board; a section of a
 page, which is also each entry of a ledger, of `context/` and of the archive;
 and a record, the page of a ledger, of `context/`, of the archive or of a file.
@@ -1574,8 +1581,8 @@ open; only a live thing can need you now. A resumable session's process is gone
 and its `state` is the last thing Claude Code knew about it, which may be weeks
 old; a resumable thread is one no app holds. Wherever a worktree is drawn, each
 live session and thread is a dot among its marks, and the worktree's detail
-line names each live session, its name and its word with its time; the
-resumable ones are handles, never drawn as urgent, and only Agents… lists them.
+line names each live session, its name, its word with its time and what is in
+its context; the resumable ones are handles, never drawn as urgent, and only Agents… lists them.
 Agents…, `a`, on a worktree or anything in one, lists every agent of the
 worktree, live ones first and then the resumable ones, each saying
 `resumable`, and every one keeps its age, because for a resumable one the age
@@ -1642,8 +1649,10 @@ line-aligned, which holds the last reply for nearly every transcript whatever
 its size, and the count is the last assistant line's `usage`: its input,
 cache-creation and cache-read tokens, the count Claude Code's own status line
 works from, taken from the last message pass when the usage lists passes. It
-reads `128k in context` in the session's line in Agents…. It is a count and
-never a share, because neither the listing nor the line says how large
+reads `128k in context`, after the live session's word in the worktree's detail
+line and in its line in Agents…, and the fact's tip carries the exact count,
+when the listing it came from ran, when the line was written and the
+transcript's path. It is a count and never a share, because neither the listing nor the line says how large
 the window is. The lines Claude Code leaves out of its own count are passed over
 here too, before anything else about them is read: one with no usage, one naming
 the `<synthetic>` model, as an API error does, an unmetered one, and one that

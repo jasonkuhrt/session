@@ -1,7 +1,7 @@
 import type { AgentsSummary, ClaudeSession, CodexThread, IssuesReport, PullRequest, PullRequestReport, TrailerProblem, WorktreeSummary } from '../../contract'
 import { isDerivedName, nameMeaning, sessionName } from '../lib/agent-names'
 import { heldMeaning, heldWord, isLive, loadedMeaning, meaningOf, needsYou, sortSessions, sortThreads, wordOfThread } from '../lib/agents'
-import { absoluteTime, checkoutLabel } from '../lib/format'
+import { absoluteTime, checkoutLabel, tokenCount } from '../lib/format'
 import { checksMark, reviewMeaning, reviewWord, stateMeaning, stateWord } from '../lib/links'
 import { problemSentence, trailerMeaning } from '../lib/trailers'
 import { cn } from '../lib/utils'
@@ -43,13 +43,35 @@ const problemsOf = (signals: Signals) => [
   ...(signals.row?.rankProblem === null || signals.row?.rankProblem === undefined ? [] : [signals.row.rankProblem]),
 ]
 
-/** What a source that could not answer said, one line each. */
-const noticesOf = (signals: Signals) => [
-  ...(signals.pullRequest?.notice === null || signals.pullRequest?.notice === undefined ? [] : [signals.pullRequest.notice]),
-  ...(signals.issues?.notice === null || signals.issues?.notice === undefined ? [] : [signals.issues.notice]),
-  ...(signals.agents?.notices ?? []),
-  ...signals.failures,
+/** What a source that could not answer said, one line each, with when it was asked; a read of the page's own is as of now. */
+const datedNoticesOf = (signals: Signals): ReadonlyArray<{ readonly line: string; readonly asked: string | null }> => [
+  ...(signals.pullRequest?.notice === null || signals.pullRequest?.notice === undefined
+    ? []
+    : [{ line: signals.pullRequest.notice, asked: signals.pullRequest.reportedAt }]),
+  ...(signals.issues?.notice === null || signals.issues?.notice === undefined ? [] : [{ line: signals.issues.notice, asked: signals.issues.reportedAt }]),
+  ...(signals.agents?.notices ?? []).map((line) => ({ line, asked: signals.agents?.fetchedAt ?? null })),
+  ...signals.failures.map((line) => ({ line, asked: null })),
 ]
+
+/** What a source that could not answer said, one line each. */
+const noticesOf = (signals: Signals) => datedNoticesOf(signals).map((notice) => notice.line)
+
+/**
+ * How many tokens are in a live session's context, as its last reply left
+ * them, and where that count comes from: it is as old as the listing that
+ * read it, since nothing watches a transcript, and it is never a share of a
+ * window, since neither the listing nor the line says how large the window is.
+ */
+const contextMeaning = (session: ClaudeSession, listedAt: string | null): string | null => {
+  const context = session.context
+  if (context === null) return null
+  const listing = listedAt === null ? 'the last listing' : `the listing at ${absoluteTime(listedAt)}`
+  return [
+    `${context.tokens.toLocaleString()} tokens in context: the input, cache-creation and cache-read tokens of its last reply, the count Claude Code's status line works from.`,
+    `It is the count as of ${listing}: nothing watches a transcript, so a status change is what lists the agents again, and a turn that stays busy keeps this count until then.`,
+    `Read from the usage on the last assistant line of its transcript${context.lineAt === null ? '' : `, written ${absoluteTime(context.lineAt)}`}: ${context.transcript}`,
+  ].join(' ')
+}
 
 /** The colour a pull request's number is drawn in: red while a check fails, else its state's. */
 const prTone = (pr: PullRequest) => {
@@ -132,9 +154,6 @@ export function worktreeFacts({ name, signals, now }: { readonly name: string; r
       meaning: `${prSentence(pr)} gh was asked at ${absoluteTime(report.reportedAt)}.`,
     })
   }
-  for (const issue of signals.issues?.issues ?? []) {
-    facts.push({ key: `issue:${issue.id}`, text: `${issue.id} ${issue.state}`, meaning: `${issue.id} ${issue.title}: linear reports it ${issue.state}.` })
-  }
   const { sessions, threads } = liveOf(signals.agents)
   for (const session of sessions) {
     facts.push({
@@ -143,13 +162,22 @@ export function worktreeFacts({ name, signals, now }: { readonly name: string; r
         <span className={needsYou(session) ? 'text-attention' : undefined}>
           {/* A name Claude Code made from the folder repeats the folder, so it is drawn very dim. */}
           <span className={isDerivedName(session) ? 'opacity-30' : undefined}>{sessionName(session)}</span> {heldWord({ session, now })}
+          {session.context === null ? null : `, ${tokenCount(session.context.tokens)} in context`}
         </span>
       ),
-      meaning: [meaningOf(session), heldMeaning(session), nameMeaning(session)].filter((sentence) => sentence !== null).join(' '),
+      meaning: [meaningOf(session), heldMeaning(session), nameMeaning(session), contextMeaning(session, signals.agents?.fetchedAt ?? null)]
+        .filter((sentence) => sentence !== null)
+        .join(' '),
     })
   }
   for (const thread of threads) facts.push({ key: `thread:${thread.id}`, text: threadWords(thread), meaning: loadedMeaning(thread.loaded) })
-  for (const notice of noticesOf(signals)) facts.push({ key: `notice:${notice}`, text: <span className="font-semibold">! {notice}</span>, meaning: 'A source that could not answer, in its own words.' })
+  for (const notice of datedNoticesOf(signals)) {
+    facts.push({
+      key: `notice:${notice.line}`,
+      text: <span className="font-semibold">! {notice.line}</span>,
+      meaning: `A source that could not answer, in its own words${notice.asked === null ? ', as the page read it just now' : `, when it was asked at ${absoluteTime(notice.asked)}`}.`,
+    })
+  }
   for (const problem of signals.trailers.map((trailer) => problemSentence(trailer))) {
     facts.push({ key: `trailer:${problem}`, text: <span className="text-destructive">! {problem}</span>, meaning: trailerMeaning })
   }
