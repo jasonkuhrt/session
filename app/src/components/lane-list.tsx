@@ -7,7 +7,7 @@ import { landing } from '../lib/drag'
 import type { Dragging } from '../lib/lanes'
 import { dragOf, landingIn, listId } from '../lib/lanes'
 import { cn } from '../lib/utils'
-import { groupMeta } from '../lib/workflow'
+import { groupMeaning } from '../lib/workflow'
 import { Node } from '../substrate/node'
 import type { Path } from '../substrate/seam'
 import type { LanePart, PathsOf } from './lane'
@@ -120,7 +120,7 @@ function GroupBlock({ path, paths, board, groupKey, stage, name, items, dragging
   return (
     <div ref={ref} className={cn('my-1 flex flex-col gap-0.5 rounded-md', lands && landing)}>
       <Node path={path} nodeRef={headingRef} className="px-2.5 py-1 text-xs font-medium tracking-wide text-muted-foreground">
-        <span title={tip(groupMeta[stage].heading)}>{name}</span>
+        <span title={tip(groupMeaning[stage])}>{name}</span>
       </Node>
       <div className="flex flex-col gap-0.5 pl-3">
         {items.map((item, index) => (

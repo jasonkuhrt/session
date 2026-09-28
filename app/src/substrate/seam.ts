@@ -17,7 +17,7 @@ export type Path = readonly string[]
 export type Target = { readonly scope: string; readonly id: string; readonly path: Path }
 
 /** A step of the path line: what it says, what it means, whether it is a name the files use, and the marks it carries. */
-export type Crumb = {
+type Crumb = {
   readonly text: string
   readonly meaning: string
   readonly literal?: boolean
@@ -52,6 +52,12 @@ export type NameRequest = {
 export type SurfaceApi = {
   readonly focus: Path
   readonly setFocus: (path: Path) => void
+  /**
+   * Moves the focus to another view in place of the current history entry,
+   * settling once the address holds it: for a view whose own address is about
+   * to name nothing, as an epic's board is when the epic is renamed there.
+   */
+  readonly relocate: (path: Path) => Promise<void>
   /** Says what just happened, or why nothing did, in the detail line. */
   readonly flash: (text: string) => void
   readonly marks: ReadonlySet<string>

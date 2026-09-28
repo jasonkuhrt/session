@@ -770,15 +770,17 @@ line, and opens no board; it stays in its epic while its file names one. A
 served as ever: the file is about the index, not the work.
 
 Every change the index makes has a command, which takes the marked worktrees
-when there are any and the focused one otherwise: Join an epic… puts them in
-the epic of the name it asks for, new or existing, and so takes each out of any
+when there are any and the focused one otherwise: Join an epic… puts them in the
+epic of the name it asks for, new or existing, and so takes each out of any
 other; Leave the epic takes them out of theirs; Carry up and Carry down,
 `Shift+k` and `Shift+j`, place the focused worktree one step up or down its
 epic, and the focused project one step up or down the projects; and Rename the
-epic… gives an epic a new name. A main worktree is in no epic, so it neither
-joins nor leaves one, and a worktree in no epic stands by what is happening in
-it and is carried nowhere; each command that cannot act says why in the detail
-line instead.
+epic… gives an epic a new name. None of them needs the index: Join an epic… and
+Leave the epic run wherever a worktree is, its own board and its row on an
+epic's or a project's board included, and Rename the epic… on the epic's own
+board too. A main worktree is in no epic, so it neither joins nor leaves one,
+and a worktree in no epic stands by what is happening in it and is carried
+nowhere; each command that cannot act says why in the detail line instead.
 
 Drag stays for the mouse, and every drop is one of those commands. A worktree
 is held by its row, a whole epic by its row, and a project by its row; the
@@ -1083,29 +1085,28 @@ with no paragraph gives none. Enter or `i` on a card opens the item's page at
 `/w/<key>/item/<ID>`, and `n` there comes back to the card. The page reads the
 item's Markdown at a reading width, and resolves Markdown links inside the body
 against the session directory. Its path line names the item's worktree, its
-stage and its group, and above its title stands the name of its group when it
-has one, labelled Batch in Queue and Execute and Group elsewhere; the detail
-line gives its id and path. Copy id and Copy path copy them, the path as the absolute file, which
-is what a terminal beside the page can open. An id with a dot in it, such as
-`BE-1.2`, has its page like any other: a path under a board that is not one of
-its routes gets the app, dots and all, except an unknown `/api/` path, which is
-an error, and a path ending in the name of one of the app's own files, which is
-that file. The page draws the item's five stages under its title, all five
-always, because together they show the shape of the flow, the item's own lit:
-a click on one moves the item there and leaves you on the page in its new stage,
-as Move to a stage… does from the keys, and a stage the item cannot reach is
-drawn very dim, as dim under the pointer as beside it, and says on hover what is
-needed first. Complete, for an item in Execute, files it and leaves you on the
-page with the item archived. Settle missing content with the agent or in the
-editor. Each section of the body, a heading and what follows it, is a node the
-focus can be on, and a body with no heading is one: `j` and `k` step through
-them, and Enter folds one to its heading or opens it again, for as long as the
-document is open; a section headed Evidence starts folded.
-Where the one word `None` is all a required section holds, the reader draws it
-very dim, and its tip says the section is intentionally empty. A code block on
-the page is a band across the window's full width, its text starting where the
-prose starts, and a line longer than the room to the right scrolls inside the
-band.
+stage and its group when it has one, whose tip says what a group is in that
+stage, a batch in Queue and Execute; the detail line gives its id and path. Copy
+id and Copy path copy them, the path as the absolute file, which is what a
+terminal beside the page can open. An id with a dot in it, such as `BE-1.2`, has
+its page like any other: a path under a board that is not one of its routes gets
+the app, dots and all, except an unknown `/api/` path, which is an error, and a
+path ending in the name of one of the app's own files, which is that file. The
+page draws the item's five stages under its title, all five always, because
+together they show the shape of the flow, the item's own lit: a click on one
+moves the item there and leaves you on the page in its new stage, as Move to a
+stage… does from the keys, and a stage the item cannot reach is drawn very dim,
+as dim under the pointer as beside it, and says on hover what is needed first.
+Complete, for an item in Execute, files it and leaves you on the page with the
+item archived. Settle missing content with the agent or in the editor. Each
+section of the body, a heading and what follows it, is a node the focus can be
+on, and a body with no heading is one: `j` and `k` step through them, and Enter
+folds one to its heading or opens it again, for as long as the document is open;
+a section headed Evidence starts folded. Where the one word `None` is all a
+required section holds, the reader draws it very dim, and its tip says the
+section is intentionally empty. A code block on the page is a band across the
+window's full width, its text starting where the prose starts, and a line longer
+than the room to the right scrolls inside the band.
 
 An item filed under `archive/`, by Complete, `done`, `archive` or a commit's
 trailer, keeps its page. When no stage holds the id, the page reads the record

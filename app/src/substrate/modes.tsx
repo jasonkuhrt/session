@@ -16,8 +16,18 @@ import type { Choice, NameRequest, Path, Seam, Target } from './seam'
  * app's settings. Only a mode that is not the normal one shows, in the detail
  * line.
  */
+/** A command that can run at the focus, on the node it acts on, as the palette and the key map list them when they open. */
+type Runnable = { readonly id: string; readonly target: Target }
+
 export type Mode =
-  | { readonly kind: 'palette'; readonly gotoOnly: boolean; readonly query: string; readonly highlight: number }
+  | {
+    readonly kind: 'palette'
+    readonly gotoOnly: boolean
+    readonly query: string
+    readonly highlight: number
+    /** What could run at the focus when the palette opened, which it lists nearest first. */
+    readonly runnable: readonly Runnable[]
+  }
   | {
     readonly kind: 'choose'
     readonly prompt: string
@@ -25,7 +35,8 @@ export type Mode =
     readonly query: string
     readonly highlight: number
   }
-  | { readonly kind: 'keymap' }
+  /** The key map, with what could run at the focus when it opened, which it draws bright. */
+  | { readonly kind: 'keymap'; readonly runnable: ReadonlySet<string> }
   | {
     readonly kind: 'name'
     readonly request: NameRequest
@@ -65,9 +76,8 @@ const unlisted: ReadonlySet<string> = new Set([
 const goToShown = 200
 
 /** The palette's lines for what is typed: every word typed is in each line's name, what it is, or its id. */
-export function entriesOf({ mode, runnable, seam }: {
+export function entriesOf({ mode, seam }: {
   readonly mode: Extract<Mode, { kind: 'palette' | 'choose' }>
-  readonly runnable: ReadonlyArray<{ readonly id: string; readonly target: Target }>
   readonly seam: Seam
 }): PaletteEntry[] {
   const words = mode.query.toLowerCase().split(/\s+/u).filter(Boolean)
@@ -80,7 +90,7 @@ export function entriesOf({ mode, runnable, seam }: {
       .filter((choice) => matches(choice.name, choice.on))
       .map((choice) => ({ kind: 'choice', key: choice.key, choice, name: choice.name, on: choice.on }))
   }
-  const commands: PaletteEntry[] = runnable.flatMap(({ id, target }) => {
+  const commands: PaletteEntry[] = (mode.gotoOnly ? [] : mode.runnable).flatMap(({ id, target }) => {
     const command = seam.registry.find((candidate) => candidate.id === id)
     if (command === undefined || unlisted.has(id)) return []
     const on = seam.targetName(target)

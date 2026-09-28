@@ -18,37 +18,16 @@ export const stageHint: Record<Stage, string> = {
 }
 
 /**
- * What a group is called in each stage and what it is there: in Queue and
- * Execute every item is in one, and a group there is a batch. The heading
- * sentence hangs off a group's heading on the board, the field sentence off the
- * label the item page gives the group's name.
+ * What a group is in each stage, the sentence its heading carries on the
+ * board, its step of the path line and its detail line: in Queue and Execute
+ * every item is in one, and a group there is a batch.
  */
-export const groupMeta: Record<Stage, { label: 'Group' | 'Batch'; heading: string; field: string }> = {
-  Triage: {
-    label: 'Group',
-    heading: 'A group: candidates in Triage gathered under one name.',
-    field: 'The group this item is gathered in, in Triage.',
-  },
-  Design: {
-    label: 'Group',
-    heading: 'A group: work in Design gathered under one name.',
-    field: 'The group this item is gathered in, in Design.',
-  },
-  Batch: {
-    label: 'Group',
-    heading: 'A proposed batch: settled items gathered under one name, so the batch they could make shows before it is queued.',
-    field: 'The proposed batch this item is gathered in, in Batch.',
-  },
-  Queue: {
-    label: 'Batch',
-    heading: 'A batch waiting to start: these items start together, under this name.',
-    field: 'The batch this item was queued in.',
-  },
-  Execute: {
-    label: 'Batch',
-    heading: 'The batch under way: these items were started together.',
-    field: 'The batch this item was started in.',
-  },
+export const groupMeaning: Record<Stage, string> = {
+  Triage: 'A group: candidates in Triage gathered under one name.',
+  Design: 'A group: work in Design gathered under one name.',
+  Batch: 'A proposed batch: settled items gathered under one name, so the batch they could make shows before it is queued.',
+  Queue: 'A batch waiting to start: these items start together, under this name.',
+  Execute: 'The batch under way: these items were started together.',
 }
 
 /**

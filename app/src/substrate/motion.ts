@@ -1,3 +1,4 @@
+import { substrateIds } from './commands'
 import type { Direction } from './moves'
 import { nearest, nowhere } from './moves'
 import type { Memory } from './path'
@@ -72,4 +73,37 @@ export const settled = ({ seam, memory, drawn, focus }: {
     if (drawn.has(pathKey(focus.slice(0, at)))) return focus.slice(0, at)
   }
   return null
+}
+
+/** The moves among peers, by the command that makes each. */
+const directions: Readonly<Record<string, Direction>> = {
+  [substrateIds.left]: 'left',
+  [substrateIds.down]: 'down',
+  [substrateIds.up]: 'up',
+  [substrateIds.right]: 'right',
+}
+
+const answerOf = (answer: Path | string): true | string => (typeof answer === 'string' ? answer : true)
+
+/**
+ * Whether one of the substrate's own commands can run with the focus where it
+ * is, answered as an app's command answers: a move with nowhere to go, a level
+ * with nothing inside or above, or a node the app says cannot be marked cannot
+ * run, and says why. While a mode is open its own keys always can.
+ */
+export const ownWhen = ({ seam, memory, drawn, focus, moded }: {
+  readonly seam: Seam
+  readonly memory: Memory
+  /** What the view draws, read when a command is asked about, never while it renders. */
+  readonly drawn: { readonly current: ReadonlyMap<string, Drawn> }
+  readonly focus: Path
+  readonly moded: boolean
+}) =>
+(id: string): true | string => {
+  if (moded) return true
+  if (id === substrateIds.mark) return seam.markable(focus)
+  if (id === substrateIds.in) return answerOf(into({ seam, memory, focus }))
+  if (id === substrateIds.out) return answerOf(outOf({ seam, focus }))
+  const direction = directions[id]
+  return direction === undefined ? true : answerOf(peerOf({ drawn: drawn.current, focusKey: pathKey(focus), direction }))
 }

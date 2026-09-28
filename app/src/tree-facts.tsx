@@ -4,7 +4,7 @@ import { worktreeFacts } from './components/marks'
 import { acrossName, sectionKeyOf } from './lib/dashboard'
 import { indexMeaning } from './lib/index-meanings'
 import { laneItems, lanesOf } from './lib/lanes'
-import { groupMeta, stageHint } from './lib/workflow'
+import { groupMeaning, stageHint } from './lib/workflow'
 import { idOf, nodeOf, rootId } from './levels'
 import type { Fact, Path } from './substrate/seam'
 import type { Lookup } from './tree-lookup'
@@ -94,7 +94,7 @@ export function makeFacts({ lookup, words }: {
         const items = group?.kind === 'group' ? group.items : []
         const first = items[0]
         return [
-          { key: 'group', text: node.name, meaning: groupMeta[node.stage].heading },
+          { key: 'group', text: node.name, meaning: groupMeaning[node.stage] },
           { key: 'count', text: plural(items.length, 'item'), meaning: 'How many items the group holds.' },
           ...(first === undefined ? [] : [{ key: 'directory', text: `${directoryOf(first)}/`, meaning: 'The group’s directory in the session.' }]),
         ]

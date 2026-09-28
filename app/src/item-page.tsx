@@ -17,7 +17,7 @@ import { extentOf, isEvidence, sectionsOf } from './lib/sections'
 import { useSessionWrites } from './lib/session-mutations'
 import { useStream } from './lib/stream'
 import { cn } from './lib/utils'
-import { groupMeta, moveAvailability, stageHint } from './lib/workflow'
+import { moveAvailability, stageHint } from './lib/workflow'
 import { idOf } from './levels'
 import { Node } from './substrate/node'
 import type { PageActions } from './session-seam'
@@ -191,7 +191,6 @@ function Detail({ item, place, pending, onMove, sectionsAt }: {
   onMove: ((to: Stage) => Promise<string | null>) | null
   sectionsAt: { readonly foldKey: string; readonly startsFolded: (at: string) => boolean; readonly drawn: boolean }
 }) {
-  const tip = useTip()
   const stage = place?.kind === 'stage' ? place.stage : null
   const none = React.useMemo(() => noneLines(item.body), [item.body])
   // The item's own path is what its sections hang off, as the tree has it.
@@ -199,14 +198,6 @@ function Detail({ item, place, pending, onMove, sectionsAt }: {
   return (
     <article>
       {place?.kind === 'archived' ? <ArchivedLine record={place.record} /> : null}
-      {stage !== null && item.group
-        ? (
-          <p className="mb-3 text-sm">
-            <span className="text-muted-foreground" title={tip(groupMeta[stage].field)}>{groupMeta[stage].label}</span>{' '}
-            <span className="font-medium">{item.group}</span>
-          </p>
-        )
-        : null}
       <h1 className="text-pretty text-3xl leading-tight font-medium tracking-tight">{item.title}</h1>
       <StageLine item={item} stage={stage} pending={pending} onMove={onMove} />
       <div className="mt-8 border-t pt-8">

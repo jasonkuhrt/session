@@ -50,7 +50,7 @@ export const nodeAt = <K extends Node['kind']>({ target, kind }: { readonly targ
 export const focused = ({ target, focus }: { readonly target: Target; readonly focus: Path }) => samePath({ left: target.path, right: focus })
 
 /** The stage ids, which a board's focus goes into at the one last focused. */
-export const stageIds = stageNames.map((stage) => idOf({ kind: 'stage', stage }))
+const stageIds = stageNames.map((stage) => idOf({ kind: 'stage', stage }))
 
 /** Opens a board at the stage last focused there. */
 export const openBoard = ({ board, surface }: { readonly board: Path; readonly surface: SurfaceApi }) =>

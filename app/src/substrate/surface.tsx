@@ -7,7 +7,7 @@ import { KeyMap } from './key-map'
 import type { Mode, PaletteEntry } from './modes'
 import { entriesOf, NameMode, Palette, SettingsMode } from './modes'
 import type { Drawn } from './motion'
-import { into, outOf, peerOf, settled } from './motion'
+import { into, outOf, ownWhen, peerOf, settled } from './motion'
 import type { Direction } from './moves'
 import { leafOf, pathKey, recall, remember, samePath } from './path'
 import { PathLine } from './path-line'
@@ -43,12 +43,13 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   const focusKey = pathKey(focus)
   const view = seam.viewOf(focus)
 
-  const setFocus = (path: Path) => {
+  const place = (path: Path, options: { readonly replace: boolean }) => {
     const target = seam.normalize(path)
     remember({ memory, path: target })
     flash(null)
-    write(target)
+    return write(target, options)
   }
+  const setFocus = (path: Path) => void place(path, { replace: false })
 
   // The focus is remembered wherever it lands, a view's first focus included,
   // and a focus the view does not draw, once it has drawn what it read, is
@@ -65,7 +66,10 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
 
   const moveTo = (answer: Path | string) => (typeof answer === 'string' ? flash(answer) : setFocus(answer))
   const move = (direction: Direction) => moveTo(peerOf({ drawn: drawn.current, focusKey, direction }))
-  const runnable = () => runnableAt({ seam, focus })
+  // Asked only from a key or a command, never while the surface draws, since
+  // a move's answer reads the geometry the view has drawn.
+  const canOwn = (id: string) => ownWhen({ seam, memory, drawn, focus, moded: mode !== null })(id)
+  const runnable = () => runnableAt({ seam, focus, own: canOwn })
 
   const toggleMark = () => {
     const markable = seam.markable(focus)
@@ -88,6 +92,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   const api = useStableApi({
     focus,
     setFocus,
+    relocate: (path) => place(path, { replace: true }),
     flash,
     marks,
     clearMarks: () => setMarks(() => new Set()),
@@ -103,7 +108,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
 
   const entries = (): readonly PaletteEntry[] =>
     mode?.kind === 'palette' || mode?.kind === 'choose'
-      ? entriesOf({ mode, runnable: mode.kind === 'palette' && !mode.gotoOnly ? runnable() : [], seam })
+      ? entriesOf({ mode, seam })
       : []
 
   const takeEntry = (entry: PaletteEntry | undefined) => {
@@ -144,8 +149,11 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   }
 
   const substrateRuns: Readonly<Record<string, () => void>> = {
-    [substrateIds.palette]: () => setMode({ kind: 'palette', gotoOnly: false, query: '', highlight: 0 }),
-    [substrateIds.keyMap]: () => setMode((current) => (current?.kind === 'keymap' ? null : { kind: 'keymap' })),
+    [substrateIds.palette]: () => setMode({ kind: 'palette', gotoOnly: false, query: '', highlight: 0, runnable: runnable() }),
+    [substrateIds.keyMap]: () => {
+      const bright = new Set(runnable().map((entry) => entry.id))
+      setMode((current) => (current?.kind === 'keymap' ? null : { kind: 'keymap', runnable: bright }))
+    },
     [substrateIds.leave]: leave,
     [substrateIds.left]: () => move('left'),
     [substrateIds.right]: () => move('right'),
@@ -155,7 +163,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
     [substrateIds.out]: () => moveTo(outOf({ seam, focus })),
     [substrateIds.mark]: toggleMark,
     [substrateIds.focus]: () => null,
-    [substrateIds.goTo]: () => setMode({ kind: 'palette', gotoOnly: true, query: '', highlight: 0 }),
+    [substrateIds.goTo]: () => setMode({ kind: 'palette', gotoOnly: true, query: '', highlight: 0, runnable: [] }),
     [substrateIds.next]: () => moveHighlight(1),
     [substrateIds.previous]: () => moveHighlight(-1),
     [substrateIds.choose]: () => {
@@ -178,7 +186,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
 
   /** Runs what a key resolves to, or says why it cannot; answers whether it did either. */
   const act = (key: Key, repeat: boolean) => {
-    const hit = resolveKey({ seam, key, focus, mode })
+    const hit = resolveKey({ seam, key, focus, mode, own: canOwn })
     if (hit === null) return false
     if (repeat && !steps.has(hit.command.id)) return true
     if (hit.refused === null) runCommand(hit.command.id, hit.target)
@@ -248,7 +256,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
             <KeyMap
               seam={seam}
               current={targets.map((target) => target.scope)}
-              runnable={new Set(runnable().map((entry) => entry.id))}
+              runnable={mode.runnable}
               focusName={seam.targetName(targets[0] ?? { scope: seam.scopes[0] ?? '', id: seam.root, path: [seam.root] })}
               onClose={() => setMode(null)}
             />

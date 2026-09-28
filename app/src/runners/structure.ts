@@ -91,16 +91,27 @@ export const projectRunners = (context: RunnerContext): Record<string, Runner> =
   },
 })
 
-/** Renames an epic through the daemon, which moves whoever is in it, then reads the rows again. */
+/**
+ * Renames an epic through the daemon, which moves whoever is in it, then
+ * reads the rows again. From the epic's own board or ledger, whose address
+ * names the old name, the view moves to the new name first, in place of its
+ * history entry, and the rows are read once it is there, so no frame reads an
+ * epic nothing names; on the index the focus follows the epic once the rows
+ * have it.
+ */
 const renameEpic = ({ context, surface, from, to }: {
   readonly context: RunnerContext
   readonly surface: SurfaceApi
   readonly from: string
   readonly to: string
-}) =>
-  context.writeOnce(surface, async () => {
+}) => {
+  const was = idOf({ kind: 'epic', name: from })
+  const now = idOf({ kind: 'epic', name: to })
+  const inside = surface.focus.indexOf(was) !== -1 && surface.focus.indexOf(was) < surface.focus.length - 1
+  return context.writeOnce(surface, async () => {
     try {
       await IndexApi.renameEpic({ from, to })
+      if (inside) await surface.relocate(surface.focus.map((id) => (id === was ? now : id)))
       await context.input.readRows()
       return null
     } catch (error) {
@@ -108,8 +119,9 @@ const renameEpic = ({ context, surface, from, to }: {
     }
   }, () => {
     const home = context.tree.epicHome(from)
-    if (home !== null) surface.setFocus([rootId, idOf({ kind: 'project', key: home.key }), idOf({ kind: 'epic', name: to })])
+    if (!inside && home !== null) surface.setFocus([rootId, idOf({ kind: 'project', key: home.key }), now])
   })
+}
 
 export const epicRunners = (context: RunnerContext): Record<string, Runner> => ({
   'epic.open': {

@@ -27,7 +27,7 @@ import { TooltipProvider } from './ui/tooltip'
  * prefix, the key it is served under, the worktree's name, and its session
  * once the page has read it since it mounted.
  */
-export type SurfacePart = { readonly board: string; readonly key: string; readonly name: string; readonly session: Session | null }
+type SurfacePart = { readonly board: string; readonly key: string; readonly name: string; readonly session: Session | null }
 
 /** A read an event of the board's stream runs. */
 type Read = () => Promise<unknown>

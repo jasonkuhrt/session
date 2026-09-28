@@ -10,7 +10,7 @@ import type { Fact } from './substrate/seam'
  */
 
 /** Which board an item's page sits under: its worktree's own, or the epic's or project's board it was opened from. */
-export type Via = 'epic' | 'project' | null
+type Via = 'epic' | 'project' | null
 
 /** The address a view is at, as its route decodes it. */
 export type Place =

@@ -32,26 +32,34 @@ export const targetsOf = ({ seam, path }: { readonly seam: Seam; readonly path: 
 
 const substrateCommandIds: ReadonlySet<string> = new Set(Object.values(substrateIds))
 
+/**
+ * Whether one of the substrate's own commands can act with the focus where it
+ * is, as the surface answers it from what it draws and what the app says
+ * through the seam: true, or why not, as an app's command answers.
+ */
+type OwnWhen = (id: string) => true | string
+
 /** Whether a command can act on a target with the focus where it is: true, or why not. */
-export const canRun = ({ seam, id, target, focus }: {
+const canRun = ({ seam, id, target, focus, own }: {
   readonly seam: Seam
   readonly id: string
   readonly target: Target
   readonly focus: Path
+  readonly own: OwnWhen
 }): true | string => {
-  if (substrateCommandIds.has(id)) return true
+  if (substrateCommandIds.has(id)) return own(id)
   const runner = seam.runners[id]
   if (runner === undefined) return `${seam.registry.find((command) => command.id === id)?.name ?? id} does not apply here`
   return runner.when?.(target, focus) ?? true
 }
 
 /** Every command that can run at the focus, nearest scope first, each on the node it acts on. */
-export const runnableAt = ({ seam, focus }: { readonly seam: Seam; readonly focus: Path }) => {
+export const runnableAt = ({ seam, focus, own }: { readonly seam: Seam; readonly focus: Path; readonly own: OwnWhen }) => {
   const seen = new Set<string>()
   const found: Array<{ readonly id: string; readonly target: Target }> = []
   for (const target of targetsOf({ seam, path: focus })) {
     for (const command of seam.registry) {
-      if (command.scope !== target.scope || seen.has(command.id) || canRun({ seam, id: command.id, target, focus }) !== true) continue
+      if (command.scope !== target.scope || seen.has(command.id) || canRun({ seam, id: command.id, target, focus, own }) !== true) continue
       seen.add(command.id)
       found.push({ id: command.id, target })
     }
@@ -69,11 +77,12 @@ const modeKeys: Record<Mode['kind'], { readonly scope: string | null; readonly a
 }
 
 /** The command a key runs at the focus, on the node it acts on, and why it cannot when it cannot; null when no scope binds the key. */
-export const resolveKey = ({ seam, key, focus, mode }: {
+export const resolveKey = ({ seam, key, focus, mode, own }: {
   readonly seam: Seam
   readonly key: Key
   readonly focus: Path
   readonly mode: Mode | null
+  readonly own: OwnWhen
 }) => {
   const text = keyText(key)
   const rules = mode === null ? null : modeKeys[mode.kind]
@@ -90,7 +99,7 @@ export const resolveKey = ({ seam, key, focus, mode }: {
       (rules === null || target.scope !== root || rules.allows.has(candidate.id))
     )
     if (command === undefined) continue
-    const answer = canRun({ seam, id: command.id, target, focus })
+    const answer = canRun({ seam, id: command.id, target, focus, own })
     return { command, target, refused: answer === true ? null : answer }
   }
   return null

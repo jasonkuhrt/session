@@ -3,7 +3,7 @@ import { checkoutLabel } from './lib/format'
 import { indexMeaning } from './lib/index-meanings'
 import { laneItems, lanesOf } from './lib/lanes'
 import { listingMeta, unionLedgerMeaning } from './lib/listings'
-import { groupMeta, stageHint } from './lib/workflow'
+import { groupMeaning, stageHint } from './lib/workflow'
 import { Marks } from './components/marks'
 import { idOf, nodeOf, rootId } from './levels'
 import type { WorktreeSummary } from '../contract'
@@ -127,7 +127,7 @@ export function makeWords({ lookup, structure }: {
         return `${label(path)}’s part of ${node.stage}.`
       }
       case 'group': {
-        return groupMeta[node.stage].heading
+        return groupMeaning[node.stage]
       }
       case 'item': {
         return itemOf(node.key, node.id)?.title ?? node.id

@@ -4,6 +4,7 @@ import { Option, Schema } from 'effect'
 import * as React from 'react'
 
 import { AddressPathSchema, encodeWorktreeKey } from '../../contract'
+import { NodeIdSchema } from '../levels'
 
 /**
  * The daemon serves the index at `/` and a board for each filter: a
@@ -109,22 +110,26 @@ export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ 
  * What every address carries after its path: the focus, as the id of the node
  * it is on, and on an item's page the board it was opened from, an epic's or
  * a project's, when it was not its worktree's own. Each is decoded where the
- * address is read, and one that does not decode is left out, as if the
- * address had not carried it.
+ * address is read, the focus to the node its id names, and one that does not
+ * decode is left out, as if the address had not carried it. The router keeps
+ * the address as it is written, so what it is handed is the decoded search
+ * encoded again: the focus as the id of a node that exists.
  */
 const AddressSearchSchema = Schema.Struct({
-  focus: Schema.optional(Schema.String),
+  focus: Schema.optional(NodeIdSchema),
   via: Schema.optional(Schema.Literals(['epic', 'project'])),
 })
 
-const decodeFocus = Schema.decodeUnknownOption(AddressSearchSchema.fields.focus)
+const decodeFocus = Schema.decodeUnknownOption(NodeIdSchema)
 const decodeVia = Schema.decodeUnknownOption(AddressSearchSchema.fields.via)
+const encodeSearch = Schema.encodeSync(AddressSearchSchema)
 
 /** An address's search as the router reads it, each field decoded or left out. */
-export const addressSearch = (raw: Readonly<Record<string, unknown>>): typeof AddressSearchSchema.Type => ({
-  focus: Option.getOrUndefined(decodeFocus(raw['focus'])),
-  via: Option.getOrUndefined(decodeVia(raw['via'])),
-})
+export const addressSearch = (raw: Readonly<Record<string, unknown>>): typeof AddressSearchSchema.Encoded => {
+  const focus = decodeFocus(raw['focus'])
+  const via = Option.getOrUndefined(decodeVia(raw['via']))
+  return encodeSearch({ ...(Option.isSome(focus) ? { focus: focus.value } : {}), ...(via === undefined ? {} : { via }) })
+}
 
 /** A board's prefix, from its worktree's name: the key the daemon routes it by, under `/w/`. */
 export const boardPath = (name: string) => `/w/${encodeWorktreeKey(name)}`

@@ -20,10 +20,10 @@ import { useTip } from './tip'
 
 /** The index outline's rows that stand apart from a project's: the `+` a held worktree starts an epic on, a refused path, and the held copy. */
 
-/** What every row needs besides itself: each worktree's signals, the clock, the glyphs' range, and what a drag is doing. */
 /** The columns a row lines up in: its name, the glyph, and the marks, the same in every row. */
 export const rowGrid = 'grid grid-cols-[minmax(0,1fr)_1.75rem_minmax(3.5rem,auto)] items-center gap-x-3 px-2 py-1.5'
 
+/** What every row needs besides itself: each worktree's signals, the clock, the glyphs' range, and what a drag is doing. */
 export type OutlineContext = {
   readonly rows: readonly WorktreeSummary[]
   readonly signalsOf: (row: WorktreeSummary) => Signals

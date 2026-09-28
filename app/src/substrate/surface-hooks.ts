@@ -61,6 +61,7 @@ export function useStableApi(api: SurfaceApi): SurfaceApi {
       return latest.current.marks
     },
     setFocus: (path) => latest.current.setFocus(path),
+    relocate: (path) => latest.current.relocate(path),
     flash: (text) => latest.current.flash(text),
     clearMarks: () => latest.current.clearMarks(),
     unmark: (ids) => latest.current.unmark(ids),
@@ -98,20 +99,22 @@ export function useAddressedFocus(seam: Seam) {
   }
   const focus = pending !== null && leafOf(pending) !== addressLeaf ? pending : seam.focus
 
-  const write = (target: Path) => {
+  /** Writes a move, settling once the address holds it when it changes the view; `replace` puts another view in place of this entry. */
+  const write = (target: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
     const waited = timer.current !== 0
     window.clearTimeout(timer.current)
     timer.current = 0
     if (seam.viewOf(target) !== seam.viewOf(focus)) {
+      if (replace) return seam.go(target, { replace: true })
       const before = waited && leafOf(focus) !== addressLeaf ? seam.go(focus, { replace: true }) : Promise.resolve()
-      void before.then(() => seam.go(target, { replace: false }))
-      return
+      return before.then(() => seam.go(target, { replace: false }))
     }
     setPending(target)
     timer.current = window.setTimeout(() => {
       timer.current = 0
       void seam.go(target, { replace: true })
     }, addressMilliseconds)
+    return Promise.resolve()
   }
 
   /** Whether a move is still waiting for the address. */
