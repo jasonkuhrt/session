@@ -8,15 +8,16 @@ import { cn } from '../lib/utils'
 import type { Fact } from '../substrate/seam'
 import { Dot } from './agent-marks'
 import { useTip } from './tip'
+import { Badge } from './ui/badge'
 
 /**
  * What can need you now about a worktree, drawn wherever the worktree is, its
  * step of the path line included when the view does not draw it: a dot per
  * live agent, the one accent a session waiting on a person, a `!` for a
  * source that could not answer or a file that breaks a rule, and its pull
- * request's number, coloured by its state and red while a check fails. The
- * rest of what is known about it is in the detail line, while it has the
- * focus.
+ * request's number, a badge coloured by its state and red while a check
+ * fails. The rest of what is known about it is in the detail line, while it
+ * has the focus.
  */
 
 /** What a worktree's marks and facts are read from: its row, and a board's own reads of it when the page has them. */
@@ -73,13 +74,32 @@ const contextMeaning = (session: ClaudeSession, listedAt: string | null): string
   ].join(' ')
 }
 
-/** The colour a pull request's number is drawn in: red while a check fails, else its state's. */
+/** The colour that says where a pull request stands: red while a check fails or once it is closed, magenta once merged, dim as a draft, and green while open. */
 const prTone = (pr: PullRequest) => {
-  if (pr.checks.failed > 0) return 'text-destructive'
-  if (pr.state === 'MERGED') return 'text-(--tn-magenta)'
-  if (pr.state === 'CLOSED') return 'text-destructive'
-  return pr.isDraft ? 'text-muted-foreground' : 'text-(--tn-green)'
+  if (pr.checks.failed > 0 || pr.state === 'CLOSED') return 'red'
+  if (pr.state === 'MERGED') return 'magenta'
+  return pr.isDraft ? 'dim' : 'green'
 }
+
+/** A tone as the detail line draws the pull request's fact in it. */
+const toneText = {
+  red: 'text-destructive',
+  magenta: 'text-(--tn-magenta)',
+  dim: 'text-muted-foreground',
+  green: 'text-(--tn-green)',
+} as const satisfies Record<ReturnType<typeof prTone>, string>
+
+/**
+ * A tone as the badge the number is drawn as: the stock destructive badge for
+ * red, and for the others the stock secondary one in the tone's colour, over
+ * a tint of it as the destructive one is, but for a draft's, which is dim.
+ */
+const toneBadge = {
+  red: { variant: 'destructive' },
+  magenta: { variant: 'secondary', className: 'bg-(--tn-magenta)/20 text-(--tn-magenta)' },
+  dim: { variant: 'secondary', className: 'text-muted-foreground' },
+  green: { variant: 'secondary', className: 'bg-(--tn-green)/20 text-(--tn-green)' },
+} as const satisfies Record<ReturnType<typeof prTone>, { readonly variant: 'destructive' | 'secondary'; readonly className?: string }>
 
 /** A pull request in one line: gh's own words for where it stands and how its checks do. */
 const prSentence = (pr: PullRequest) => {
@@ -121,7 +141,7 @@ export function Marks({ signals, now, className }: { readonly signals: Signals; 
       )}
       {problems.length === 0 ? null : <span title={tip(problems.join(' '))} className="font-mono text-xs font-semibold text-destructive">!</span>}
       {notices.length === 0 ? null : <span title={tip(notices.join(' '))} className="font-mono text-xs font-semibold text-muted-foreground">!</span>}
-      {pr === null ? null : <span title={tip(prSentence(pr))} className={cn('font-mono text-xs', prTone(pr))}>#{pr.number}</span>}
+      {pr === null ? null : <Badge {...toneBadge[prTone(pr)]} title={tip(prSentence(pr))}>#{pr.number}</Badge>}
     </span>
   )
 }
@@ -145,7 +165,7 @@ export function worktreeFacts({ name, signals, now }: { readonly name: string; r
     facts.push({
       key: 'pr',
       text: (
-        <span className={prTone(pr)}>
+        <span className={toneText[prTone(pr)]}>
           #{pr.number} {stateWord(pr)}
           {pr.reviewDecision === null ? '' : `, ${reviewWord(pr.reviewDecision)}`}
           {checks === null ? '' : `, checks ${checks.kind}`}

@@ -20,14 +20,16 @@ import { LandingLine, markedSide } from './landing-line'
 import { Marks } from './marks'
 import { StageGlyph } from './stage-glyph'
 import { useTip } from './tip'
+import { Card, CardContent } from './ui/card'
 
 /**
- * The index as an outline: one column of rows, a project's, then its epics
- * with their worktrees under them and its worktrees in no epic, each row its
- * name, the glyph of what its session holds, and its marks. Every fact beyond
- * those is in the detail line while the row has the focus. Ordering, ranks
- * and dimming are the stack's: the projects placed by hand first, the rest
- * and every card by what is happening in them, quiet ones dim and last.
+ * The index as an outline: one column of projects, each a card holding its
+ * rows, the project's own, then its epics, each a heading over its worktrees,
+ * and its worktrees in no epic, each row its name, the glyph of what its
+ * session holds, and its marks. Every fact beyond those is in the detail line
+ * while the row has the focus. Ordering, ranks and dimming are the stack's:
+ * the projects placed by hand first, the rest and every card by what is
+ * happening in them, quiet ones dim and last.
  *
  * Drag stays for the mouse: a worktree is held by its row, an epic by its
  * row, and a project by its row while a main worktree with a session heads
@@ -119,7 +121,11 @@ function LooseRow({ path, row, context, quiet }: { path: Path; row: WorktreeSumm
   )
 }
 
-/** An epic, its row and its worktrees: it takes a worktree or a whole epic dropped on it, and is held by its row. */
+/**
+ * An epic within its project's card: its row, drawn as a heading over its
+ * worktrees, and its worktrees. It takes a worktree or a whole epic dropped
+ * on it, and is held by its row.
+ */
 function EpicBlock({ projectPath, card, context }: { projectPath: Path; card: EpicCardShape; context: OutlineContext }) {
   const into = targetId({ kind: 'epic', name: card.name })
   const tip = useTip()
@@ -127,9 +133,16 @@ function EpicBlock({ projectPath, card, context }: { projectPath: Path; card: Ep
   const { ref: dropRef } = useDroppable({ id: into, accept: cardsAccept, collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Normal, disabled: context.writing })
   const path = [...projectPath, idOf({ kind: 'epic', name: card.name })]
   return (
-    <div ref={dropRef} className={cn('rounded-md', card.quiet && 'opacity-60', isDragSource && 'opacity-40', context.landingOn === into && landing)}>
+    // Its room above and below is its own, so a held worktree passes from a
+    // row to the epic with no space between them, where it would leave.
+    <div ref={dropRef} className={cn('rounded-md py-1', card.quiet && 'opacity-60', isDragSource && 'opacity-40', context.landingOn === into && landing)}>
       <Node path={path} nodeRef={holdRef} className={rowGrid}>
-        <span className="min-w-0 truncate pl-4 text-muted-foreground" title={tip(`The epic “${card.name}”: the worktrees whose sessions name it.`)}>{card.name}</span>
+        <span
+          className="min-w-0 truncate pl-4 text-xs font-medium tracking-wide text-muted-foreground"
+          title={tip(`The epic “${card.name}”: the worktrees whose sessions name it.`)}
+        >
+          {card.name}
+        </span>
         <span />
         <span />
       </Node>
@@ -166,7 +179,16 @@ function NamedHead({ section }: { section: ProjectSection }) {
   )
 }
 
-/** A project's head and its rows: held by its head, while a main worktree with a session heads it, it takes a place among the projects. */
+/** A project's card or the one across projects: the stock card, holding the rows. */
+function SectionCard({ children }: { children: React.ReactNode }) {
+  return (
+    <Card size="sm">
+      <CardContent className="flex flex-col">{children}</CardContent>
+    </Card>
+  )
+}
+
+/** A project's card, its head and its rows: held by its head, while a main worktree with a session heads it, it takes a place among the projects. */
 function ProjectBlock({ section, context, newEpicOf }: { section: ProjectSection; context: OutlineContext; newEpicOf: string | null }) {
   const main = sectionRowOf(section)
   const path = [rootId, idOf({ kind: 'project', key: section.key })]
@@ -179,19 +201,21 @@ function ProjectBlock({ section, context, newEpicOf }: { section: ProjectSection
   const side = markedSide({ marker: context.marker, list: sectionsList, id: section.key })
   const head = headRowOf(section, context.rows)
   return (
-    <section ref={dropRef} aria-label={section.name} className={cn('relative flex flex-col', isDragSource && 'opacity-40')}>
+    <section ref={dropRef} aria-label={section.name} className={cn('relative', isDragSource && 'opacity-40')}>
       {side === null ? null : <LandingLine side={side} gap="section" />}
-      <Node path={path} nodeRef={holdRef} className={cn(rowGrid, section.quiet && 'opacity-60')}>
-        {head === null ? <NamedHead section={section} /> : <WorktreeLine row={head} name={section.name} context={context} indent="" heading />}
-      </Node>
-      {section.cards.map((card) =>
-        card.kind === 'epic'
-          ? <EpicBlock key={`epic:${card.name}`} projectPath={path} card={card} context={context} />
-          : card.row.path === head?.path
-          ? null
-          : <LooseRow key={card.row.path} path={[...path, idOf({ kind: 'worktree', path: card.row.path })]} row={card.row} context={context} quiet={card.quiet} />
-      )}
-      {newEpicOf === null ? null : <NewEpicTarget name={newEpicOf} context={context} />}
+      <SectionCard>
+        <Node path={path} nodeRef={holdRef} className={cn(rowGrid, section.quiet && 'opacity-60')}>
+          {head === null ? <NamedHead section={section} /> : <WorktreeLine row={head} name={section.name} context={context} indent="" heading />}
+        </Node>
+        {section.cards.map((card) =>
+          card.kind === 'epic'
+            ? <EpicBlock key={`epic:${card.name}`} projectPath={path} card={card} context={context} />
+            : card.row.path === head?.path
+            ? null
+            : <LooseRow key={card.row.path} path={[...path, idOf({ kind: 'worktree', path: card.row.path })]} row={card.row} context={context} quiet={card.quiet} />
+        )}
+        {newEpicOf === null ? null : <NewEpicTarget name={newEpicOf} context={context} />}
+      </SectionCard>
     </section>
   )
 }
@@ -203,14 +227,16 @@ function AcrossBlock({ section, context }: { section: AcrossSection; context: Ou
   const { ref: dropRef } = useDroppable({ id: targetId({ kind: 'section', key: section.key }), accept: 'head', collisionDetector: pointerDistance, disabled: context.writing })
   const side = markedSide({ marker: context.marker, list: sectionsList, id: section.key })
   return (
-    <section ref={dropRef} aria-label={acrossName} className="relative flex flex-col">
+    <section ref={dropRef} aria-label={acrossName} className="relative">
       {side === null ? null : <LandingLine side={side} gap="section" />}
-      <Node path={path} className={cn(rowGrid, section.quiet && 'opacity-60')}>
-        <span className="min-w-0 truncate font-medium" title={tip('Epics whose worktrees belong to more than one project, drawn once here.')}>{acrossName}</span>
-        <span />
-        <span />
-      </Node>
-      {section.cards.map((card) => <EpicBlock key={`epic:${card.name}`} projectPath={path} card={card} context={context} />)}
+      <SectionCard>
+        <Node path={path} className={cn(rowGrid, section.quiet && 'opacity-60')}>
+          <span className="min-w-0 truncate font-medium" title={tip('Epics whose worktrees belong to more than one project, drawn once here.')}>{acrossName}</span>
+          <span />
+          <span />
+        </Node>
+        {section.cards.map((card) => <EpicBlock key={`epic:${card.name}`} projectPath={path} card={card} context={context} />)}
+      </SectionCard>
     </section>
   )
 }
@@ -222,7 +248,7 @@ function AcrossBlock({ section, context }: { section: AcrossSection; context: Ou
 function RowSpace({ context, children }: { context: OutlineContext; children: React.ReactNode }) {
   const space = targetId({ kind: 'space' })
   const { ref } = useDroppable({ id: space, accept: cardsAccept, collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Lowest, disabled: context.writing })
-  return <div ref={ref} className={cn('flex flex-col gap-5 rounded-md pb-24', context.landingOn === space && landing)}>{children}</div>
+  return <div ref={ref} className={cn('flex flex-col gap-4 rounded-md pb-24', context.landingOn === space && landing)}>{children}</div>
 }
 
 /** The outline, as what is held and what it is over draw it. */

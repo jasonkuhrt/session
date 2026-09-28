@@ -261,7 +261,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
             }}
           />
           <main ref={main} className="min-w-0 flex-1 px-4 pt-5 pb-16">{children}</main>
-          <DetailLine facts={seam.facts(focus)} flashed={flashed ?? (hinted ? 'Press ? for every key, ; for the palette.' : null)} modes={modes} tip={seam.tip} />
+          <DetailLine facts={seam.facts(focus)} flashed={flashed} hinted={hinted} modes={modes} tip={seam.tip} />
         </div>
         {mode?.kind === 'palette' || mode?.kind === 'choose'
           ? (
