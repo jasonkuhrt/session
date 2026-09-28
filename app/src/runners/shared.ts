@@ -6,7 +6,7 @@ import type { Node } from '../levels'
 import { idOf, nodeOf } from '../levels'
 import type { SeamInput } from '../session-seam'
 import { samePath } from '../substrate/path'
-import type { Path, Runner, SurfaceApi, Target } from '../substrate/seam'
+import type { Path, Recall, Runner, SurfaceApi, Target } from '../substrate/seam'
 import type { Tree } from '../tree'
 
 /**
@@ -53,8 +53,8 @@ export const focused = ({ target, focus }: { readonly target: Target; readonly f
 const stageIds = stageNames.map((stage) => idOf({ kind: 'stage', stage }))
 
 /** A board's focus as it opens: the stage last focused there, else the first. */
-export const boardFocus = ({ board, surface }: { readonly board: Path; readonly surface: SurfaceApi }): Path =>
-  [...board, surface.recall(board, stageIds) ?? stageIds[0] ?? '']
+export const boardFocus = ({ board, recall }: { readonly board: Path; readonly recall: Recall }): Path =>
+  [...board, recall(board, stageIds) ?? stageIds[0] ?? '']
 
 /**
  * A command that opens another page: where it takes the focus, which running
@@ -64,7 +64,7 @@ export const opening = ({ when, to }: { readonly when: Runner['when']; readonly 
   when,
   to,
   run: (target, surface) => {
-    const path = to(target, surface)
+    const path = to(target, surface.recall)
     if (path !== null) surface.setFocus(path)
   },
 })

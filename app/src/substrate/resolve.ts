@@ -1,11 +1,9 @@
-import type { LinkOptions } from '@tanstack/react-router'
-
 import { substrateIds } from './commands'
 import type { Mode } from './modes'
 import { leafOf } from './path'
 import type { Key } from './registry'
 import { keyText } from './registry'
-import type { Path, Seam, SurfaceApi, Target } from './seam'
+import type { Address, Path, Recall, Seam, Target } from './seam'
 
 /**
  * How a key finds its command: the nodes on the focus path, nearest first,
@@ -125,9 +123,9 @@ const enter: Key = { key: 'Enter', shift: false, ctrl: false }
 /**
  * What a click on a node runs once it has the focus: the Enter the node binds
  * itself, or what it stands for, on it, and why it cannot when it cannot. It
- * is null for a node whose own scope binds no Enter, as a lane's heading, so
- * the click only takes the focus: the Enter of a scope above it is the
- * keyboard's, reached from the focus.
+ * is null for a node whose own scope binds no Enter, so the click only takes
+ * the focus: the Enter of a scope above it is the keyboard's, reached from
+ * the focus.
  */
 export const resolveClick = ({ seam, path, own }: { readonly seam: Seam; readonly path: Path; readonly own: OwnWhen }) =>
   boundAt({
@@ -141,19 +139,21 @@ export const resolveClick = ({ seam, path, own }: { readonly seam: Seam; readonl
   })
 
 /**
- * The link a node is drawn as: to the page its own Enter opens, where the
- * command says where that is; null for a node whose Enter stays on the page
- * or cannot run there. It is read while the surface draws, so it asks no
- * substrate command, whose answer reads the drawn geometry: none binds Enter
- * at a node.
+ * Where a node's link goes: the page its own Enter opens, where the command
+ * says where that is; null for a node whose Enter stays on the page or cannot
+ * run there. It is read while the surface draws, so it asks no substrate
+ * command, whose answer reads the drawn geometry, and none binds Enter at a
+ * node; and it hands the command the focus memory alone, since the rest of
+ * the surface is as the last render left it.
  */
-export const linkAt = ({ seam, path, surface }: { readonly seam: Seam; readonly path: Path; readonly surface: SurfaceApi }): LinkOptions | null => {
+export const linkAt = ({ seam, path, recall }: { readonly seam: Seam; readonly path: Path; readonly recall: Recall }): Address | null => {
   const hit = resolveClick({ seam, path, own: () => true })
   if (hit === null || hit.refused !== null) return null
-  const to = seam.runners[hit.command.id]?.to?.(hit.target, surface) ?? null
+  const to = seam.runners[hit.command.id]?.to?.(hit.target, recall) ?? null
   if (to === null) return null
   const target = seam.normalize(to)
-  return seam.viewOf(target) === seam.viewOf(path) ? null : seam.link(target)
+  // Another view, which a click opens as a move of its own.
+  return seam.viewOf(target) === seam.viewOf(path) ? null : seam.link(target, { replace: false })
 }
 
 /** Keys a field types with, which stay the field's while a mode's input has the focus. */

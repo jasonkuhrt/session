@@ -30,12 +30,14 @@ const dragThresholdPixels = 5
  * is there to be pressed, and so it does anywhere inside a card or a row drawn
  * as a link, which is the element dragged rather than a control inside it. A
  * word with its tip behind it is not a control, though Tips draws it as a
- * button, so turning tips on never changes what can be dragged.
+ * button outside a link, so turning tips on never changes what can be
+ * dragged.
  */
 const pressBelongsToControl = (event: PointerEvent, source: Draggable) => {
   const { target } = event
   if (!isElement(target) || target === source.element || source.handle?.contains(target) === true) return false
-  const control = getInteractiveElement(target) ?? target.closest('[aria-haspopup], [role="button"]')
+  // A pill first: inside a card drawn as a link, the link is always found.
+  const control = target.closest('[aria-haspopup], [role="button"]') ?? getInteractiveElement(target)
   if (control === null || control === source.element) return false
   return !(control instanceof HTMLElement && Object.hasOwn(control.dataset, 'explained'))
 }

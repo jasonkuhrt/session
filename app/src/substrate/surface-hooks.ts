@@ -22,37 +22,75 @@ export const browserClick = (event: MouseEvent | React.MouseEvent) =>
   event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey
 
 /**
+ * The gesture a drag ends in, which is the drag's: its release, made while a
+ * drag holds the view, is marked before the drag library takes it, and the
+ * next press lets the mark go, for a browser that makes no click of it.
+ */
+function useDragEnd(held: boolean) {
+  const holding = React.useRef(held)
+  const ended = React.useRef(false)
+  React.useEffect(() => {
+    holding.current = held
+  })
+  React.useEffect(() => {
+    const onRelease = () => {
+      ended.current = holding.current
+    }
+    const onGesture = () => {
+      ended.current = false
+    }
+    window.addEventListener('pointerup', onRelease, true)
+    window.addEventListener('pointerdown', onGesture, true)
+    return () => {
+      window.removeEventListener('pointerup', onRelease, true)
+      window.removeEventListener('pointerdown', onGesture, true)
+    }
+  }, [])
+  return ended
+}
+
+/**
  * The view's clicks, heard once, on the view, and handed to the node they
  * landed in, with what the node is; a click on a link or a button inside a
  * node is its own, and a click the browser answers is left to it. A node
  * drawn as a link leaves its address to the browser that way and nothing
  * else: a plain click on it is the view's, so the link does not follow
  * itself. A press on a node leaves the browser's focus where it is, so the
- * keys that follow still reach the registry rather than the node. A drag
- * takes the pointer: the drag library captures it on the document's body, so
- * the release that drops a card, and any click the browser makes of it, lands
- * there, outside the view, and runs nothing.
+ * keys that follow still reach the registry rather than the node. A click a
+ * browser makes of the release that ends a drag runs nothing, and follows no
+ * link.
  */
-export function useViewClicks({ view, drawn, clicked }: {
+export function useViewClicks({ view, drawn, held, clicked }: {
   readonly view: React.RefObject<HTMLElement | null>
   readonly drawn: React.RefObject<ReadonlyMap<string, Drawn>>
+  /** Whether a drag holds the view. */
+  readonly held: boolean
   readonly clicked: (path: Path, node: Drawn) => void
 }) {
   const latest = React.useRef(clicked)
   React.useEffect(() => {
     latest.current = clicked
   })
+  const dragEnded = useDragEnd(held)
   React.useEffect(() => {
     const element = view.current
     if (element === null) return () => null
     const nodeOfEvent = (event: MouseEvent) =>
-      event.target instanceof HTMLElement && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
+      event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
     const onClick = (event: MouseEvent) => {
+      // Nothing follows it, a link it lands on included.
+      if (dragEnded.current) {
+        dragEnded.current = false
+        event.preventDefault()
+        return
+      }
       if (browserClick(event)) return
-      const key = nodeOfEvent(event)?.dataset['node']
+      const landed = nodeOfEvent(event)
+      const key = landed?.dataset['node']
       const node = key === undefined ? undefined : drawn.current.get(key)
-      if (key === undefined || node === undefined) return
-      event.preventDefault()
+      if (landed === null || key === undefined || node === undefined) return
+      // A node drawn as a link would follow itself; its click is the view's.
+      if (landed instanceof HTMLAnchorElement) event.preventDefault()
       latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {
@@ -64,7 +102,7 @@ export function useViewClicks({ view, drawn, clicked }: {
       element.removeEventListener('click', onClick)
       element.removeEventListener('mousedown', onPress)
     }
-  }, [view, drawn])
+  }, [view, drawn, dragEnded])
 }
 
 /**
@@ -103,13 +141,13 @@ const addressMilliseconds = 150
  * The focus as drawn, and how a move reaches the address. A move within a
  * view is drawn at once and written once the moves stop; it stands only while
  * it names another leaf than the address does, so a move back to where the
- * address is, or a carry that keeps the focus on its card, is the address's
- * focus at once, found where the node is now, and the address changing, as
- * the move's own write or Back does, is the focus from then on. A move to
- * another view is a history entry of its own, and a move still waiting for
- * the address is written into the entry it leaves first, so Back returns to
- * where the focus was; the history merges writes made in one tick, so the
- * new entry waits for that one.
+ * address is, or a carry that keeps the focus on what it carries, is the
+ * address's focus at once, found where the node is now, and the address
+ * changing, as the move's own write or Back does, is the focus from then on.
+ * A move to another view is a history entry of its own, and a move still
+ * waiting for the address is written into the entry it leaves first, so Back
+ * returns to where the focus was; the history merges writes made in one tick,
+ * so the new entry waits for that one.
  */
 export function useAddressedFocus(seam: Seam) {
   const [pending, setPending] = React.useState<Path | null>(null)
@@ -129,8 +167,8 @@ export function useAddressedFocus(seam: Seam) {
    * Writes a move, settling once the address holds it when it changes the
    * view; `replace` puts another view in place of this entry. The move still
    * waiting is read from where it waits rather than from what was drawn, so a
-   * move and another view in one tick, as a click that focuses a card and
-   * opens it, leaves the card in the entry it leaves.
+   * move and another view in one tick, as a click that focuses a node and
+   * opens its page, leaves the node in the entry it leaves.
    */
   const write = (target: Path, { replace }: { readonly replace: boolean }): Promise<void> => {
     const waited = waitingFor.current

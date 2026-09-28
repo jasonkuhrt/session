@@ -1,4 +1,3 @@
-import type { LinkOptions } from '@tanstack/react-router'
 import type * as React from 'react'
 
 import type { Command } from './registry'
@@ -13,6 +12,23 @@ import type { Command } from './registry'
 
 /** Where a node is: the ids of the nodes from the root down to it. */
 export type Path = readonly string[]
+
+/**
+ * What an app registers with the substrate, as a router registers its
+ * routes: `address`, where a link of the app's goes. The substrate hands an
+ * address back to the app's own link as it is and never reads it, so it
+ * names no router.
+ */
+export interface Register {}
+
+/** Where a link goes, as the app registers it. */
+export type Address = Register extends { readonly address: infer Registered } ? Registered : never
+
+/** What the app's link is drawn with: where it goes, and the attributes, the ref and the content the substrate gives the element. */
+export type LinkProps = { readonly address: Address } & React.HTMLAttributes<HTMLAnchorElement> & React.RefAttributes<HTMLAnchorElement>
+
+/** The child last focused under a node that is still among its children, else the first. */
+export type Recall = (parent: Path, children: readonly string[]) => string | null
 
 /** A node a command can act on: the scope it is at, its id, and the path to it. */
 export type Target = { readonly scope: string; readonly id: string; readonly path: Path }
@@ -56,7 +72,7 @@ export type SurfaceApi = {
   /**
    * Moves the focus to another view in place of the current history entry,
    * settling once the address holds it: for a view whose own address is about
-   * to name nothing, as an epic's board is when the epic is renamed there.
+   * to name nothing, as a view of a node is when the node is renamed there.
    */
   readonly relocate: (path: Path) => Promise<void>
   /** Says what just happened, or why nothing did, in the detail line. */
@@ -67,8 +83,7 @@ export type SurfaceApi = {
   readonly askName: (request: NameRequest) => void
   readonly choose: (request: { readonly prompt: string; readonly choices: readonly Choice[] }) => void
   readonly openSettings: () => void
-  /** The child last focused under a node that is still among its children, else the first. */
-  readonly recall: (parent: Path, children: readonly string[]) => string | null
+  readonly recall: Recall
 }
 
 /**
@@ -80,12 +95,13 @@ export type Runner = {
   readonly when?: ((target: Target, focus: Path) => true | string) | undefined
   readonly run: (target: Target, surface: SurfaceApi) => void | Promise<void>
   /**
-   * Where running it takes the focus, for a command that opens another page:
-   * a node whose own Enter it is is drawn as a link to that page, so the
-   * browser can open it in a tab of its own. Null when, on this target, it
-   * stays on the page; absent for a command that never leaves it.
+   * Where running it takes the focus, for a command that opens another page,
+   * from the focus memory alone, since it is asked while a view draws: a node
+   * whose own Enter it is is drawn as a link to that page, so the browser can
+   * open it in a tab of its own. Null when, on this target, it stays on the
+   * page; absent for a command that never leaves it.
    */
-  readonly to?: ((target: Target, surface: SurfaceApi) => Path | null) | undefined
+  readonly to?: ((target: Target, recall: Recall) => Path | null) | undefined
 }
 
 /** The app, as the substrate reads it. */
@@ -120,12 +136,19 @@ export type Seam = {
    */
   readonly go: (path: Path, options: { readonly replace: boolean }) => Promise<void>
   /**
-   * Where a path is drawn, as the router's options for a link there, which
-   * the substrate draws with the router's `Link`: a click with a modifier, or
-   * with any button but the first, leaves its address to the browser. Null
-   * for a path that has no address, as `go` goes nowhere for it.
+   * Where a path is drawn, as the app's address for a link there; null for a
+   * path that has no address, as `go` goes nowhere for it. `replace` says
+   * whether the link stands for a move within the view that draws the path,
+   * as `go` is told, so a link lands where a click on it moves the focus.
    */
-  readonly link: (path: Path) => LinkOptions | null
+  readonly link: (path: Path, options: { readonly replace: boolean }) => Address | null
+  /**
+   * The app's link, drawn with an address `link` gave: a plain click on it is
+   * the substrate's, and one with a modifier, or with any button but the
+   * first, leaves the address to the browser. One component for as long as
+   * the app runs, so a node drawn as a link keeps its element.
+   */
+  readonly Link: React.ComponentType<LinkProps>
   readonly crumb: (path: Path, index: number, drawn: boolean) => Crumb
   readonly facts: (path: Path) => readonly Fact[]
   /** What a command acts on, as the palette names it beside the command. */

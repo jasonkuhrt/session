@@ -70,14 +70,14 @@ const openProject = ({ tree }: RunnerContext): Runner =>
       if (node.key === 'across') return 'Across projects has no board of its own: each epic in it has one'
       return onBoardOf({ tree, focus, id: target.id }) ? `This is the board of ${tree.label(target.path)}` : true
     },
-    to: (target, surface) => {
+    to: (target, recall) => {
       const section = tree.sectionOf(nodeAt({ target, kind: 'project' })?.key ?? '')
       const head = tree.headRow(section)
       // A project of one worktree, its head, is that worktree's board.
       if (section?.kind === 'project' && section.cards.length === 0 && head !== null && head.conflict === null) {
-        return boardFocus({ board: tree.worktreePath(head), surface })
+        return boardFocus({ board: tree.worktreePath(head), recall })
       }
-      return boardFocus({ board: target.path, surface })
+      return boardFocus({ board: target.path, recall })
     },
   })
 
@@ -126,7 +126,7 @@ const renameEpic = ({ context, surface, from, to }: {
 export const epicRunners = (context: RunnerContext): Record<string, Runner> => ({
   'epic.open': opening({
     when: (target, focus) => (onBoardOf({ tree: context.tree, focus, id: target.id }) ? `This is the board of ${context.tree.label(target.path)}` : true),
-    to: (target, surface) => boardFocus({ board: target.path, surface }),
+    to: (target, recall) => boardFocus({ board: target.path, recall }),
   }),
   'epic.rename': {
     when: () => (context.writing ? context.noWrite : true),

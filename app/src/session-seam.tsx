@@ -1,5 +1,5 @@
 import type { LinkOptions } from '@tanstack/react-router'
-import { linkOptions, useNavigate } from '@tanstack/react-router'
+import { Link, linkOptions, useNavigate } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { DaemonCapabilities, FocusResult } from '../contract'
@@ -16,7 +16,7 @@ import type { RunnerContext } from './runners/shared'
 import { reasonOf } from './runners/shared'
 import { epicRunners, projectRunners } from './runners/structure'
 import { worktreeRunners } from './runners/worktree'
-import type { Path, Runner, Seam, SurfaceApi } from './substrate/seam'
+import type { LinkProps, Path, Runner, Seam, SurfaceApi } from './substrate/seam'
 import type { Place, TreeData } from './tree-types'
 import type { Tree } from './tree'
 import { makeTree } from './tree'
@@ -42,6 +42,22 @@ export type PageActions = {
   readonly pathOf: (at: string) => string | null
   /** The page's own file or directory, absolute. */
   readonly path: string | null
+}
+
+/** Session's links go where the router's options say, which the substrate hands back to `SessionLink` as they are. */
+declare module './substrate/seam' {
+  interface Register {
+    readonly address: LinkOptions
+  }
+}
+
+/**
+ * The substrate's link: the router's `Link` to the address the seam gave, so
+ * a link or a key that opens a page goes through the router, with what the
+ * substrate puts on the element.
+ */
+function SessionLink({ address, ...attributes }: LinkProps) {
+  return <Link {...address} {...attributes} />
 }
 
 /** What a view hands its seam. */
@@ -162,8 +178,8 @@ export function useSessionSeam(input: SeamInput): { readonly seam: Seam; readonl
     normalize: tree.normalize,
     viewOf: tree.viewOf,
     go,
-    // A link opens its page afresh, as a move to another view does.
-    link: (path) => address(path, { replace: false }),
+    link: address,
+    Link: SessionLink,
     crumb: tree.crumb,
     facts: tree.facts,
     targetName: tree.targetName,

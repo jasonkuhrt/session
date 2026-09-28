@@ -14,8 +14,8 @@ const middleY = (box: Box) => (box.top + box.bottom) / 2
  * down, the nearest node whose middle is past this one's and whose columns
  * overlap it; left and right, among the nodes in the nearest column that
  * way, the one whose middle is nearest this one's. Peers are the nodes of
- * the focus's level wherever they are drawn, across containers, so a card
- * moves to the next lane and a row to the next project's.
+ * the focus's level wherever they are drawn, across containers, so a move
+ * crosses from one container into the next.
  */
 export function nearest<A>({ from, candidates, direction }: {
   readonly from: Box

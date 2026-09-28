@@ -1330,12 +1330,12 @@ terminal, Zed, agents, pull request, ledger and the rest, runs from anywhere in
 its row, and its detail line carries the worktree's facts, as on its own board,
 save the Linear issues, which only a worktree's own board asks linear for. A
 click on the part itself, around its cards, only puts the focus on it, since the
-part holds them: the name at the row's left edge is the link to the worktree's
-board, which Enter on the part opens too. A lane's detail line counts every
-worktree's items. The rows stand in one order that no activity moves, since
-every write on the board is activity: a project's main worktree first, as it
-heads the project on the index, an epic's worktrees placed by hand first, in
-their ranks' order, and the rest by name.
+part holds them: the name at the row's left edge links to where Enter on the
+part goes, the worktree's board at the stage last focused there. A lane's detail
+line counts every worktree's items. The rows stand in one order that no activity
+moves, since every write on the board is activity: a project's main worktree
+first, as it heads the project on the index, an epic's worktrees placed by hand
+first, in their ranks' order, and the rest by name.
 
 A card moves only among its own worktree's lanes, which are the only ones whose
 session a move could be written to. Held over another worktree's lanes, it goes
@@ -1522,19 +1522,25 @@ key map. A click on a node puts the focus on it and runs the Enter the node
 binds itself, or what it stands for, at once, so one click opens a card, the
 row of a worktree, an epic or a project, a record of the archive or a Markdown
 file of `context/`, and folds a section, a ledger's entry or a directory of
-`context/`; coming back out, by `o` or by Back, lands on the node clicked. A
-node whose own scope binds no Enter, a lane's, a group's or a page's heading,
-only takes the focus, since the Enter of a scope above it is the keyboard's,
-reached from the focus, and so does a worktree's part of a lane on an epic's or
-a project's board, which holds its cards. A click on a step of the path line
-moves the focus there. A node a click opens another page from is drawn as a
-link to that page's address, through TanStack Router's `Link`, and so is every
-step of the path line: a click with ⌘, Ctrl, Alt or Shift held, or with any
-button but the first, is the browser's, so ⌘-click and a middle click open the
-address in a new tab and leave the page and its focus as they were, the context
-menu offers the link, and the status bar shows where it goes. A drag is the
-carry, join, leave or group its drop makes; it starts anywhere on a card or a
-row, its title included, and the release that drops it is no click.
+`context/`. Coming back out of a card or a row, by `o` or by Back, lands on the
+card or the row clicked; from a record or a file Back does, while `o` comes to
+the file page's heading and then out to the worktree, since the file page is
+not under the listing. A node whose own scope binds no Enter, a lane's, a
+group's or a page's heading, only takes the focus, since the Enter of a scope
+above it is the keyboard's, reached from the focus, and so does a node drawn
+around what a click inside it is meant for: a worktree's part of a lane on an
+epic's or a project's board, around its cards, and the body of an item with no
+sections, around its prose. A click on a step of the path line moves the focus
+there. A node a click opens another page from is drawn as a link to that page's
+address, through TanStack Router's `Link`, and so is every step of the path
+line, to where a click on it moves the focus: a click with ⌘, Ctrl, Alt or
+Shift held, or with any button but the first, is the browser's, so ⌘-click and
+a middle click open the address in a new tab and leave the page and its focus
+as they were, the context menu offers the link, and the status bar shows where
+it goes. A word with its tip behind it, while Tips is on, is part of the link it
+is in, and never a button there. A drag is the carry, join, leave or group its
+drop makes; it starts anywhere on a card or a row, its title included, and a
+click a browser makes of the release that drops it runs nothing.
 
 Every key is a TanStack Hotkeys registration made from the registry, in
 `app/src/substrate/bind.ts` and nowhere else, which the lint rule
@@ -1544,13 +1550,14 @@ repeated id or a root key bound anywhere else fails `bun run check`.
 
 A key is the page's own in a field: a letter, a space and the keys that edit
 type there, and outside the palette and a dialog every key does. Enter or
-`Space` on a link or a button that has the browser's focus is that control's;
-a press on a node or a step of the path line, a link included, leaves the
-browser's focus with the page, so the key after a click reaches the registry.
-Nothing acts while a card or a row is dragged. A movement key repeats while it
-is held; every other key acts on the first keydown of a press, and the repeats
-a held key sends do nothing, so a held `Shift+l` carries a card one stage. A key
-that neither runs nor refuses keeps what the browser does with it.
+`Space` on a link or a button that has the browser's focus is that control's; a
+press on a node, a step of the path line or a worktree's name on an epic's or a
+project's board leaves the browser's focus with the page, so the key after a
+click reaches the registry. Nothing acts while a card or a row is dragged. A
+movement key repeats while it is held; every other key acts on the first keydown
+of a press, and the repeats a held key sends do nothing, so a held `Shift+l`
+carries a card one stage. A key that neither runs nor refuses keeps what the
+browser does with it.
 
 The focus is in the address, as `?focus=` and the focused node's id, with
 `via=` on an item's page opened from an epic's or a project's board to say

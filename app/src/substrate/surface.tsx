@@ -89,6 +89,9 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
   const moveHighlight = (by: 1 | -1) =>
     setMode((current) => (current?.kind === 'palette' || current?.kind === 'choose' ? { ...current, highlight: current.highlight + by } : current))
 
+  /** The child last focused under a node, from the focus memory alone. */
+  const recallOf = React.useCallback((parent: Path, kids: readonly string[]) => recall({ memory, parent, children: kids }), [memory])
+
   const api = useStableApi({
     focus,
     setFocus,
@@ -103,7 +106,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
     askName: (request) => setMode({ kind: 'name', request, value: request.value, error: null, busy: false }),
     choose: ({ prompt, choices }) => setMode({ kind: 'choose', prompt, choices, query: '', highlight: 0 }),
     openSettings: () => setMode({ kind: 'settings' }),
-    recall: (parent, kids) => recall({ memory, parent, children: kids }),
+    recall: recallOf,
   })
 
   const entries = (): readonly PaletteEntry[] =>
@@ -217,21 +220,26 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
     else flash(hit.refused)
   }
   const main = React.useRef<HTMLElement>(null)
-  useViewClicks({ view: main, drawn, clicked })
+  useViewClicks({ view: main, drawn, held: seam.held, clicked })
 
-  const linkOf = React.useCallback((path: Path) => linkAt({ seam, path, surface: api }), [seam, api])
-  /** Where a step of the path line goes, as a click on it moves the focus: its node, and from All the child last focused there. */
-  const stepTo = (index: number): Path => {
+  const linkOf = React.useCallback((path: Path) => linkAt({ seam, path, recall: recallOf }), [seam, recallOf])
+  /**
+   * Where a step of the path line's link goes: where a click on it moves the
+   * focus, its node, and from All the child last focused there, as a move
+   * within this view when this view draws it.
+   */
+  const stepLink = (index: number) => {
     const inside = index > 0 ? focus.slice(0, index + 1) : into({ seam, memory, focus: [seam.root] })
-    return typeof inside === 'string' ? [seam.root] : inside
+    const step = seam.normalize(typeof inside === 'string' ? [seam.root] : inside)
+    return seam.link(step, { replace: seam.viewOf(step) === view })
   }
 
   const register = React.useCallback((key: string, node: Drawn | null) => {
     if (node === null) drawn.current.delete(key)
     else drawn.current.set(key, node)
   }, [])
-  const { scopeOf } = seam
-  const context = React.useMemo(() => ({ focusKey, marks, scopeOf, register, linkOf }), [focusKey, marks, scopeOf, register, linkOf])
+  const { scopeOf, Link } = seam
+  const context = React.useMemo(() => ({ focusKey, marks, scopeOf, register, linkOf, Link }), [focusKey, marks, scopeOf, register, linkOf, Link])
 
   const modeWord = mode === null ? null : { palette: 'palette', choose: 'choose', name: 'name', keymap: 'keys', settings: 'settings' }[mode.kind]
   const modes = [...(marks.size > 0 ? [`${marks.size} marked`] : []), ...(modeWord === null ? [] : [modeWord])]
@@ -246,7 +254,7 @@ export function Surface({ seam, children }: { readonly seam: Seam; readonly chil
             focus={focus}
             view={view}
             marks={marks}
-            linkOf={(index) => seam.link(seam.normalize(stepTo(index)))}
+            linkOf={stepLink}
             onStep={(index) => {
               if (index > 0) setFocus(focus.slice(0, index + 1))
               else moveTo(into({ seam, memory, focus: [seam.root] }))

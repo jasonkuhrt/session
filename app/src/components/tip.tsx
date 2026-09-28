@@ -2,6 +2,7 @@ import type * as React from 'react'
 
 import { useSettings } from '../lib/settings'
 import { cn } from '../lib/utils'
+import { useInsideLink } from '../substrate/surface-context'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 /**
@@ -43,8 +44,10 @@ export function Tip({ meaning, ...trigger }: React.ComponentProps<typeof Tooltip
 
 /**
  * A word with what it means behind it, reachable by pointer and by keyboard
- * while Tips is on. With Tips off it is only the word: a trigger with nothing
- * behind it would be a stop for the keyboard that does nothing.
+ * while Tips is on, and by pointer alone inside a link, which may hold no
+ * control of its own, so there it is no button. With Tips off it is only the
+ * word: a trigger with nothing behind it would be a stop for the keyboard
+ * that does nothing.
  */
 export function Explained({ children, meaning, className }: {
   children: React.ReactNode
@@ -53,15 +56,18 @@ export function Explained({ children, meaning, className }: {
   className?: string
 }) {
   const tips = useTips()
+  const inLink = useInsideLink()
   const layout = cn('flex items-center gap-1.5 text-left', className)
   if (!tips) return <span className={layout}>{children}</span>
-  // Marked, so a drag reads it as the word it is and not as a control: with
-  // Tips on it is drawn as a button, with Tips off as plain text, and turning
-  // tips on must not change what can be dragged.
+  // Marked, so a drag and a click read it as the word it is and not as a
+  // control: with Tips on it is drawn as a button, or a span inside a link,
+  // with Tips off as plain text, and turning tips on must not change what can
+  // be dragged or what a click does.
   return (
     <Tooltip>
       <TooltipTrigger
         data-explained=""
+        {...(inLink ? { render: <span /> } : {})}
         className={cn(
           'cursor-default rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50',
           layout,

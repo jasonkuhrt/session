@@ -97,8 +97,8 @@ const open = ({ tree }: RunnerContext): Runner =>
       if (node === null || tree.itemOf(node.key, node.id) === null) return 'No such item'
       return focus.length > target.path.length ? 'This is its page' : true
     },
-    to: (target, surface) => {
-      const child = surface.recall(target.path, tree.kids(target.path))
+    to: (target, recall) => {
+      const child = recall(target.path, tree.kids(target.path))
       return child === null ? null : [...target.path, child]
     },
   })

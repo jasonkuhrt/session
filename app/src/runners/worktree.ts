@@ -59,9 +59,9 @@ const openWorktree = ({ tree }: RunnerContext): Runner =>
       if (refused !== null) return refused
       return row !== null && onBoardOf({ tree, focus, id: idOf({ kind: 'worktree', path: row.path }) }) ? `This is the board of ${row.name}` : true
     },
-    to: (target, surface) => {
+    to: (target, recall) => {
       const row = rowOfTarget({ tree, target })
-      return row === null ? null : boardFocus({ board: tree.worktreePath(row), surface })
+      return row === null ? null : boardFocus({ board: tree.worktreePath(row), recall })
     },
   })
 

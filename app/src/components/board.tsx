@@ -11,6 +11,7 @@ import { aimOf, itemIn, ownDrawn, sameOver, samePlacement } from '../lib/held'
 import type { Dragging, Lane as LaneLayout, Placement } from '../lib/lanes'
 import { cardId, lanesOf, moved, moveWords, newGroupWords, placementOf } from '../lib/lanes'
 import { moveAvailability } from '../lib/workflow'
+import { useLinkOf } from '../substrate/surface-context'
 import type { LanePart, PathsOf } from './lane'
 import { Lane, LaneHeading, PartOfLane } from './lane'
 import { useTip } from './tip'
@@ -206,7 +207,7 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
             {stageNames.map((stage) => <LaneHeading key={stage} path={paths.stage(stage)} stage={stage} />)}
             {parts.map((part) => (
               <React.Fragment key={part.board}>
-                <WorktreeName part={part} />
+                <WorktreeName part={part} paths={paths} />
                 {stageNames.map((stage) => (
                   <PartOfLane key={stage} {...actions} part={partOf(part, stage)} stage={stage} dragging={dragging} paths={paths} />
                 ))}
@@ -227,23 +228,36 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
 
 /**
  * A worktree's name at its row's left edge on an epic's or a project's board,
- * with its marks: a link to that worktree's own board, which Enter on any of
- * its parts opens too. A press on it leaves the browser's focus with the
- * page, as a press on a node does, so a key after a click with a modifier,
- * which opens the board in a new tab, still reaches the registry.
+ * with its marks: a link to where Enter on any of its parts goes, that
+ * worktree's own board at the stage last focused there, the address a part
+ * would link to, so a click and Enter land alike. A press on it leaves the
+ * browser's focus with the page, as a press on a node does, so a key after a
+ * click with a modifier, which opens the board in a new tab, still reaches
+ * the registry.
  */
-function WorktreeName({ part }: { part: BoardPart }) {
+function WorktreeName({ part, paths }: { part: BoardPart; paths: PathsOf }) {
   const tip = useTip()
+  const address = useLinkOf()(paths.part({ key: part.key, stage: 'Triage' }))
+  const className = 'sticky left-0 z-10 flex min-w-0 items-start gap-2 border-t bg-background py-2 pr-2 text-left text-sm text-muted-foreground'
+  const name = <span className="min-w-0 truncate">{part.name}</span>
+  // A worktree whose board cannot open from here is named, and links nowhere.
+  if (address === null) {
+    return (
+      <span className={className}>
+        {name}
+        {part.marks}
+      </span>
+    )
+  }
   return (
     <Link
-      to="/w/$key/"
-      params={{ key: part.name }}
+      {...address}
       tabIndex={-1}
       onMouseDown={(event) => event.preventDefault()}
-      className="sticky left-0 z-10 flex min-w-0 items-start gap-2 border-t bg-background py-2 pr-2 text-left text-sm text-muted-foreground hover:text-foreground"
+      className={`${className} hover:text-foreground`}
       title={tip(`Open ${part.name}’s own board.`)}
     >
-      <span className="min-w-0 truncate">{part.name}</span>
+      {name}
       {part.marks}
     </Link>
   )

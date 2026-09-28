@@ -125,7 +125,7 @@ const written: readonly Written[] = [
     keys: [],
     clicks: [{ on: 'a node' }, { on: 'a step of the path line' }],
     summary:
-      'Put the focus on what was clicked and run its own Enter, so one click opens a card, a row or a step of the path line and folds a section; a lane’s or a group’s heading, which has no Enter of its own, and a worktree’s part of a lane, which holds cards, only take the focus. With ⌘, Ctrl, Alt or Shift, or with another button than the first, a click is the browser’s, and a link opens in a new tab.',
+      'Put the focus on what was clicked and run its own Enter; a node that binds none, or holds others, only takes the focus. With ⌘, Ctrl, Alt or Shift, or another button than the first, a click is the browser’s.',
   }),
   command({
     id: substrateIds.goTo,
