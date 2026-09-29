@@ -175,8 +175,18 @@ and update the affected item's state rather than quietly changing the contract.
 An agent that picks up an item in Execute writes a trailing `### Agent` section
 naming itself by harness and session id, `claude ${CLAUDE_SESSION_ID}` or
 `codex $CODEX_THREAD_ID`, so other agents, including mixed-model teams, can
-address it. It is a convention the engine neither writes nor enforces, and
+address it. A worker spawned inside a session has no session of its own, so it
+names that session's id and its own profile, `claude <session id> /
+session-worker`. It is a convention the engine neither writes nor enforces, and
 `session start` does not add it.
+
+A lead that hands an item to a worker writes what the item does not say, the
+order of work and this item's mechanics, to `context/<ID>/brief.md`, never a
+copy of the Outcome. The worker starts from `session brief <ID>`, which ends
+with the item whole and its context listing, follows the `session-execute`
+skill, and reports to `context/<ID>/report-<profile>.md`, linked from the
+item's `### Evidence`. A brief is never the record: what the user must see is
+an item.
 
 Execution continues through the agreed outcome, including verification and
 landing when requested. A task is not complete merely because only tests or CI
@@ -213,36 +223,9 @@ For the app and its file operations, read
 of work state. Do not recreate a per-task viewer, content module, or task
 database.
 
-The board is keyboard first and draws only the path and the work: a path line
-naming where the one focus is, the lanes or the index's outline of projects,
-epics and worktrees, and a detail line holding the focused node's facts, the
-branch's pull request among them, carrying only what gh answered, as Linear
-issue… lists the Linear issues it names only as linear answered. A worktree's
-marks, a dot per live agent, a `!` for a source that could not answer or a file
-that breaks a rule, and its pull request's number, go wherever the worktree is
-drawn. Every action is a command the palette, `;`, lists and the key map, `?`,
-names: a worktree's terminal, `t`, brings forward its cmux workspace or opens
-one, its editor, `e`, brings forward the Zed window on it or opens a new one,
-and `e` on an item opens the item's file there at its first line; Agents…, the
-Pull request, Linear issue…, Rules, Ledger, Context and Archive commands reach
-the rest. Each opens its target once, bringing back the tab, the workspace or
-the window already open rather than opening another, and a command that cannot
-run says why in the detail line. An epic's board and a project's draw each
-worktree's name with its marks at its row's left edge, and every worktree
-command runs from its row.
-
-The pages sit beside the board, under its address `/w/<key>/`, where the key
-names the worktree; they are read-only views of the files and follow them as the
-board does, and the Ledger, Context, Archive and Rules commands open them. The
-ledger page, `/w/<key>/ledger`, shows the entries newest first. The context
-page, `/w/<key>/context`, shows `context/` as a tree. The archive page,
-`/w/<key>/archive`, lists the archive's records newest first, for a person
-looking back rather than as context for an agent. The file page,
-`/w/<key>/file/<path>`, renders one Markdown file of the session at the item
-page's reading width. A Markdown file opens there from the context page, a
-record from the archive page, and a linked Markdown file from an item, so each
-has an address to send the user to. No page carries unread state or asks for
-anything.
+The board's keys, commands and pages are described in
+[references/board.md](references/board.md), for when the user asks about the
+board; an agent working the files needs none of it.
 
 Validate after editing or migrating records. The checker proves structural
 invariants, not that a design is sound or the user agreed. The agent still owns

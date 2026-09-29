@@ -15,7 +15,7 @@ session [-C <worktree-or-.session>] <command>
 
 init                       create whatever the session is missing and print it; for handing off to your editor
 check                      validate; prints "OK <revision>, <n> items" or "OK <revision>, empty", or the first error and exits 1
-brief                      what an agent reads first: check's line or its error, RULES.md, the newest ledger titles, ls; exits 0
+brief [ID]                 what an agent reads first: check's line or its error, RULES.md, the newest ledger titles, ls; with an ID, that item whole and its context listing; exits 0
 refresh [--previous F]     JSON path/hash inventory, and what it skipped
 ls [STAGE]                 one line per item: ID, path, title; the path encodes stage, group, and order
 add <STAGE> <ID> "<title>" new item, body on stdin; refuses Queue and Execute
@@ -498,6 +498,13 @@ Codex reads `SKILL.md` as it is written and runs nothing in it, so a Codex
 agent sees the line as a command, and the sentence above it says to run
 `session brief` itself. The `$CODEX_THREAD_ID` the skill names a Codex agent by
 is the variable Codex sets in its shell to the thread's id.
+
+`brief <ID>` ends with one item: its record as the file holds it, the
+`## <ID> — <title>` heading and the body, then the names in `context/<ID>/`,
+or that the directory holds nothing, or that no item carries the ID. The rest
+of the brief comes before it, as always. It is what a worker runs first, so the
+item and the files kept beside it reach it in one read; the `session-execute`
+skill says what the worker does with them.
 
 ## Refresh context
 

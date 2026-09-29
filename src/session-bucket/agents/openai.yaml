@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session bucket"
+  short_description: "Needed/nice-to-have × simple/complex buckets, in priority order"
+  default_prompt: "Use $session-bucket on the session's items and present the four buckets in order."

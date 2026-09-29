@@ -1,0 +1,4 @@
+interface:
+  display_name: "Session execute"
+  short_description: "Carry out one session item as its worker"
+  default_prompt: "Use $session-execute to carry out item <ID> in this worktree."

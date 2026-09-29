@@ -55,7 +55,7 @@ type CommandSpec = {
 const commands = {
   init: { operands: '', least: 0, most: 0, options: {} },
   check: { operands: '', least: 0, most: 0, options: {} },
-  brief: { operands: '', least: 0, most: 0, options: {} },
+  brief: { operands: '[ID]', least: 0, most: 1, options: {} },
   refresh: { operands: '', least: 0, most: 0, options: { '--previous': '[--previous <inventory.json>]' } },
   ls: { operands: '[STAGE]', least: 0, most: 1, options: {} },
   add: { operands: '<STAGE> <ID> "<title>"', least: 3, most: 3, options: {} },
@@ -93,7 +93,7 @@ const usage = `Usage: session [-C <worktree or .session>] <command>
 
   init                                  create what the session is missing and say what that was
   check                                 validate the session and print its revision
-  brief                                 print what an agent reads first; exits 0 whatever it finds
+  brief [ID]                            print what an agent reads first, and one item whole with its context; exits 0 whatever it finds
   refresh [--previous <inventory.json>] print the file inventory as JSON
   ls [STAGE]                            list items as ID, file, title
   add <STAGE> <ID> "<title>"            add an item, body on stdin
@@ -705,17 +705,50 @@ const itemsSection = (
   });
 
 /**
+ * The brief's item, when one is asked for: the record as its file holds it,
+ * heading and body, then the names in `context/<ID>/`, so a worker starts
+ * from the item and the files kept beside it without opening anything to find
+ * them. An ID no item carries says so, and a context directory that is not
+ * there is said to hold nothing.
+ */
+const itemSection = (
+  repository: SessionRepository,
+  checked: Result.Result<Session, unknown>,
+  directory: string,
+  id: string,
+) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const loaded = Result.isSuccess(checked) ? checked : yield* Effect.result(repository.load);
+    if (Result.isFailure(loaded)) return [`Item ${id} could not be read: ${messageOf(loaded.failure)}`];
+    const item = loaded.success.stages.flatMap((entry) => entry.items).find((entry) => entry.id === id);
+    if (item === undefined) return [`No item ${id}.`];
+    const context = path.join(directory, 'context', id);
+    const files = (yield* fs.exists(context)) ? (yield* fs.readDirectory(context)).toSorted() : [];
+    return [
+      `Item ${id}, ${item.path}:`,
+      `## ${item.id} — ${item.title}`,
+      '',
+      item.body.trimEnd(),
+      '',
+      ...(files.length === 0 ? [`context/${id}/ holds nothing.`] : [`context/${id}/:`, ...files.map((file) => `  ${file}`)]),
+    ];
+  });
+
+/**
  * `brief`: what an agent reads before it acts, in the order it reads it, and
  * nothing it would have to open an item for. The first line is `check`'s, or
  * `check`'s first error in its place; then `RULES.md` as written, the newest
- * ledger entries, and the items as `ls` lists them. It only reads, so a skill
- * loaded where there is no session leaves none behind and no daemon hears of
- * it. It says what it could not read instead of failing, because the skill
- * runs it as it loads and a command that fails stops the skill, so it exits 0
- * whatever it finds. A linked `.session` is refused whole, as every command
- * refuses it, and nothing is read through the link.
+ * ledger entries, and the items as `ls` lists them; with an ID, one item whole
+ * and its context listing last, which is where a worker starts. It only
+ * reads, so a skill loaded where there is no session leaves none behind and no
+ * daemon hears of it. It says what it could not read instead of failing,
+ * because the skill runs it as it loads and a command that fails stops the
+ * skill, so it exits 0 whatever it finds. A linked `.session` is refused
+ * whole, as every command refuses it, and nothing is read through the link.
  */
-const brief = (directory: string) =>
+const brief = (directory: string, id?: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem;
     const isLink = (path: string) => fs.readLink(path).pipe(Effect.option, Effect.map((link) => Option.isSome(link)));
@@ -734,6 +767,7 @@ const brief = (directory: string) =>
       yield* rulesSection(repository),
       yield* ledgerSection(repository),
       yield* itemsSection(repository, checked, first),
+      ...(id === undefined ? [] : [yield* itemSection(repository, checked, resolved.directory, id)]),
     ];
     return sections.filter((lines) => lines.length > 0).map((lines) => lines.join('\n'));
   }).pipe(
@@ -766,7 +800,7 @@ const runCommand = (options: Options) =>
     // The brief only reads, and says what it finds rather than failing, so it
     // resolves the worktree itself and neither scaffolds nor registers it.
     if (options.command === 'brief') {
-      yield* brief(options.directory);
+      yield* brief(options.directory, options.operands[0]);
       return;
     }
     const resolved = yield* resolveWorktreeSession(options.directory);
