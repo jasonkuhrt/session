@@ -196,7 +196,9 @@
  * Inline code stands out from the sentence it sits in: it is drawn in the hue
  * the Code colour setting chooses, which the settings set on the document's
  * root as `--code`, over the muted ground. A block is already set apart as a
- * band of its own, so it keeps the text's colour. Until the settings are read
+ * band of its own, so it is not drawn in that hue: it keeps the text's colour,
+ * but for a TypeScript, JSON or shell block, whose tokens are each drawn in
+ * Tokyo Night's own colour on a span of their own. Until the settings are read
  * `--code` is unset, and inline code is drawn in the text's colour too.
  */
 .markdown-reader code { color: var(--code); background: var(--muted); padding: .1em .3em; border-radius: var(--radius-sm); font-size: .9em; }

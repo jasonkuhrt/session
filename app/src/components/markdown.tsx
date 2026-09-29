@@ -13,6 +13,7 @@ import { noneMeaning } from '../lib/workflow'
 import { idOf } from '../levels'
 import { Node } from '../substrate/node'
 import type { Path } from '../substrate/seam'
+import { Code } from './code'
 import { copyLabel, useCopy } from './copyable'
 import { Explained, useTip } from './tip'
 import { Button } from './ui/button'
@@ -42,6 +43,7 @@ const SectionsContext = React.createContext<Sections | null>(null)
 
 const markdownComponents = {
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+  code: ({ node: _node, ...props }) => <Code {...props} />,
   img: ({ alt, src, title }) => <MarkdownImage alt={alt} src={src} title={title} />,
   // react-markdown hands every component its hast node; an element is given only its own props.
   input: ({ node: _node, ...props }) => <input {...props} disabled />,

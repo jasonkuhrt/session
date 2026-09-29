@@ -30,11 +30,13 @@ export const SettingsSchema = Schema.Struct({
    */
   tips: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
   /**
-   * The hue inline code is drawn in, on the muted ground behind it; a code
-   * block keeps the text's colour. Green by default: of the theme's hues it
-   * stands out most on that ground, and Tokyo Night draws raw Markdown in it,
-   * as a string. Blue, the theme's own choice for inline code, is this
-   * board's link colour, so code in it would read as a link.
+   * The hue inline code is drawn in, on the muted ground behind it. A code
+   * block is not: it keeps the text's colour, but for a TypeScript, JSON or
+   * shell block, whose tokens carry Tokyo Night's own colours. Green by
+   * default: of the theme's hues it stands out most on that ground, and Tokyo
+   * Night draws raw Markdown in it, as a string. Blue, the theme's own choice
+   * for inline code, is this board's link colour, so code in it would read as
+   * a link.
    */
   codeColor: HueSchema.pipe(Schema.withDecodingDefaultKey(Effect.succeed('green'))),
   /**

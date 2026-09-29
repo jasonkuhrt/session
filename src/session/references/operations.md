@@ -911,7 +911,15 @@ such as a copy the clipboard refused, is not a tip and shows either way.
 
 Code colour is the hue inline code is drawn in wherever the board reads
 Markdown, on an item's page, a file's and the ledger's entries, over the muted
-ground behind it; a code block keeps the text's colour. It is one of the
+ground behind it. A code block is not drawn in it. A block whose fence names
+TypeScript, TSX, JSON or shell, as `ts`, `cts`, `mts`, `tsx`, `typescript`,
+`json`, `bash`, `sh`, `shell`, `shellscript` or `zsh` in any case, is coloured
+with Tokyo Night through Shiki, each token in the colour the theme gives it,
+and in the italics or bold it gives it, on the same muted band. Every other
+block, a `text` one and one with no language included, is plain, in the text's
+colour, and so is a block of more than a hundred thousand characters, a block
+Shiki cannot read, and any line of four thousand characters or more. Code
+colour is one of the
 theme's hues, `blue`, `red`, `yellow`, `green`, `teal` or `magenta`, and green
 by default, the one that stands out most on that ground. The settings draw it
 as a row of swatches, one per hue, each with its name as its tip and the chosen
