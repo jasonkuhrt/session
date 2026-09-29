@@ -33,7 +33,8 @@ export function getRouter() {
         networkMode: 'always',
         // Every answer is kept for as long as the document lives, so a page
         // that mounts again draws the last answer of each read it makes at
-        // once, and only a read never made draws a skeleton.
+        // once, and a skeleton is drawn only while the document holds no
+        // answer for the key.
         gcTime: Number.POSITIVE_INFINITY,
         // A page reads when it mounts, even when it drew an answer the
         // document already had a moment ago, since its stream only hears of

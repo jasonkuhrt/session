@@ -908,7 +908,10 @@ means when it is hovered or focused: the sentences this reference calls a
 tooltip, or says are on hover, are tips, the meaning of each fact of the detail
 line among them. With Tips off nothing comes up under the pointer, and a word
 that only carried a tip is plain text. A title that reports what just happened,
-such as a copy the clipboard refused, is not a tip and shows either way.
+such as a copy the clipboard refused, is not a tip and shows either way. A
+tooltip holds no control, so it takes no press: the pointer goes through it to
+what is under it, and turning Tips on changes neither what a press does nor what
+can be dragged.
 
 Code colour is the hue inline code is drawn in wherever the board reads
 Markdown, on an item's page, a file's and the ledger's entries, over the muted
@@ -948,7 +951,8 @@ name on an epic's or a project's board. A plain click on it opens the pull
 request, as the Pull request command does, in a tab named for its address, and
 does nothing else: it takes no focus and runs no Enter, so the row, the step or
 the name it is on stays as it was. A click with ⌘, Ctrl, Alt or Shift held, or
-with the middle button, is the browser's, so it opens the address in a new tab.
+with any button but the first, is the browser's, so ⌘-click and a middle click
+open the address in a new tab.
 A link holds no other, so the number is drawn beside the link of what it is a
 mark of, never inside it; the dots and the `!` are inside that link, so a click
 on one is the row's, the step's or the name's. The counts are taken from gh's
@@ -1583,9 +1587,12 @@ status bar shows where it goes. A word with its tip behind it, while Tips is on,
 is part of the link it is in, and never a button there. A control of its own on
 a node, the pull request's number, is drawn beside the node's link, since a link
 holds no other, and a click on it is its own: it takes no focus and runs no
-Enter. A drag is the carry, join, leave or group its drop makes; it starts
-anywhere on a card or a row, its title included, but not on the pull request's
-number, and a click a browser makes of the release that drops it runs
+Enter. The node's link is stretched across the node, so a click anywhere else on
+it, the space between its marks included, is the node's, and a press on the
+number that slides off it and is released elsewhere in the node is the number's,
+not the node's. A drag is the carry, join, leave or group its drop makes; it
+starts anywhere on a card or a row, its title included, but not on the pull
+request's number, and a click a browser makes of the release that drops it runs
 nothing.
 
 Every key is a TanStack Hotkeys registration made from the registry, in
@@ -1618,9 +1625,10 @@ one script, so no page's code is fetched after the document loaded. The view
 that leaves closes its event stream and any dialog, palette or key map it had
 open and keeps its reads; the view that arrives draws what the document last
 read of each thing it shows, at once, reads each again as it mounts and lands
-that over what it drew, and opens its own stream. Only a view opened for the
-first time in a document has nothing to draw, and draws a skeleton until its
-read lands, once. A write made on what a view drew before its read landed goes
+that over what it drew, and opens its own stream. A view draws a skeleton only
+while the document holds no answer for what it shows: before its first read
+lands, and after a read that failed, which leaves none, until it reads again. A
+session's write made on what a view drew before its read landed goes
 against the revision it drew, so the daemon refuses it as changed on disk when
 the files have moved, and the view reads again. The focus memory `i` returns to,
 the marks and the folds are the document's and survive a move between views; a

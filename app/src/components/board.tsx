@@ -1,6 +1,5 @@
 import type { DragOverEvent } from '@dnd-kit/react'
 import { DragDropProvider } from '@dnd-kit/react'
-import { Link } from '@tanstack/react-router'
 import * as React from 'react'
 
 import type { Item, Stage } from '../../contract'
@@ -12,8 +11,7 @@ import type { Dragging, Lane as LaneLayout, Placement } from '../lib/lanes'
 import { cardId, lanesOf, moved, moveWords, newGroupWords, placementOf } from '../lib/lanes'
 import { cn } from '../lib/utils'
 import { moveAvailability } from '../lib/workflow'
-import { BesideLinkContext } from '../substrate/beside-link'
-import { stretchedLink } from '../substrate/node'
+import { LinkHolder } from '../substrate/link-holder'
 import { useLinkOf } from '../substrate/surface-context'
 import type { LanePart, PathsOf } from './lane'
 import { Lane, LaneHeading, PartOfLane } from './lane'
@@ -233,12 +231,13 @@ export function Board({ parts, grouped, pending, paths, onMove, onGroupDrop, onD
  * A worktree's name at its row's left edge on an epic's or a project's board,
  * with its marks: a link to where Enter on any of its parts goes, that
  * worktree's own board at the stage last focused there, the address a part
- * would link to, so a click and Enter land alike. The link holds the name and
- * is stretched across the whole place the name stands in; the marks are drawn
- * beside it, and are in it again but for the pull request's number, a link of
- * its own. A press on it leaves the browser's focus with the page, as a press
- * on a node does, so a key after a click with a modifier, which opens the
- * board in a new tab, still reaches the registry.
+ * would link to, so a click and Enter land alike. The place the name stands
+ * in is a `LinkHolder`: the link holds the name and is stretched across the
+ * whole place, and the marks stand beside it, in the link again but for the
+ * pull request's number, a link of its own. A press on it leaves the
+ * browser's focus with the page, as a press on a node does, so a key after a
+ * click with a modifier, which opens the board in a new tab, still reaches
+ * the registry.
  */
 function WorktreeName({ part, paths, ruled }: { part: BoardPart; paths: PathsOf; ruled: boolean }) {
   const tip = useTip()
@@ -259,17 +258,14 @@ function WorktreeName({ part, paths, ruled }: { part: BoardPart; paths: PathsOf;
     )
   }
   return (
-    <span className={className}>
-      <Link
-        {...address}
-        tabIndex={-1}
-        onMouseDown={(event) => event.preventDefault()}
-        className={cn(stretchedLink, 'hover:text-foreground')}
-        title={tip(`Open ${part.name}’s own board.`)}
-      >
-        {name}
-      </Link>
-      <BesideLinkContext value={{ address }}>{part.marks}</BesideLinkContext>
-    </span>
+    <LinkHolder
+      as="span"
+      address={address}
+      className={cn(className, 'hover:text-foreground')}
+      title={tip(`Open ${part.name}’s own board.`)}
+      beside={part.marks}
+    >
+      {name}
+    </LinkHolder>
   )
 }

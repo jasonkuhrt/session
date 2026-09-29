@@ -10,7 +10,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
  * where it is. Every surface draws its sentences through these, so the one
  * Tips setting is what shows them, whether a sentence is a tooltip or the
  * browser's own `title`. With Tips off the words and controls are the same,
- * and nothing comes up under the pointer.
+ * and nothing comes up under the pointer. With Tips on a tooltip holds no
+ * control, so it takes no press: its positioner and popup, its arrow
+ * included, let the pointer through to what is under them, and turning Tips
+ * on never changes what a press does or what can be dragged.
  */
 
 /** Whether tips are on. */
@@ -35,7 +38,7 @@ export function Tip({ meaning, ...trigger }: React.ComponentProps<typeof Tooltip
 }) {
   const tips = useTips()
   return (
-    <Tooltip disabled={!tips}>
+    <Tooltip disabled={!tips} disableHoverablePopup>
       <TooltipTrigger {...trigger} />
       <TooltipContent>{meaning}</TooltipContent>
     </Tooltip>
@@ -64,7 +67,7 @@ export function Explained({ children, meaning, className }: {
   // with Tips off as plain text, and turning tips on must not change what can
   // be dragged or what a click does.
   return (
-    <Tooltip>
+    <Tooltip disableHoverablePopup>
       <TooltipTrigger
         data-explained=""
         {...(inLink ? { render: <span /> } : {})}

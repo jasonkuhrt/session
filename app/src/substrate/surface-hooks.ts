@@ -15,6 +15,10 @@ import type { Path, Seam, SurfaceApi } from './seam'
  */
 const ownClick = 'a[href]:not([data-node-link]), button:not([data-explained]), input, summary'
 
+/** The node an event landed in, unless it landed in a control of its own. */
+const nodeOfEvent = (event: MouseEvent) =>
+  event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
+
 /**
  * Whether a click is the browser's rather than the view's: one with ⌘, Ctrl,
  * Alt or Shift held, or with any button but the first, which on a link opens
@@ -61,7 +65,9 @@ function useDragEnd(held: boolean) {
  * itself. A press on a node leaves the browser's focus where it is, so the
  * keys that follow still reach the registry rather than the node. A click a
  * browser makes of the release that ends a drag runs nothing, and follows no
- * link.
+ * link, and neither does one made of a press on a control of its own that
+ * slid off it and was released elsewhere in the node, which the browser aims
+ * at the node around both: the press was the control's, not the node's.
  */
 export function useViewClicks({ view, drawn, held, clicked }: {
   readonly view: React.RefObject<HTMLElement | null>
@@ -75,12 +81,14 @@ export function useViewClicks({ view, drawn, held, clicked }: {
     latest.current = clicked
   })
   const dragEnded = useDragEnd(held)
+  /** The control of its own the last press landed in, until the click that follows it, if any, is heard. */
+  const pressed = React.useRef<Element | null>(null)
   React.useEffect(() => {
     const element = view.current
     if (element === null) return () => null
-    const nodeOfEvent = (event: MouseEvent) =>
-      event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
     const onClick = (event: MouseEvent) => {
+      const control = pressed.current
+      pressed.current = null
       // Nothing follows it, a link it lands on included.
       if (dragEnded.current) {
         dragEnded.current = false
@@ -88,6 +96,8 @@ export function useViewClicks({ view, drawn, held, clicked }: {
         return
       }
       if (browserClick(event)) return
+      // A press on a control of its own is the control's, wherever it is released.
+      if (control !== null && !(event.target instanceof Node && control.contains(event.target))) return
       const landed = nodeOfEvent(event)
       const key = landed?.dataset['node']
       const node = key === undefined ? undefined : drawn.current.get(key)
@@ -98,6 +108,7 @@ export function useViewClicks({ view, drawn, held, clicked }: {
       latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {
+      pressed.current = event.target instanceof Element ? event.target.closest(ownClick) : null
       if (nodeOfEvent(event) !== null) event.preventDefault()
     }
     element.addEventListener('click', onClick)
@@ -106,7 +117,7 @@ export function useViewClicks({ view, drawn, held, clicked }: {
       element.removeEventListener('click', onClick)
       element.removeEventListener('mousedown', onPress)
     }
-  }, [view, drawn, dragEnded])
+  }, [view, drawn, dragEnded, pressed])
 }
 
 /**

@@ -15,9 +15,10 @@ import { DaemonApi, IndexApi, readPlace, SessionApi } from './api'
  * `[board, 'item', id]` and `[board, 'file', path]`. Every answer is
  * kept for as long as the document lives, whichever page drew it last: a
  * page that mounts again draws the last answer of each of its reads while the
- * read it makes as it mounts is under way, and that read lands over it, so
- * only a read the document never made has nothing to draw, which is when a
- * page draws its skeleton.
+ * read it makes as it mounts is under way, and that read lands over it, so a
+ * page draws a skeleton only while the document holds no answer for a key:
+ * before its first read lands, and after a read that failed, which leaves
+ * none, until it reads again.
  */
 export const reads = {
   /**

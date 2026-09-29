@@ -1,20 +1,10 @@
 import * as React from 'react'
 
 import { cn } from '../lib/utils'
-import { BesideLinkContext } from './beside-link'
+import { LinkHolder } from './link-holder'
 import { leafOf, pathKey } from './path'
 import type { Path } from './seam'
 import { InsideLinkContext, useSurfaceContext } from './surface-context'
-
-/**
- * A link's hit area stretched across the element it is drawn in, beneath what
- * is drawn there, so a click or a ⌘-click on the element's empty parts is the
- * link's, and what is drawn on it, a word with its tip or a control of its
- * own, is met first. The element is positioned and holds its own stacking
- * context, `relative isolate`, and the link holds no box of its own, so what
- * is inside it flows in the element's layout.
- */
-export const stretchedLink = "contents after:absolute after:inset-0 after:-z-10 after:content-['']"
 
 /**
  * A node the view draws: something the focus can be on. It says where it is,
@@ -29,11 +19,10 @@ export const stretchedLink = "contents after:absolute after:inset-0 after:-z-10 
  * around never scrolls the page.
  *
  * A link may hold no other, so a control of its own that belongs on the node,
- * such as a link to somewhere else, is drawn `beside` it. The node is then
- * the element that holds the link and what is beside it, and its link, drawn
- * without a box and stretched across the node, holds what the node draws, so
- * a click on the node is still the node's, wherever it lands but on the
- * control.
+ * such as a link to somewhere else, is drawn `beside` it. The node is then a
+ * `LinkHolder`: the element that holds the link and what is beside it, and
+ * its link is stretched across the node, so a click on the node is still the
+ * node's, wherever it lands but on the control.
  */
 export function Node({ path, as: Tag = 'div', holds = false, beside, className, nodeRef, children, ...rest }: {
   readonly path: Path
@@ -48,7 +37,9 @@ export function Node({ path, as: Tag = 'div', holds = false, beside, className, 
    * What is drawn beside the node's link, outside it: a control of its own,
    * which a link cannot hold. A click on it is its own, so it neither takes
    * the focus nor runs the node's Enter; what a view draws there that is no
-   * control can be drawn in `BesideLink`, so it is the node's again.
+   * control can be drawn in `BesideLink`, so it is the node's again. What is
+   * beside the link lets the pointer through, to the link stretched under it,
+   * so a control takes the pointer for itself with `pointer-events-auto`.
    */
   readonly beside?: React.ReactNode
   readonly className?: string | undefined
@@ -92,7 +83,6 @@ export function Node({ path, as: Tag = 'div', holds = false, beside, className, 
       'relative scroll-my-12 rounded-md data-focused:ring-2 data-focused:ring-primary',
       // A link is inline by itself, and a node is a block unless it says otherwise.
       address !== null && !holding && 'block',
-      holding && 'isolate',
       className,
     ),
     ...rest,
@@ -109,13 +99,9 @@ export function Node({ path, as: Tag = 'div', holds = false, beside, className, 
   }
   if (holding) {
     return (
-      <Tag {...attributes}>
-        <Link address={address} data-node-link="" tabIndex={-1} className={stretchedLink}>
-          <InsideLinkContext value>{children}</InsideLinkContext>
-        </Link>
-        <BesideLinkContext value={{ address, node: true }}>{beside}</BesideLinkContext>
-        {mark}
-      </Tag>
+      <LinkHolder as={Tag} address={address} node beside={<>{beside}{mark}</>} {...attributes}>
+        {children}
+      </LinkHolder>
     )
   }
   return (
