@@ -141,12 +141,20 @@ answered when the daemon last asked, each dated by its own ask, the fact in its
 tip and the list in its prompt. When a source cannot answer, a dim `!` stands in
 their place, with the source's named notice, dated by its ask, in the detail
 line. The pull request's number is a `Badge` coloured by its state and red while
-a check fails. The Terminal and Editor commands ask `cmux` and `zed` when they
-run and give the tool's own line in the detail line when it refuses. `e` on an
-item opens `zed --classic <worktree> <file>:1`, a file inside that worktree's
-`.session` only. The daemon asks a source only for a page that shows its answer:
-gh for the index or any board, and linear for a worktree's board alone, so an
-open index never spends Linear's limit.
+a check fails, and a link to the pull request drawn beside the link of the row,
+the step or the name it marks, never inside it, since a link holds no other: a
+plain click on it opens the pull request once, as the Pull request command does,
+and takes no focus, a click with a modifier or the middle button is the
+browser's, and the substrate's part is `LinkHolder`, the element that holds a
+link stretched across it and what stands beside it, with `BesideLink` drawing
+the marks that are no controls in that link again and each node's own link
+marked `data-node-link` for the view's clicks and the drag. The Terminal and
+Editor commands ask `cmux` and `zed` when they run and give the tool's own line
+in the detail line when it refuses. `e` on an item opens `zed --classic
+<worktree> <file>:1`, a file inside that worktree's `.session` only. The daemon
+asks a source only for a page that shows its answer: gh for the index or any
+board, and linear for a worktree's board alone, so an open index never spends
+Linear's limit.
 
 Every rendered thing says what it means from where it is: a word carries its
 sentence as a tip, a control says what it will do, and no surface needs a
@@ -205,6 +213,12 @@ the description does not name draws the not-found page; the daemon answers an
 unknown key's page load with the shell, anything else with JSON 404; moving
 between pages stays in the document, a page being one component per address that
 closes its stream and its dialogs as it leaves and reads again when it mounts.
+Every read is kept for the document's life, so a page drawn again draws the last
+answer of each read at once, the agents overlay's dots included, which are the
+last listing's until the read lands, and a skeleton is drawn only while the
+document holds no answer for the key; the read a page makes as it mounts lands
+over what it drew, and a session's write made on that answer goes against the
+revision it drew, so the daemon refuses a stale one and the page reads again.
 Every read is a TanStack Query query, read when its page mounts and, where its
 answer can change, again on the event that names it, one read per event since
 the stream carries no payload; an epic's or a project's board reads its rows

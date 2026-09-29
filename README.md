@@ -50,26 +50,27 @@ how many items each stage holds, every glyph measured against the fewest and the
 most any stage on the page holds so a height means the same on every row, and
 the marks of what can need you now: a dot per live agent, a `!` for a source
 that could not answer or a file that breaks a rule, and the pull request's
-number, a badge coloured by its state and red while a check fails. Everything
-else about the focused row is in the detail line along the bottom. A repository
-is headed by its main worktree, under its own name; when that has no session, by
-its name, marked Not tracked, so its worktrees still have a home; and when Git
-lists the repository by its Git directory, by that directory's name, marked Git
-directory: always for a bare repository, and for a submodule or a separate Git
-directory only while the daemon does not track its main worktree. A folder
-outside Git is a project of its own. An epic whose worktrees belong to more than
-one project is drawn once, under Across projects. A project whose main worktree
-the daemon tracks is carried among the projects with `Shift+j` and `Shift+k`, or
-dragged by its row, and a worktree within its epic the same way; the ones placed
-stand first, in the order they were placed in, and keep their places when they
-go quiet. The rest, projects and the rows in each alike, stand in one order: the
-ones with a live agent first, then by their latest activity, and one with
-nothing live and nothing in five days dim and last, a project counting every
-worktree of it wherever it is drawn. Join an epic… puts the marked worktrees, or
-the focused one, in an epic, new or existing, and Leave the epic takes them out;
-a drag onto an epic, onto a worktree in no epic, onto the `+` that appears after
-its project's rows while one is held, or out of its epic onto empty space does
-the same with the mouse. `session join "<epic>"` and `session leave` do the same
+number, a badge coloured by its state and red while a check fails and a link to
+the pull request. Everything else about the focused row is in the detail line
+along the bottom. A repository is headed by its main worktree, under its own
+name; when that has no session, by its name, marked Not tracked, so its
+worktrees still have a home; and when Git lists the repository by its Git
+directory, by that directory's name, marked Git directory: always for a bare
+repository, and for a submodule or a separate Git directory only while the
+daemon does not track its main worktree. A folder outside Git is a project of
+its own. An epic whose worktrees belong to more than one project is drawn once,
+under Across projects. A project whose main worktree the daemon tracks is
+carried among the projects with `Shift+j` and `Shift+k`, or dragged by its row,
+and a worktree within its epic the same way; the ones placed stand first, in the
+order they were placed in, and keep their places when they go quiet. The rest,
+projects and the rows in each alike, stand in one order: the ones with a live
+agent first, then by their latest activity, and one with nothing live and
+nothing in five days dim and last, a project counting every worktree of it
+wherever it is drawn. Join an epic… puts the marked worktrees, or the focused
+one, in an epic, new or existing, and Leave the epic takes them out; a drag onto
+an epic, onto a worktree in no epic, onto the `+` that appears after its
+project's rows while one is held, or out of its epic onto empty space does the
+same with the mouse. `session join "<epic>"` and `session leave` do the same
 from a terminal, and `session order` places a project or a worktree as a carry
 does. Each board sits under `/w/<worktree name>/`. Activity is when the worktree
 last did anything: a Claude Code session's status change, a Codex thread's
@@ -274,9 +275,11 @@ palette, the key map, the path line and the detail line are a substrate under
 `app/src/substrate/` that holds no session noun and asks the app everything
 through one seam; every command is an Effect Schema value in one registry,
 decoded when the app loads so a clash fails the build, and every key is bound
-from it. Every read is a TanStack Query query, read when its page mounts and,
-where its answer can change, again on the event that names it; an epic's or a
-project's board reads its rows again on `worktrees`, since they are its
+from it. Every read is kept for the document's life, so a page drawn again draws
+its last answer at once and a skeleton only while the document holds no answer
+for the key. Every read is a TanStack Query query, read when its page mounts
+and, where its answer can change, again on the event that names it; an epic's or
+a project's board reads its rows again on `worktrees`, since they are its
 membership, and what the daemon says about itself when a page mounts and when a
 stream comes back, a changed `sourceStamp` reloading the page, drag and all. A
 board's page reads that description before it mounts instead, since it names the
