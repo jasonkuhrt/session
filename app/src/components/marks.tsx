@@ -3,8 +3,10 @@ import { isDerivedName, nameMeaning, sessionName } from '../lib/agent-names'
 import { heldMeaning, heldWord, isLive, loadedMeaning, meaningOf, needsYou, sortSessions, sortThreads, wordOfThread } from '../lib/agents'
 import { absoluteTime, checkoutLabel, tokenCount } from '../lib/format'
 import { checksMark, reviewMeaning, reviewWord, stateMeaning, stateWord } from '../lib/links'
+import { openOnceOnClick } from '../lib/open-once'
 import { problemSentence, trailerMeaning } from '../lib/trailers'
 import { cn } from '../lib/utils'
+import { BesideLink } from '../substrate/link-holder'
 import type { Fact } from '../substrate/seam'
 import { Dot } from './agent-marks'
 import { useTip } from './tip'
@@ -16,8 +18,12 @@ import { Badge } from './ui/badge'
  * live agent, the one accent a session waiting on a person, a `!` for a
  * source that could not answer or a file that breaks a rule, and its pull
  * request's number, a badge coloured by its state and red while a check
- * fails. The rest of what is known about it is in the detail line, while it
- * has the focus.
+ * fails, which is a link to the pull request. They are drawn beside the link
+ * of the row, the step or the name they are marks of, since a link holds no
+ * other; everything but the number is drawn in that link again, in a box that
+ * holds the space between the marks and before the number, so a click on any
+ * of it is the row's, the step's or the name's. The rest of what is known
+ * about it is in the detail line, while it has the focus.
  */
 
 /** What a worktree's marks and facts are read from: its row, and a board's own reads of it when the page has them. */
@@ -93,12 +99,15 @@ const toneText = {
  * A tone as the badge the number is drawn as: the stock destructive badge for
  * red, and for the others the stock secondary one in the tone's colour, over
  * a tint of it as the destructive one is, but for a draft's, which is dim.
+ * The number is a link, so the secondary badge's neutral tint under the
+ * pointer would turn the tone grey: green and magenta take a deeper tint of
+ * their own there, which replaces it.
  */
 const toneBadge = {
   red: { variant: 'destructive' },
-  magenta: { variant: 'secondary', className: 'bg-(--tn-magenta)/20 text-(--tn-magenta)' },
+  magenta: { variant: 'secondary', className: 'bg-(--tn-magenta)/20 text-(--tn-magenta) [a]:hover:bg-(--tn-magenta)/30' },
   dim: { variant: 'secondary', className: 'text-muted-foreground' },
-  green: { variant: 'secondary', className: 'bg-(--tn-green)/20 text-(--tn-green)' },
+  green: { variant: 'secondary', className: 'bg-(--tn-green)/20 text-(--tn-green) [a]:hover:bg-(--tn-green)/30' },
 } as const satisfies Record<ReturnType<typeof prTone>, { readonly variant: 'destructive' | 'secondary'; readonly className?: string }>
 
 /** A pull request in one line: gh's own words for where it stands and how its checks do. */
@@ -122,27 +131,64 @@ export function Marks({ signals, now, className }: { readonly signals: Signals; 
   const problems = problemsOf(signals)
   const notices = noticesOf(signals)
   const pr = signals.pullRequest?.pr ?? null
-  if (sessions.length + threads.length + problems.length + notices.length === 0 && pr === null) return null
+  const words = sessions.length + threads.length + problems.length + notices.length
+  if (words === 0 && pr === null) return null
   return (
-    <span className={cn('inline-flex shrink-0 items-center gap-2', className)}>
-      {sessions.length + threads.length === 0 ? null : (
-        <span className="inline-flex items-center gap-1">
-          {sessions.map((session) => (
-            <span key={session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`} className="inline-flex" title={tip(`${sessionWords(session, now)}: ${meaningOf(session)}`)}>
-              <Dot tone={needsYou(session) ? 'attention' : 'on'} />
+    <span className={cn('inline-flex shrink-0 items-center', className)}>
+      {words === 0 ? null : (
+        // The link is a box that holds the marks and the space between them and before the number.
+        <BesideLink className={cn('inline-flex items-center gap-2', pr !== null && 'pr-2')}>
+          {sessions.length + threads.length === 0 ? null : (
+            <span className="inline-flex items-center gap-1">
+              {sessions.map((session) => (
+                <span key={session.sessionId ?? session.backgroundId ?? `${session.kind}:${session.pid}`} className="inline-flex" title={tip(`${sessionWords(session, now)}: ${meaningOf(session)}`)}>
+                  <Dot tone={needsYou(session) ? 'attention' : 'on'} />
+                </span>
+              ))}
+              {threads.map((thread) => (
+                <span key={thread.id} className="inline-flex" title={tip(`${threadWords(thread)}: an app holds this Codex thread open.`)}>
+                  <Dot tone="on" />
+                </span>
+              ))}
             </span>
-          ))}
-          {threads.map((thread) => (
-            <span key={thread.id} className="inline-flex" title={tip(`${threadWords(thread)}: an app holds this Codex thread open.`)}>
-              <Dot tone="on" />
-            </span>
-          ))}
-        </span>
+          )}
+          {problems.length === 0 ? null : <span title={tip(problems.join(' '))} className="font-mono text-xs font-semibold text-destructive">!</span>}
+          {notices.length === 0 ? null : <span title={tip(notices.join(' '))} className="font-mono text-xs font-semibold text-muted-foreground">!</span>}
+        </BesideLink>
       )}
-      {problems.length === 0 ? null : <span title={tip(problems.join(' '))} className="font-mono text-xs font-semibold text-destructive">!</span>}
-      {notices.length === 0 ? null : <span title={tip(notices.join(' '))} className="font-mono text-xs font-semibold text-muted-foreground">!</span>}
-      {pr === null ? null : <Badge {...toneBadge[prTone(pr)]} title={tip(prSentence(pr))}>#{pr.number}</Badge>}
+      {pr === null ? null : <PullRequestNumber pr={pr} />}
     </span>
+  )
+}
+
+/**
+ * The pull request's number: a badge coloured by where the pull request
+ * stands, and a link to its own address. A plain click on it opens the pull
+ * request once, in a tab named for its address, as the Pull request command
+ * does, and does nothing else, since it is a control of its own and not part
+ * of the link it is drawn beside: it neither takes the focus nor opens the
+ * row, the step or the name. A click with ⌘, Ctrl, Alt or Shift held, or with
+ * any button but the first, is the browser's, so ⌘-click and a middle click
+ * open the address in a new tab. A press leaves the browser's focus with the
+ * page, as a press on a node does, so the key after a click reaches the
+ * registry. It takes the pointer for itself, since what stands beside a link
+ * lets it through.
+ */
+function PullRequestNumber({ pr }: { readonly pr: PullRequest }) {
+  const tip = useTip()
+  const tone: { readonly variant: 'destructive' | 'secondary'; readonly className?: string } = toneBadge[prTone(pr)]
+  return (
+    <Badge
+      variant={tone.variant}
+      className={cn(tone.className, 'pointer-events-auto')}
+      render={<a href={pr.url} target="_blank" rel="noreferrer" aria-label={`#${pr.number} pull request`} />}
+      tabIndex={-1}
+      title={tip(prSentence(pr))}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={openOnceOnClick(pr.url)}
+    >
+      #{pr.number}
+    </Badge>
   )
 }
 

@@ -6,11 +6,18 @@ import type { Path, Seam, SurfaceApi } from './seam'
 
 /**
  * What a click on a view leaves to the element it landed in: a link, a button,
- * a field. A node drawn as a link is not one of them, since its click is the
- * node's, and neither is a word with its tip behind it, which Tips draws as a
- * button and which is still a word, as it is to a drag.
+ * a field. A node's own link is not one of them, since its click is the
+ * node's: the link a node is drawn as, or is drawn around what it draws, and
+ * the same link a view draws again beside it, each marked `data-node-link`.
+ * Neither is a word with its tip behind it, which Tips draws as a button and
+ * which is still a word, as it is to a drag. Any other link is a control of
+ * its own, so a click on it takes no focus and runs no Enter.
  */
-const ownClick = 'a[href]:not([data-node]), button:not([data-explained]), input, summary'
+const ownClick = 'a[href]:not([data-node-link]), button:not([data-explained]), input, summary'
+
+/** The node an event landed in, unless it landed in a control of its own. */
+const nodeOfEvent = (event: MouseEvent) =>
+  event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
 
 /**
  * Whether a click is the browser's rather than the view's: one with ⌘, Ctrl,
@@ -54,11 +61,13 @@ function useDragEnd(held: boolean) {
  * landed in, with what the node is; a click on a link or a button inside a
  * node is its own, and a click the browser answers is left to it. A node
  * drawn as a link leaves its address to the browser that way and nothing
- * else: a plain click on it is the view's, so the link does not follow
+ * else: a plain click on its link is the view's, so the link does not follow
  * itself. A press on a node leaves the browser's focus where it is, so the
  * keys that follow still reach the registry rather than the node. A click a
  * browser makes of the release that ends a drag runs nothing, and follows no
- * link.
+ * link, and neither does one made of a press on a control of its own that
+ * slid off it and was released elsewhere in the node, which the browser aims
+ * at the node around both: the press was the control's, not the node's.
  */
 export function useViewClicks({ view, drawn, held, clicked }: {
   readonly view: React.RefObject<HTMLElement | null>
@@ -72,12 +81,14 @@ export function useViewClicks({ view, drawn, held, clicked }: {
     latest.current = clicked
   })
   const dragEnded = useDragEnd(held)
+  /** The control of its own the last press landed in, until the click that follows it, if any, is heard. */
+  const pressed = React.useRef<Element | null>(null)
   React.useEffect(() => {
     const element = view.current
     if (element === null) return () => null
-    const nodeOfEvent = (event: MouseEvent) =>
-      event.target instanceof Element && event.target.closest(ownClick) === null ? event.target.closest<HTMLElement>('[data-node]') : null
     const onClick = (event: MouseEvent) => {
+      const control = pressed.current
+      pressed.current = null
       // Nothing follows it, a link it lands on included.
       if (dragEnded.current) {
         dragEnded.current = false
@@ -85,15 +96,19 @@ export function useViewClicks({ view, drawn, held, clicked }: {
         return
       }
       if (browserClick(event)) return
+      // A press on a control of its own is the control's, wherever it is released.
+      if (control !== null && !(event.target instanceof Node && control.contains(event.target))) return
       const landed = nodeOfEvent(event)
       const key = landed?.dataset['node']
       const node = key === undefined ? undefined : drawn.current.get(key)
       if (landed === null || key === undefined || node === undefined) return
-      // A node drawn as a link would follow itself; its click is the view's.
-      if (landed instanceof HTMLAnchorElement) event.preventDefault()
+      // A node's own link would follow itself; its click is the view's.
+      const link = event.target instanceof Element ? event.target.closest('a[data-node-link]') : null
+      if (link !== null && landed.contains(link)) event.preventDefault()
       latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {
+      pressed.current = event.target instanceof Element ? event.target.closest(ownClick) : null
       if (nodeOfEvent(event) !== null) event.preventDefault()
     }
     element.addEventListener('click', onClick)
@@ -102,7 +117,7 @@ export function useViewClicks({ view, drawn, held, clicked }: {
       element.removeEventListener('click', onClick)
       element.removeEventListener('mousedown', onPress)
     }
-  }, [view, drawn, dragEnded])
+  }, [view, drawn, dragEnded, pressed])
 }
 
 /**

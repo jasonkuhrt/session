@@ -17,7 +17,7 @@ import { useFolds } from './lib/folds'
 import { useFollowed } from './lib/follow'
 import { absoluteTime, relativeTime } from './lib/format'
 import { listingMeta } from './lib/listings'
-import { reads, reread, sinceMount } from './lib/reads'
+import { reads, reread } from './lib/reads'
 import { useStream } from './lib/stream'
 import { idOf } from './levels'
 import type { PageActions } from './session-seam'
@@ -173,7 +173,7 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   const client = useQueryClient()
   const folds = useFolds()
   const rowsRead = useQuery(reads.worktrees())
-  const rows = sinceMount(rowsRead)
+  const rows = rowsRead.data
   const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
   const listedRows = rows ?? []
   const served = union?.rows.filter((row) => !keyTaken({ row, rows: listedRows })) ?? []
@@ -190,7 +190,7 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
   if (union === null) return <NoPage />
 
   const listed = served.flatMap((row, index) => {
-    const read = sinceMount(ledgers[index])
+    const read = ledgers[index]?.data
     return read === undefined ? [] : [{ row, place: read[0], listing: read[1] }]
   })
   const drawn: Drawn[] = listed
@@ -203,11 +203,11 @@ export function UnionLedgerPage({ filter }: { readonly filter: UnionFilter }) {
     ...served.flatMap((row, index) => {
       const read = ledgers[index]
       const error = read?.error ?? null
-      const problem = error === null ? problemOf(sinceMount(read)?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
+      const problem = error === null ? problemOf(read?.data?.[0] ?? null) : messageOf(error, 'Could not load the ledger')
       return problem === null ? [] : [`${row.name}: ${problem}`]
     }),
   ]
-  const loading = !rowsRead.isFetchedAfterMount || (ledgers.length > 0 && ledgers.every((read) => !read.isFetchedAfterMount))
+  const loading = rowsRead.isPending || (ledgers.length > 0 && ledgers.every((read) => read.isPending))
   const foldKey = `ledger:${filter.kind}:${filter.kind === 'epic' ? filter.name : filter.path}`
   const recordId = idOf({ kind: 'record', page: 'ledger', path: '' })
   const directories = new Map(listed.map(({ row, place }) => [row.key, place.kind === 'read' ? place.directory : null]))

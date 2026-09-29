@@ -10,10 +10,11 @@ import { routeTree } from './routeTree.gen'
  * stays in the document: a link or a key that opens a page navigates the
  * router, which is safe because the board is one script, so no page's code is
  * fetched after the document loaded. A page leaving unmounts, which closes its
- * streams and its dialogs and drops its reads; the page arriving mounts, reads
- * and opens its own. Where a page is scrolled follows its focus, which the
- * address carries, so Back comes back to the focus it left, brought into
- * view, rather than to a scroll offset kept aside.
+ * streams and its dialogs and keeps its reads; the page arriving mounts, draws
+ * the last answer the document has of each read it makes, reads each again and
+ * lands that over it, and opens its own stream. Where a page is scrolled
+ * follows its focus, which the address carries, so Back comes back to the
+ * focus it left, brought into view, rather than to a scroll offset kept aside.
  */
 export function getRouter() {
   const queryClient = new QueryClient({
@@ -30,15 +31,16 @@ export function getRouter() {
         // The daemon is on this machine, so a browser that reports itself
         // offline must not pause a read of it.
         networkMode: 'always',
-        // An answer no page shows is dropped, so a page that mounts again
-        // reads again instead of drawing an old answer.
-        gcTime: 0,
-        // A page reads when it mounts, even when the page it replaced was
-        // showing the same answer a moment ago, as the index and a board's
-        // picker share the worktrees, and draws only what it read since
-        // (`isFetchedAfterMount`): its stream only hears of changes from the
-        // moment it opens. What the daemon says about itself is the one
-        // answer kept for the whole document (`reads.daemon`).
+        // Every answer is kept for as long as the document lives, so a page
+        // that mounts again draws the last answer of each read it makes at
+        // once, and a skeleton is drawn only while the document holds no
+        // answer for the key.
+        gcTime: Number.POSITIVE_INFINITY,
+        // A page reads when it mounts, even when it drew an answer the
+        // document already had a moment ago, since its stream only hears of
+        // changes from the moment it opens, and what that read brings lands
+        // over what the page drew. What the daemon says about itself is the
+        // one read a page does not make again as it mounts (`reads.daemon`).
         refetchOnMount: 'always',
       },
     },

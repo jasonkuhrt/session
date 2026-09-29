@@ -12,7 +12,7 @@ import { SessionApi } from './lib/api'
 import { archiveStateMeaning, readArchivedItem } from './lib/archive'
 import { useBoardName, useBoardPath } from './lib/base'
 import { useFolds } from './lib/folds'
-import { landWrite, reread } from './lib/reads'
+import { landWrite, reads, reread } from './lib/reads'
 import { extentOf, isEvidence, sectionsOf } from './lib/sections'
 import { useSessionWrites } from './lib/session-mutations'
 import { useStream } from './lib/stream'
@@ -108,7 +108,13 @@ function useItem(board: string, id: string) {
   const writes = useSessionWrites({
     revisionOf,
     // A write lands as a read does: an item it filed away is shown in the archive rather than as gone.
-    onSession: (_board, next) => landWrite({ client, queryKey: itemRead(board, id).queryKey, answer: () => landed({ board, id, session: next }) }),
+    // Its answer is the whole session, which is the board's own read too, so the board Back comes to draws it.
+    onSession: async (_board, next) => {
+      await Promise.all([
+        landWrite({ client, queryKey: itemRead(board, id).queryKey, answer: () => landed({ board, id, session: next }) }),
+        landWrite({ client, queryKey: reads.session(board).queryKey, answer: () => next }),
+      ])
+    },
     reload,
   })
   useStream({ board, on: { changed: reload } })

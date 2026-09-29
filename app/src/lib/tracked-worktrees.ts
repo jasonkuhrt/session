@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as React from 'react'
 
-import { reads, reread, sinceMount } from './reads'
+import { reads, reread } from './reads'
 import { useStream } from './stream'
 
 const reasonOf = (error: unknown) => (error instanceof Error ? error.message : null)
@@ -54,9 +54,9 @@ export function useTrackedWorktrees({ held }: { readonly held: boolean }) {
   })
 
   return {
-    // Only what this page read since it mounted: the board it came from may
-    // hold the rows its picker read when that board opened.
-    rows: sinceMount(rows) ?? null,
+    // The last answer the document has, drawn while the read made as the page
+    // mounts is under way, and null only until the first read lands.
+    rows: rows.data ?? null,
     notice: rows.error === null ? null : rowsProblem(rows.error),
     pullRequests: pullRequests.data ?? {},
     pullRequestsNotice: pullRequests.error === null ? null : pullRequestsProblem(pullRequests.error),

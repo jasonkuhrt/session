@@ -15,10 +15,8 @@ import { idOf, rootId } from '../levels'
 import { Node } from '../substrate/node'
 import type { Path } from '../substrate/seam'
 import type { OutlineContext } from './index-outline-parts'
-import { HeldCopy, NewEpicTarget, RefusedRow, rowGrid } from './index-outline-parts'
+import { HeldCopy, NewEpicTarget, RefusedRow, rowGrid, WorktreeNode } from './index-outline-parts'
 import { LandingLine, markedSide } from './landing-line'
-import { Marks } from './marks'
-import { StageGlyph } from './stage-glyph'
 import { useTip } from './tip'
 import { Card, CardContent } from './ui/card'
 
@@ -49,29 +47,6 @@ function useBothRefs(first: (element: Element | null) => void, second: (element:
   }, [first, second])
 }
 
-/** A worktree's row as it reads: its name, its glyph, and its marks. */
-function WorktreeLine({ row, name = row.name, context, indent, heading = false }: {
-  row: WorktreeSummary
-  name?: string
-  context: OutlineContext
-  indent: string
-  heading?: boolean
-}) {
-  const tip = useTip()
-  return (
-    <>
-      <span
-        className={cn('min-w-0 truncate', indent, heading && 'font-medium', row.conflict !== null && 'text-muted-foreground')}
-        title={tip(row.path)}
-      >
-        {name}
-      </span>
-      <span>{row.conflict === null ? <StageGlyph counts={row.counts} executing={row.executing} range={context.stageRange} /> : null}</span>
-      <span className="justify-self-end"><Marks signals={context.signalsOf(row)} now={context.now} /></span>
-    </>
-  )
-}
-
 /**
  * A worktree in an epic, held by its row: dragged up or down within its epic
  * it takes a place there, onto another epic it joins it, onto a worktree in
@@ -93,10 +68,9 @@ function MemberRow({ path, row, epic, context }: { path: Path; row: WorktreeSumm
   const ref = useBothRefs(holdRef, dropRef)
   const side = markedSide({ marker: context.marker, list: epicList(epic), id: row.path })
   return (
-    <Node path={path} nodeRef={ref} className={cn(rowGrid, isDragSource && 'opacity-40')}>
+    <WorktreeNode path={path} nodeRef={ref} className={cn(isDragSource && 'opacity-40')} row={row} context={context} indent="pl-8">
       {side === null ? null : <LandingLine side={side} gap="row" />}
-      <WorktreeLine row={row} context={context} indent="pl-8" />
-    </Node>
+    </WorktreeNode>
   )
 }
 
@@ -111,13 +85,14 @@ function LooseRow({ path, row, context, quiet }: { path: Path; row: WorktreeSumm
   const { ref: dropRef } = useDroppable({ id: onto, accept: cardsAccept, collisionDetector: pointerIntersection, collisionPriority: CollisionPriority.Normal, disabled: context.writing })
   const ref = useBothRefs(holdRef, dropRef)
   return (
-    <Node
+    <WorktreeNode
       path={path}
       nodeRef={ref}
-      className={cn(rowGrid, quiet && 'opacity-60', isDragSource && 'opacity-40', context.landingOn === onto && landing)}
-    >
-      <WorktreeLine row={row} context={context} indent="pl-4" />
-    </Node>
+      className={cn(quiet && 'opacity-60', isDragSource && 'opacity-40', context.landingOn === onto && landing)}
+      row={row}
+      context={context}
+      indent="pl-4"
+    />
   )
 }
 
@@ -204,9 +179,20 @@ function ProjectBlock({ section, context, newEpicOf }: { section: ProjectSection
     <section ref={dropRef} aria-label={section.name} className={cn('relative', isDragSource && 'opacity-40')}>
       {side === null ? null : <LandingLine side={side} gap="section" />}
       <SectionCard>
-        <Node path={path} nodeRef={holdRef} className={cn(rowGrid, section.quiet && 'opacity-60')}>
-          {head === null ? <NamedHead section={section} /> : <WorktreeLine row={head} name={section.name} context={context} indent="" heading />}
-        </Node>
+        {head === null
+          ? <Node path={path} nodeRef={holdRef} className={cn(rowGrid, section.quiet && 'opacity-60')}><NamedHead section={section} /></Node>
+          : (
+            <WorktreeNode
+              path={path}
+              nodeRef={holdRef}
+              className={cn(section.quiet && 'opacity-60')}
+              row={head}
+              name={section.name}
+              context={context}
+              indent=""
+              heading
+            />
+          )}
         {section.cards.map((card) =>
           card.kind === 'epic'
             ? <EpicBlock key={`epic:${card.name}`} projectPath={path} card={card} context={context} />

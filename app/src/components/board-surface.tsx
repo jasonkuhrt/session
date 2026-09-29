@@ -25,7 +25,8 @@ import { TooltipProvider } from './ui/tooltip'
 /**
  * One worktree's part of a board, before its session is known: its board's
  * prefix, the key it is served under, the worktree's name, and its session
- * once the page has read it since it mounted.
+ * once the document has read it, as last read until the read the page makes
+ * as it mounts lands over it.
  */
 type SurfacePart = { readonly board: string; readonly key: string; readonly name: string; readonly session: Session | null }
 
@@ -62,7 +63,7 @@ export function BoardSurface({ place, leaf, title, parts, rows, grouped, loading
   /** What the tab names the board. */
   readonly title: string
   readonly parts: readonly SurfacePart[]
-  /** Every row, read since the page mounted; null until it is. */
+  /** Every row, as last read; null until they have been. */
   readonly rows: readonly WorktreeSummary[] | null
   readonly grouped: boolean
   /** Whether the first read of what the lanes draw has yet to land. */

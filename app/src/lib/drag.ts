@@ -26,20 +26,27 @@ const dragThresholdPixels = 5
  * A control a press belongs to, which a drag never starts from: the ones the
  * library knows, links, buttons and fields, and the ones drawn as something
  * else, such as a pill that opens a menu, which opens the moment it is pressed.
+ * The nearest one between the press and the element dragged decides, since
+ * the element dragged is itself drawn as a button, which is no control inside
+ * it, and a pill inside a card drawn as a link is met before the link.
  * Anywhere inside a handle a drag starts, as the library has it, since a handle
  * is there to be pressed, and so it does anywhere inside a card or a row drawn
- * as a link, which is the element dragged rather than a control inside it. A
- * word with its tip behind it is not a control, though Tips draws it as a
- * button outside a link, so turning tips on never changes what can be
- * dragged.
+ * as a link, which is the element dragged rather than a control inside it, and
+ * anywhere on a node's own link, whether it is the element dragged or drawn in
+ * it. A word with its tip behind it is not a control, though Tips draws it as
+ * a button outside a link, so turning tips on never changes what can be
+ * dragged. Any other link is a control: a drag never starts on the pull
+ * request's number, which a click there opens.
  */
 const pressBelongsToControl = (event: PointerEvent, source: Draggable) => {
   const { target } = event
   if (!isElement(target) || target === source.element || source.handle?.contains(target) === true) return false
-  // A pill first: inside a card drawn as a link, the link is always found.
-  const control = target.closest('[aria-haspopup], [role="button"]') ?? getInteractiveElement(target)
-  if (control === null || control === source.element) return false
-  return !(control instanceof HTMLElement && Object.hasOwn(control.dataset, 'explained'))
+  for (let at: Element | null = target; at !== null && at !== source.element; at = at.parentElement) {
+    if (at.matches('[aria-haspopup], [role="button"]') || getInteractiveElement(at) === at) {
+      return !(at instanceof HTMLElement && (Object.hasOwn(at.dataset, 'explained') || Object.hasOwn(at.dataset, 'nodeLink')))
+    }
+  }
+  return false
 }
 
 export const dragSensors = [

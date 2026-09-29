@@ -5,7 +5,7 @@ import type { Item, Session, WorktreeSummary } from '../../contract'
 import { IndexApi } from '../lib/api'
 import { useCapabilities } from '../lib/capabilities'
 import { useNow } from '../lib/clock'
-import { reads, reread, sinceMount } from '../lib/reads'
+import { reads, reread } from '../lib/reads'
 import type { SessionWrite } from '../lib/session-mutations'
 import type { PageActions } from '../session-seam'
 import { useSessionSeam } from '../session-seam'
@@ -66,7 +66,7 @@ export function PageSurface({ place, leaf, title, sessions, archived, entries, w
   const now = useNow()
   const capabilities = useCapabilities()
   const rowsRead = useQuery(reads.worktrees())
-  const rows = sinceMount(rowsRead) ?? null
+  const rows = rowsRead.data ?? null
   const { seam } = useSessionSeam({
     place,
     leaf,

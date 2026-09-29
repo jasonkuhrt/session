@@ -1,6 +1,7 @@
 import * as React from 'react'
 
 import { cn } from '../lib/utils'
+import { LinkHolder } from './link-holder'
 import { leafOf, pathKey } from './path'
 import type { Path } from './seam'
 import { InsideLinkContext, useSurfaceContext } from './surface-context'
@@ -16,8 +17,14 @@ import { InsideLinkContext, useSurfaceContext } from './surface-context'
  * status bar shows where it goes. When it becomes the focus it brings itself
  * into view, so a move scrolls to what it reached and a read that moves nodes
  * around never scrolls the page.
+ *
+ * A link may hold no other, so a control of its own that belongs on the node,
+ * such as a link to somewhere else, is drawn `beside` it. The node is then a
+ * `LinkHolder`: the element that holds the link and what is beside it, and
+ * its link is stretched across the node, so a click on the node is still the
+ * node's, wherever it lands but on the control.
  */
-export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef, children, ...rest }: {
+export function Node({ path, as: Tag = 'div', holds = false, beside, className, nodeRef, children, ...rest }: {
   readonly path: Path
   readonly as?: 'div' | 'li' | 'section' | 'h2' | 'h3'
   /**
@@ -26,6 +33,15 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
    * is never a link, since a link can hold no other link.
    */
   readonly holds?: boolean
+  /**
+   * What is drawn beside the node's link, outside it: a control of its own,
+   * which a link cannot hold. A click on it is its own, so it neither takes
+   * the focus nor runs the node's Enter; what a view draws there that is no
+   * control can be drawn in `BesideLink`, so it is the node's again. What is
+   * beside the link lets the pointer through, to the link stretched under it,
+   * so a control takes the pointer for itself with `pointer-events-auto`.
+   */
+  readonly beside?: React.ReactNode
   readonly className?: string | undefined
   /** A ref the drag library also needs on this element. */
   readonly nodeRef?: ((element: Element | null) => void) | undefined
@@ -50,6 +66,8 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     }
   }, [nodeRef, register, key, scope, holds])
   const address = holds ? null : linkOf(path)
+  // A node with a control beside its link is the element that holds both.
+  const holding = address !== null && beside !== undefined
   React.useEffect(() => {
     if (focused) element.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [focused])
@@ -64,7 +82,7 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     className: cn(
       'relative scroll-my-12 rounded-md data-focused:ring-2 data-focused:ring-primary',
       // A link is inline by itself, and a node is a block unless it says otherwise.
-      address !== null && 'block',
+      address !== null && !holding && 'block',
       className,
     ),
     ...rest,
@@ -74,12 +92,20 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     return (
       <Tag {...attributes}>
         {children}
+        {beside}
         {mark}
       </Tag>
     )
   }
+  if (holding) {
+    return (
+      <LinkHolder as={Tag} address={address} node beside={<>{beside}{mark}</>} {...attributes}>
+        {children}
+      </LinkHolder>
+    )
+  }
   return (
-    <Link address={address} {...attributes}>
+    <Link address={address} data-node-link="" {...attributes}>
       <InsideLinkContext value>{children}</InsideLinkContext>
       {mark}
     </Link>
