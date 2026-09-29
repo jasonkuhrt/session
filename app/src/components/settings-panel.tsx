@@ -24,7 +24,7 @@ export function SettingsPanel() {
       </div>
       <ColourSetting
         name="Code colour"
-        does="Inline code on every page is drawn in this hue; a code block keeps the text's colour."
+        does="Inline code on every page is drawn in this hue; a TypeScript, JSON or shell block is coloured by Tokyo Night, and any other block keeps the text's colour."
         value={settings.codeColor}
         onChange={(codeColor) => changeSettings({ codeColor })}
       />
