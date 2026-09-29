@@ -743,8 +743,9 @@ breaks a rule, a `Session-Done` trailer it cannot act on or a `meta/epic` or
 gh, linear or an agents' listing; and the number of its branch's pull request,
 a badge coloured by its state, green while open, dim as a draft, magenta once
 merged, red once closed, and red
-whatever its state while any check fails. The detail line of a worktree says
-the rest, in this order: its name; what it has checked out, its branch,
+whatever its state while any check fails, and it is a link to the pull request
+itself, as the pull request's fact below says. The detail line of a worktree
+says the rest, in this order: its name; what it has checked out, its branch,
 `Detached HEAD` for a commit, or `No branch` for a folder outside Git; why it is
 not served when it is not; its pull request, as the pull request's fact below
 has it; each live agent, its name, its word with its time and what is in its
@@ -941,7 +942,17 @@ checks. Its tip names gh's exact words, prints the three counts, and says when
 gh was asked. The mark is the number alone, coloured by the state, green while
 open, dim as a draft, magenta once merged and red once closed, and red whatever
 the state while any check fails, since a failing check can need you now. The
-counts are taken from gh's `statusCheckRollup`, every entry once: a check run
+number is a link to the pull request's own address, wherever it is drawn: in a
+worktree's row on the index, in a step of the path line and beside a worktree's
+name on an epic's or a project's board. A plain click on it opens the pull
+request, as the Pull request command does, in a tab named for its address, and
+does nothing else: it takes no focus and runs no Enter, so the row, the step or
+the name it is on stays as it was. A click with ⌘, Ctrl, Alt or Shift held, or
+with the middle button, is the browser's, so it opens the address in a new tab.
+A link holds no other, so the number is drawn beside the link of what it is a
+mark of, never inside it; the dots and the `!` are inside that link, so a click
+on one is the row's, the step's or the name's. The counts are taken from gh's
+`statusCheckRollup`, every entry once: a check run
 passed when it completed with `SUCCESS`, `NEUTRAL` or `SKIPPED` and failed when
 it completed any other way; a commit status, such as a deployment's, carries
 only a state, and passed on `SUCCESS` and failed on `FAILURE` or `ERROR`;
@@ -977,7 +988,8 @@ answer, only the branch is read.
 
 Everything the board opens outside itself is opened once, except a Markdown
 link whose address the URL parser rejects, which is left to the browser as a
-plain link. The Pull request command and an issue chosen from Linear issue…
+plain link. The Pull request command, a click on the pull request's number and
+an issue chosen from Linear issue…
 open it in a tab named for its address, and a later command brings that tab
 forward as it is, without reloading it, instead of opening another; a tab is
 opened only when there is none. The name is found from the board tab that
@@ -1568,9 +1580,12 @@ click with ⌘, Ctrl, Alt or Shift held, or with any button but the first, is th
 browser's, so ⌘-click and a middle click open the address in a new tab and leave
 the page and its focus as they were, the context menu offers the link, and the
 status bar shows where it goes. A word with its tip behind it, while Tips is on,
-is part of the link it is in, and never a button there. A drag is the carry,
-join, leave or group its drop makes; it starts anywhere on a card or a row, its
-title included, and a click a browser makes of the release that drops it runs
+is part of the link it is in, and never a button there. A control of its own on
+a node, the pull request's number, is drawn beside the node's link, since a link
+holds no other, and a click on it is its own: it takes no focus and runs no
+Enter. A drag is the carry, join, leave or group its drop makes; it starts
+anywhere on a card or a row, its title included, but not on the pull request's
+number, and a click a browser makes of the release that drops it runs
 nothing.
 
 Every key is a TanStack Hotkeys registration made from the registry, in

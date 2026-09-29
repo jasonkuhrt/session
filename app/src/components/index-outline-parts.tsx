@@ -2,6 +2,7 @@ import { CollisionPriority } from '@dnd-kit/abstract'
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDroppable } from '@dnd-kit/react'
 import { Plus } from 'lucide-react'
+import type * as React from 'react'
 
 import type { WorktreeSummary } from '../../contract'
 import type { Dashboard } from '../lib/dashboard'
@@ -12,14 +13,17 @@ import { targetId } from '../lib/epics'
 import { cn } from '../lib/utils'
 import { idOf, rootId } from '../levels'
 import { Node } from '../substrate/node'
+import type { Path } from '../substrate/seam'
 import { HeldWords } from './held-words'
 import { Card, CardContent } from './ui/card'
 import type { StageRange } from '../lib/dashboard'
 import type { Marker } from '../lib/order'
 import type { Signals } from './marks'
+import { Marks } from './marks'
+import { StageGlyph } from './stage-glyph'
 import { useTip } from './tip'
 
-/** The index outline's rows that stand apart from a project's: the `+` a held worktree starts an epic on, a refused path, and the held copy. */
+/** The index outline's rows drawn apart from its cards: a worktree's, the `+` a held worktree starts an epic on, a refused path, and the held copy. */
 
 /** The columns a row lines up in: its name, the glyph, and the marks, the same in every row. */
 export const rowGrid = 'grid grid-cols-[minmax(0,1fr)_1.75rem_minmax(3.5rem,auto)] items-center gap-x-3 px-2 py-1.5'
@@ -35,6 +39,43 @@ export type OutlineContext = {
   readonly landingOn: string | null
   /** Where a held project or worktree would take its place if it were dropped now. */
   readonly marker: Marker | null
+}
+
+/**
+ * A worktree's row as it reads: its name and its glyph, which are the row's
+ * link, and its marks beside the link, where the pull request's number is a
+ * link of its own, so the number opens the pull request and the rest of the
+ * row opens the board.
+ */
+export function WorktreeNode({ path, nodeRef, className, row, name = row.name, context, indent, heading = false, children }: {
+  path: Path
+  nodeRef: (element: Element | null) => void
+  className?: string | undefined
+  row: WorktreeSummary
+  name?: string
+  context: OutlineContext
+  indent: string
+  heading?: boolean
+  children?: React.ReactNode
+}) {
+  const tip = useTip()
+  return (
+    <Node
+      path={path}
+      nodeRef={nodeRef}
+      className={cn(rowGrid, className)}
+      beside={<span className="justify-self-end"><Marks signals={context.signalsOf(row)} now={context.now} /></span>}
+    >
+      {children}
+      <span
+        className={cn('min-w-0 truncate', indent, heading && 'font-medium', row.conflict !== null && 'text-muted-foreground')}
+        title={tip(row.path)}
+      >
+        {name}
+      </span>
+      <span>{row.conflict === null ? <StageGlyph counts={row.counts} executing={row.executing} range={context.stageRange} /> : null}</span>
+    </Node>
+  )
 }
 
 /** Where a held worktree starts an epic of its own, drawn after its project's rows only while one is held. */

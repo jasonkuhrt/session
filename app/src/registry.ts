@@ -101,6 +101,7 @@ const written: readonly WrittenCommand[] = [
     name: 'Pull request',
     scope: 'worktree',
     keys: [],
+    clicks: [{ on: 'the pull request’s number, wherever it is drawn: a row, a step of the path line or a worktree’s name' }],
     summary: 'Open the branch’s pull request, bringing back the tab this board opened for it.',
   }),
   command({

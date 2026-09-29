@@ -6,11 +6,14 @@ import type { Path, Seam, SurfaceApi } from './seam'
 
 /**
  * What a click on a view leaves to the element it landed in: a link, a button,
- * a field. A node drawn as a link is not one of them, since its click is the
- * node's, and neither is a word with its tip behind it, which Tips draws as a
- * button and which is still a word, as it is to a drag.
+ * a field. A node's own link is not one of them, since its click is the
+ * node's: the link a node is drawn as, or is drawn around what it draws, and
+ * the same link a view draws again beside it, each marked `data-node-link`.
+ * Neither is a word with its tip behind it, which Tips draws as a button and
+ * which is still a word, as it is to a drag. Any other link is a control of
+ * its own, so a click on it takes no focus and runs no Enter.
  */
-const ownClick = 'a[href]:not([data-node]), button:not([data-explained]), input, summary'
+const ownClick = 'a[href]:not([data-node-link]), button:not([data-explained]), input, summary'
 
 /**
  * Whether a click is the browser's rather than the view's: one with ⌘, Ctrl,
@@ -54,7 +57,7 @@ function useDragEnd(held: boolean) {
  * landed in, with what the node is; a click on a link or a button inside a
  * node is its own, and a click the browser answers is left to it. A node
  * drawn as a link leaves its address to the browser that way and nothing
- * else: a plain click on it is the view's, so the link does not follow
+ * else: a plain click on its link is the view's, so the link does not follow
  * itself. A press on a node leaves the browser's focus where it is, so the
  * keys that follow still reach the registry rather than the node. A click a
  * browser makes of the release that ends a drag runs nothing, and follows no
@@ -89,8 +92,9 @@ export function useViewClicks({ view, drawn, held, clicked }: {
       const key = landed?.dataset['node']
       const node = key === undefined ? undefined : drawn.current.get(key)
       if (landed === null || key === undefined || node === undefined) return
-      // A node drawn as a link would follow itself; its click is the view's.
-      if (landed instanceof HTMLAnchorElement) event.preventDefault()
+      // A node's own link would follow itself; its click is the view's.
+      const link = event.target instanceof Element ? event.target.closest('a[data-node-link]') : null
+      if (link !== null && landed.contains(link)) event.preventDefault()
       latest.current(pathOfKey(key), node)
     }
     const onPress = (event: MouseEvent) => {

@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '../components/ui/breadcrumb'
 import { cn } from '../lib/utils'
+import { BesideLink, BesideLinkContext } from './beside-link'
 import { leafOf } from './path'
 import type { Address, Path, Seam } from './seam'
 import { browserClick } from './surface-hooks'
@@ -13,7 +14,10 @@ import { browserClick } from './surface-hooks'
  * button opens it in a new tab, and the focus itself the page the breadcrumb
  * ends on. A step whose node the view does not draw carries that node's
  * marks, what can need you now about it, so a view keeps in sight what it is
- * inside; a step whose node is marked with Space carries the mark too.
+ * inside; a step whose node is marked with Space carries the mark too. They
+ * stand beside the step's link, since a mark can be a control of its own, and
+ * a link holds no other, and they are drawn in that link again, so a click or
+ * a ⌘-click on one that is no control is the step's.
  */
 export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
   readonly seam: Seam
@@ -24,6 +28,12 @@ export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
   readonly linkOf: (index: number) => Address | null
   readonly onStep: (index: number) => void
 }) {
+  /** A plain click on a step is the step's, which moves the focus there; any other is the browser's, which opens the link. */
+  const stepClick = (index: number) => (event: React.MouseEvent) => {
+    if (browserClick(event)) return
+    event.preventDefault()
+    onStep(index)
+  }
   return (
     <Breadcrumb aria-label="Focus path" className="sticky top-0 z-20 min-w-0 border-b bg-background/90 px-4 py-2.5 backdrop-blur">
       <BreadcrumbList className="min-w-0 gap-y-0.5">
@@ -31,24 +41,28 @@ export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
           const path = focus.slice(0, index + 1)
           const drawn = seam.viewOf(path) === view
           const crumb = seam.crumb(path, index, drawn)
-          // The marks are part of the step, so a click or a ⌘-click on one is the step's.
-          const content = (
-            <>
-              <span className="truncate">{crumb.text}</span>
-              {drawn ? null : crumb.marks}
-              {!drawn && marks.has(leafOf(path)) && id !== ''
-                ? <span aria-label="marked" className="size-1.5 shrink-0 rounded-full bg-primary" />
-                : null}
-            </>
-          )
-          const step = cn('inline-flex max-w-72 min-w-0 items-center gap-1.5', crumb.literal === true && 'font-mono text-xs')
+          const words = <span className="truncate">{crumb.text}</span>
+          const step = cn('inline-flex min-w-0 items-center', crumb.literal === true && 'font-mono text-xs')
+          const address = linkOf(index)
+          const click = stepClick(index)
           return (
             <React.Fragment key={path.join('\u001F')}>
               {index === 0 ? null : <BreadcrumbSeparator />}
-              <BreadcrumbItem className="min-w-0">
+              <BreadcrumbItem className="max-w-72 min-w-0 gap-1.5">
                 {index === focus.length - 1
-                  ? <BreadcrumbPage title={seam.tip(crumb.meaning)} className={step}>{content}</BreadcrumbPage>
-                  : <StepLink seam={seam} address={linkOf(index)} title={seam.tip(crumb.meaning)} className={step} onStep={() => onStep(index)}>{content}</StepLink>}
+                  ? <BreadcrumbPage title={seam.tip(crumb.meaning)} className={step}>{words}</BreadcrumbPage>
+                  : <StepLink seam={seam} address={address} title={seam.tip(crumb.meaning)} className={step} onClick={click}>{words}</StepLink>}
+                {drawn
+                  ? null
+                  : (
+                    // A step with no address has no link to draw them in again, and draws them as they are.
+                    <BesideLinkContext value={address === null ? null : { address, onClick: click }}>
+                      {crumb.marks}
+                      {marks.has(leafOf(path)) && id !== ''
+                        ? <BesideLink><span aria-label="marked" className="size-1.5 shrink-0 rounded-full bg-primary" /></BesideLink>
+                        : null}
+                    </BesideLinkContext>
+                  )}
               </BreadcrumbItem>
             </React.Fragment>
           )
@@ -65,12 +79,12 @@ export function PathLine({ seam, focus, view, marks, linkOf, onStep }: {
  * follow reach the registry; a plain click is the step's, and any other the
  * browser's, which opens the link.
  */
-function StepLink({ seam, address, title, className, onStep, children }: {
+function StepLink({ seam, address, title, className, onClick, children }: {
   readonly seam: Seam
   readonly address: Address | null
   readonly title: string | undefined
   readonly className: string
-  readonly onStep: () => void
+  readonly onClick: (event: React.MouseEvent) => void
   readonly children: React.ReactNode
 }) {
   // The words go on the element the link is drawn as, which keeps them as its own.
@@ -81,11 +95,7 @@ function StepLink({ seam, address, title, className, onStep, children }: {
       title={title}
       className={cn('cursor-pointer', className)}
       onMouseDown={(event) => event.preventDefault()}
-      onClick={(event) => {
-        if (browserClick(event)) return
-        event.preventDefault()
-        onStep()
-      }}
+      onClick={onClick}
     />
   )
 }

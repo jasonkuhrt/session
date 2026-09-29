@@ -1,9 +1,20 @@
 import * as React from 'react'
 
 import { cn } from '../lib/utils'
+import { BesideLinkContext } from './beside-link'
 import { leafOf, pathKey } from './path'
 import type { Path } from './seam'
 import { InsideLinkContext, useSurfaceContext } from './surface-context'
+
+/**
+ * A link's hit area stretched across the element it is drawn in, beneath what
+ * is drawn there, so a click or a ⌘-click on the element's empty parts is the
+ * link's, and what is drawn on it, a word with its tip or a control of its
+ * own, is met first. The element is positioned and holds its own stacking
+ * context, `relative isolate`, and the link holds no box of its own, so what
+ * is inside it flows in the element's layout.
+ */
+export const stretchedLink = "contents after:absolute after:inset-0 after:-z-10 after:content-['']"
 
 /**
  * A node the view draws: something the focus can be on. It says where it is,
@@ -16,8 +27,15 @@ import { InsideLinkContext, useSurfaceContext } from './surface-context'
  * status bar shows where it goes. When it becomes the focus it brings itself
  * into view, so a move scrolls to what it reached and a read that moves nodes
  * around never scrolls the page.
+ *
+ * A link may hold no other, so a control of its own that belongs on the node,
+ * such as a link to somewhere else, is drawn `beside` it. The node is then
+ * the element that holds the link and what is beside it, and its link, drawn
+ * without a box and stretched across the node, holds what the node draws, so
+ * a click on the node is still the node's, wherever it lands but on the
+ * control.
  */
-export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef, children, ...rest }: {
+export function Node({ path, as: Tag = 'div', holds = false, beside, className, nodeRef, children, ...rest }: {
   readonly path: Path
   readonly as?: 'div' | 'li' | 'section' | 'h2' | 'h3'
   /**
@@ -26,6 +44,13 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
    * is never a link, since a link can hold no other link.
    */
   readonly holds?: boolean
+  /**
+   * What is drawn beside the node's link, outside it: a control of its own,
+   * which a link cannot hold. A click on it is its own, so it neither takes
+   * the focus nor runs the node's Enter; what a view draws there that is no
+   * control can be drawn in `BesideLink`, so it is the node's again.
+   */
+  readonly beside?: React.ReactNode
   readonly className?: string | undefined
   /** A ref the drag library also needs on this element. */
   readonly nodeRef?: ((element: Element | null) => void) | undefined
@@ -50,6 +75,8 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     }
   }, [nodeRef, register, key, scope, holds])
   const address = holds ? null : linkOf(path)
+  // A node with a control beside its link is the element that holds both.
+  const holding = address !== null && beside !== undefined
   React.useEffect(() => {
     if (focused) element.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [focused])
@@ -64,7 +91,8 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     className: cn(
       'relative scroll-my-12 rounded-md data-focused:ring-2 data-focused:ring-primary',
       // A link is inline by itself, and a node is a block unless it says otherwise.
-      address !== null && 'block',
+      address !== null && !holding && 'block',
+      holding && 'isolate',
       className,
     ),
     ...rest,
@@ -74,12 +102,24 @@ export function Node({ path, as: Tag = 'div', holds = false, className, nodeRef,
     return (
       <Tag {...attributes}>
         {children}
+        {beside}
+        {mark}
+      </Tag>
+    )
+  }
+  if (holding) {
+    return (
+      <Tag {...attributes}>
+        <Link address={address} data-node-link="" tabIndex={-1} className={stretchedLink}>
+          <InsideLinkContext value>{children}</InsideLinkContext>
+        </Link>
+        <BesideLinkContext value={{ address, node: true }}>{beside}</BesideLinkContext>
         {mark}
       </Tag>
     )
   }
   return (
-    <Link address={address} {...attributes}>
+    <Link address={address} data-node-link="" {...attributes}>
       <InsideLinkContext value>{children}</InsideLinkContext>
       {mark}
     </Link>
