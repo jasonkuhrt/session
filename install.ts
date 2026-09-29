@@ -11,14 +11,24 @@ const install = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const home = values.home ?? (yield* Config.String('HOME'));
-  const source = path.join(import.meta.dir, 'src/session');
+  const skills = ['session', 'session-execute', 'session-bucket'];
+  // Claude Code agent definitions, one file each under `src/agents/`; Codex has no counterpart.
+  const agents = ['session-worker'];
   const command = path.join(import.meta.dir, 'bin/session');
   const roots = [path.join(home, '.codex/skills'), path.join(home, '.claude/skills')];
+  const agentRoot = path.join(home, '.claude/agents');
   const binRoot = path.join(home, '.local/bin');
   const backup = path.join(home, '.codex/retired-skills');
-  // The skill links plus the `session` command, each linked from its own root.
+  // The skill links, the agent definitions and the `session` command, each linked from its own root.
   const links = [
-    ...roots.map((root) => ({ root, name: 'session', source })),
+    ...roots.flatMap((root) =>
+      skills.map((name) => ({ root, name, source: path.join(import.meta.dir, 'src', name) }))
+    ),
+    ...agents.map((name) => ({
+      root: agentRoot,
+      name: `${name}.md`,
+      source: path.join(import.meta.dir, 'src/agents', `${name}.md`),
+    })),
     { root: binRoot, name: 'session', source: command },
   ];
 
@@ -29,7 +39,7 @@ const install = Effect.gen(function*() {
     const link = yield* fs.readLink(target).pipe(Effect.option);
     if (Option.isSome(link) && path.resolve(entry.root, link.value) !== entry.source) {
       return yield* new InstallError({
-        message: `Refusing to replace an unrelated session link: ${target}`,
+        message: `Refusing to replace an unrelated ${entry.name} link: ${target}`,
       });
     }
     if (Option.isNone(link) && (yield* fs.exists(target))) {
