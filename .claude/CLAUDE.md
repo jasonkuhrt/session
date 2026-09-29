@@ -214,6 +214,15 @@ about itself when a page mounts and when a stream comes back, a changed
 drag or a write holds the events it names until it ends, and the item page's
 writes hold nothing; a write's answer lands only over reads that predate it.
 
+A fenced block in TypeScript, TSX, JSON or shell is drawn in Tokyo Night's own
+colours through Shiki, by `app/src/lib/highlight.ts` alone: it imports only
+Shiki's core, its JavaScript regex engine, the theme and the four grammars by
+name, each a declared dependency, never `shiki` itself or a bundle, and builds
+its Shiki primitive when the first such block is drawn and never when it loads,
+since the prerender loads it; every other block is plain, and so is one Shiki
+cannot read or that is too long, inline code keeps the hue the Code colour
+setting chooses, and the stylesheet gains no colour for either.
+
 Every command is an Effect Schema value in one registry, with an id, name,
 scope, keys, clicks, summary and input. The registry is decoded when the app
 loads, so a repeated id, a key twice in one scope, or a root key bound elsewhere
