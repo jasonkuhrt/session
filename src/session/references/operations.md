@@ -1616,11 +1616,16 @@ node, and on a page, its first section or entry. Moving between views stays in
 the document: they go through the router, which is safe because the board is
 one script, so no page's code is fetched after the document loaded. The view
 that leaves closes its event stream and any dialog, palette or key map it had
-open and drops its reads; the view that arrives reads what it shows and draws
-only what it has read, and opens its own stream, as it did when every move
-loaded a document. The focus memory `i` returns to, the marks and the folds are
-the document's and survive a move between views; a reload starts them afresh.
-What the daemon says about itself is the one answer the document keeps, since
+open and keeps its reads; the view that arrives draws what the document last
+read of each thing it shows, at once, reads each again as it mounts and lands
+that over what it drew, and opens its own stream. Only a view opened for the
+first time in a document has nothing to draw, and draws a skeleton until its
+read lands, once. A write made on what a view drew before its read landed goes
+against the revision it drew, so the daemon refuses it as changed on disk when
+the files have moved, and the view reads again. The focus memory `i` returns to,
+the marks and the folds are the document's and survive a move between views; a
+reload starts them afresh. What the daemon says about itself is the one answer
+no view reads again as it mounts, since
 its stamp names the build the document loaded: each view's stream asks the
 daemon again when it opens, and a daemon started from other sources reloads the
 page. A board is known by the daemon's list of the boards it serves, asked

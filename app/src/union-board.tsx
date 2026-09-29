@@ -11,7 +11,7 @@ import { useCapabilities } from './lib/capabilities'
 import { useNow } from './lib/clock'
 import type { UnionFilter } from './lib/filter'
 import { boardOf, keyTaken, unionOf } from './lib/filter'
-import { reads, reread, sinceMount } from './lib/reads'
+import { reads, reread } from './lib/reads'
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
@@ -39,7 +39,7 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
   const capabilities = useCapabilities()
   const rowsRead = useQuery(reads.worktrees())
   const pullRequests = useQuery(reads.pullRequests())
-  const rows = sinceMount(rowsRead)
+  const rows = rowsRead.data
   const union = rows === undefined ? undefined : unionOf({ filter, rows, now })
   const listed = rows ?? []
   const served = union?.rows.filter((row) => !keyTaken({ row, rows: listed })) ?? []
@@ -49,7 +49,7 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
 
   if (union === null) return <NoPage />
 
-  const parts = served.map((row, index) => ({ board: boardOf(row), key: row.key, name: row.name, session: sinceMount(sessions[index]) ?? null }))
+  const parts = served.map((row, index) => ({ board: boardOf(row), key: row.key, name: row.name, session: sessions[index]?.data ?? null }))
   const problems = [
     ...(rowsRead.error === null ? [] : [messageOf(rowsRead.error, 'Could not load the worktrees')]),
     ...(union?.rows ?? []).flatMap((row) => (keyTaken({ row, rows: listed }) ? [`${row.name} is not served: ${row.conflict}`] : [])),
@@ -75,10 +75,10 @@ export function UnionBoard({ filter }: { readonly filter: UnionFilter }) {
       parts={parts}
       rows={rows ?? null}
       grouped
-      // The skeleton stands until a first session lands; a worktree that
-      // joins the view later appears once its own read lands, and the board
-      // meanwhile stays as it is.
-      loading={!rowsRead.isFetchedAfterMount || (sessions.length > 0 && sessions.every((session) => !session.isFetchedAfterMount))}
+      // The skeleton stands until the document has a first session to draw; a
+      // worktree that joins the view later appears once its own read lands,
+      // and the board meanwhile stays as it is.
+      loading={rowsRead.isPending || (sessions.length > 0 && sessions.every((session) => session.isPending))}
       problems={problems}
       signalsOf={signalsOf}
       capabilities={capabilities}

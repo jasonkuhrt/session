@@ -9,7 +9,7 @@ import type { Signals } from './components/marks'
 import { SessionApi } from './lib/api'
 import { useBoardName, useBoardPath } from './lib/base'
 import { useCapabilities } from './lib/capabilities'
-import { reads, reread, sinceMount } from './lib/reads'
+import { reads, reread } from './lib/reads'
 
 const messageOf = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
@@ -33,15 +33,15 @@ function useBoardReads(board: string) {
   const links = useQuery(reads.links(board))
   const rows = useQuery(reads.worktrees())
   return {
-    session: sinceMount(session) ?? null,
-    loading: !session.isFetchedAfterMount,
+    session: session.data ?? null,
+    loading: session.isPending,
     loadError: failureOf(session.error, 'Could not load the session'),
     agents: agents.data ?? null,
     agentsError: failureOf(agents.error, 'The agent listing could not be read'),
     trailers: trailers.data ?? [],
     links: links.data ?? null,
     linksError: failureOf(links.error, 'The pull request and issues could not be read'),
-    rows: sinceMount(rows) ?? null,
+    rows: rows.data ?? null,
     rowsError: failureOf(rows.error, 'Could not load the worktrees'),
   }
 }

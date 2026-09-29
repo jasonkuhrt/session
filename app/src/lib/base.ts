@@ -77,15 +77,15 @@ export const paramsOf = <S extends Schema.ConstraintDecoder<unknown>>(schema: S)
  * names, the root draws the not-found page and the page reads nothing, no
  * session and no stream. A worktree's board is gated on the daemon's
  * description, which names the boards it serves, and an epic's board and a
- * project's on the index's rows. An answer is kept as long as its read keeps
- * it: the daemon's description for the document, so the board that draws it
- * shows it rather than asking again, and the rows no longer than a page draws
- * them, since a page draws only the rows it read since it mounted. A page
- * reached without a document load can name what was taken on after the
- * answer at hand was read, so an answer that does not hold the address is
- * asked again now, by `again`, before the address is called no page. A read
- * that fails says nothing about the address, and the page draws as it would
- * without the gate.
+ * project's on the index's rows. The answer at hand is the last one the
+ * document read, the daemon's description and the rows alike, so the board
+ * that draws it shows it rather than asking again, and the page reads again as
+ * it mounts, drawing the not-found page if that says the address names
+ * nothing. A page reached without a document load can name what was taken on
+ * after the answer at hand was read, so an answer that does not hold the
+ * address is asked again now, by `again`, before the address is called no
+ * page. A read that fails says nothing about the address, and the page draws
+ * as it would without the gate.
  */
 export async function noPageUnless<T, K extends QueryKey, L extends QueryKey>({ client, read, again, named }: {
   readonly client: QueryClient

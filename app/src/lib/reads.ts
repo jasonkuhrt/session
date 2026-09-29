@@ -6,17 +6,24 @@ import { DaemonApi, IndexApi, readPlace, SessionApi } from './api'
  * Every read a page makes, as TanStack Query holds it: one query per source,
  * keyed by the board's prefix where the source is a board's, so each is read
  * on its own. A query is read when its page mounts it and, where its answer
- * can change, again on the stream's event that names it. A board's picker
- * list is read once, since no stream says it changed, and what the daemon
- * says about itself when a page mounts and when a stream comes back. Nothing
- * is read on focus, when the browser comes back online or on a timer. The
- * item and file pages compose their reads where they draw them, under the
- * keys `[board, 'item', id]` and `[board, 'file', path]`.
+ * can change, again on the stream's event that names it. The rows a
+ * worktree's board reads, for where its worktree stands, are read once, since
+ * its stream does not say they changed, and what the daemon says about
+ * itself when a page mounts and when a stream comes back. Nothing is read on
+ * focus, when the browser comes back online or on a timer. The item and file
+ * pages compose their reads where they draw them, under the keys
+ * `[board, 'item', id]` and `[board, 'file', path]`. Every answer is
+ * kept for as long as the document lives, whichever page drew it last: a
+ * page that mounts again draws the last answer of each of its reads while the
+ * read it makes as it mounts is under way, and that read lands over it, so
+ * only a read the document never made has nothing to draw, which is when a
+ * page draws its skeleton.
  */
 export const reads = {
   /**
-   * Every tracked worktree: the index's rows, the boards a board's picker can
-   * switch to, and the worktrees an epic's board and a project's draw.
+   * Every tracked worktree: the index's rows, the rows a worktree's board and
+   * its pages read for where the worktree stands, and the worktrees an epic's
+   * board and a project's draw.
    */
   worktrees: () => queryOptions({ queryKey: ['worktrees'], queryFn: ({ signal }) => IndexApi.read(signal) }),
 
@@ -37,20 +44,19 @@ export const reads = {
   /**
    * What the daemon says about itself: what it can do for a page, a terminal
    * through cmux and Zed, and the sources it was started from, which name the
-   * build the page was loaded from. Every page with a stream reads it when it
-   * mounts, and again when its stream comes back, when a daemon started from
-   * other sources reloads the page and one started from the same sources
-   * replaces what it can do. It is kept for as long as the document is,
-   * whichever page of it is drawn, since the build stays the one it loaded,
-   * so a page that mounts does not read it again, which would put the running
-   * daemon's stamp where the loaded build's is: the page's stream asks the
-   * daemon when it first opens instead.
+   * build the page was loaded from. The first page with a stream reads it
+   * when it mounts, and every page with one reads it again when its stream
+   * comes back, when a daemon started from other sources reloads the page and
+   * one started from the same sources replaces what it can do. A page that
+   * mounts after the first does not read it again, unlike every other read,
+   * since the build stays the one the document loaded and a read on mount
+   * would put the running daemon's stamp where the loaded build's is: the
+   * page's stream asks the daemon when it first opens instead.
    */
   daemon: () =>
     queryOptions({
       queryKey: ['daemon'],
       queryFn: ({ signal }) => DaemonApi.describe(signal),
-      gcTime: Number.POSITIVE_INFINITY,
       refetchOnMount: false,
     }),
 
@@ -65,7 +71,6 @@ export const reads = {
       queryKey: ['daemon', 'now'],
       queryFn: ({ signal }) => DaemonApi.describe(signal),
       staleTime: 0,
-      gcTime: 0,
     }),
 
   /** A board's session: its stages and their items, with the revision a write is made against. */
@@ -105,17 +110,6 @@ export const reads = {
       queryFn: ({ signal }) => Promise.all([readPlace({ board, signal }), SessionApi.archive(board, signal)]),
     }),
 }
-
-/**
- * A read's answer as its page draws it: only what the page has read since it
- * mounted, and nothing before. Pages share answers under one key, the index,
- * a board's picker and an epic's or a project's board the worktrees, and a
- * worktree's board and an epic's or a project's that worktree's session, so
- * the page that leaves can hand the one that mounts an answer which that
- * page's stream, opened as it mounts, never heard change.
- */
-export const sinceMount = <A>(read: { readonly isFetchedAfterMount: boolean; readonly data: A | undefined } | undefined): A | undefined =>
-  read?.isFetchedAfterMount === true ? read.data : undefined
 
 /**
  * Read a query again now. A read of it still in flight is dropped first, so
