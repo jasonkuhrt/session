@@ -61,14 +61,14 @@ than the tool's, the worktrees sharing one Git directory, or a folder outside
 Git. A project's row is headed by the repository's main worktree whether or not
 that has a session, by the Git directory's name when Git lists that in its place
 and the daemon does not track the main, or by the folder's own row. Under it
-stand its epics with their worktrees, then its worktrees in no epic; an epic
-whose worktrees span projects is drawn once, under "Across projects". A row is a
-name, a stage glyph and marks, and every other fact is in the detail line. Every
-served row carries its repository from the same `git worktree list` as its
-branch, nothing stores a project's place, and every project, epic and row, those
-across projects included, is ordered by its rank, then busiest first, and a
-quiet one, with nothing live and nothing recent, is dim and last, a project
-counting every worktree of it wherever it is drawn.
+stand its epics with their worktrees and its worktrees in no epic, together and
+busiest first; an epic whose worktrees span projects is drawn once, under
+"Across projects". A row is a name, a stage glyph and marks, and every other
+fact is in the detail line. Every served row carries its repository from the
+same `git worktree list` as its branch, nothing stores a project's place, and
+every project, epic and row, those across projects included, is ordered by its
+rank, then busiest first, and a quiet one, with nothing live and nothing recent,
+is dim and last, a project counting every worktree of it wherever it is drawn.
 
 The board is the filtered union of sessions: `/w/<key>/` is one worktree's
 board, `/e/<name>/` an epic's and `/p/<path>/` a project's, whose worktrees are
